@@ -1,0 +1,47 @@
+# SECRETS — NEVER COMMIT
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Node (frontend)
+node_modules/
+.next/
+out/
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Coverage
+.coverage
+htmlcov/
+.tox/
