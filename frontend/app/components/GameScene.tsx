@@ -29,6 +29,13 @@ const CHART_SPEED_LIVE = 0.45; // sub-point scroll per frame (live)
 const PRICE_VOL = 0.65; // random walk step for new chart points
 const MOCK_DRIFT = 0.18; // per-frame mini drift
 const JITTER = 1.0; // hand-drawn jitter amplitude
+const STEP_FREQ = 4.2; // step cycles per second during run
+const FOOT_SPREAD_PX = 16; // horizontal pixel spread for ground sampling
+const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
+const DUST_MAX = 15; // max dust particles alive
+const DUST_LIFE = 0.45; // seconds each dust particle lives
+const RUN_DURATION = 1200; // ms of running before jump
+const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 
 type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -249,6 +256,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     smoothFlameScale: 0,
     smoothAlt: 200, // lerped figure altitude for smooth ground following
     smoothFigPrice: 3500, // lerped price at figure position
+    stepPhase: 0, // step cycle phase (radians)
+    runFrame: 0,
+    runStartTime: 0, // timestamp when RUNNING began
+    jumpStartTime: 0, // timestamp when JUMPING began
+    prevStepHalf: 0, // tracks half-cycle for dust spawn
+    dustParticles: [] as Array<{
+      x: number; y: number; vx: number; vy: number;
+      life: number; size: number;
+    }>,
   });
 
   /* render-triggering state */
@@ -533,6 +549,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const curY = priceToY(a.price);
       ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
 
+      /* dust particles */
+      const dust = anim.current.dustParticles;
+      for (const d of dust) {
+        const alpha = Math.max(0, d.life / DUST_LIFE) * 0.5;
+        if (alpha < 0.01) continue;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#f4ecd8";
+        const sz = d.size * (d.life / DUST_LIFE);
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, Math.max(0.3, sz), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
       /* return priceToY so the tick can use it */
       return priceToY;
     },
@@ -563,6 +593,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.figPriceVel = 0;
     a.smoothDelta = 0;
     a.curBobY = 0;
+    a.stepPhase = 0;
+    a.runFrame = 0;
+    a.runStartTime = 0;
+    a.jumpStartTime = 0;
+    a.prevStepHalf = 0;
+    a.dustParticles.length = 0;
   }, [setGameState, setFlame, applyPose, onPnlChange]);
 
   /* ============ SPLAT (liquidation) ============ */
@@ -608,41 +644,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       setGameState("RUNNING");
       a.positionLev = lev;
       a.positionWager = wag;
-
-      /* run phase: speed up chart, running animation */
-      let runFrame = 0;
-      const runInterval = setInterval(() => {
-        applyPose("run", runFrame);
-        a.curBobY = -Math.abs(Math.sin(runFrame * 0.5)) * 1.8;
-        runFrame++;
-      }, 50);
-
-      setTimeout(() => {
-        clearInterval(runInterval);
-        a.curBobY = 0;
-
-        /* jump phase */
-        a.state = "JUMPING";
-        setGameState("JUMPING");
-        applyPose("jetpack", 0);
-
-        setTimeout(() => {
-          /* enter LIVE */
-          a.state = "LIVE";
-          setGameState("LIVE");
-          a.entry = a.price;
-          a.figPrice = a.price;
-          a.figPriceVel = 0.08; // slight initial upward impulse
-          a.smoothDelta = 0;
-          a.frame = 0;
-          setLevTagText(lev + "x");
-          setLevTagShow(true);
-          const fig = figRef.current;
-          if (fig) fig.style.transition = "none";
-        }, 500);
-      }, 1200);
+      a.runFrame = 0;
+      a.stepPhase = 0;
+      a.prevStepHalf = 0;
+      a.runStartTime = 0; // set on first tick
+      a.jumpStartTime = 0;
+      a.dustParticles.length = 0;
     },
-    [setGameState, applyPose],
+    [setGameState],
   );
 
   useImperativeHandle(ref, () => ({ startJump, stopTrade }), [
@@ -711,32 +720,151 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         liqPrice,
       );
 
+      /* helper: chart screen-Y at any screen-X */
+      const getChartYAtX = (screenX: number): number => {
+        if (!priceToY) return a.stageH * 0.5;
+        const di = a.scrollFrac + screenX / pointSpacing;
+        const fl = Math.floor(di);
+        const fr = di - fl;
+        const j0 = startIdx + Math.max(0, Math.min(numVisible - 1, fl));
+        const j1 = startIdx + Math.max(0, Math.min(numVisible - 1, fl + 1));
+        const p = lerp(a.prices[j0] ?? a.price, a.prices[j1] ?? a.price, fr);
+        return priceToY(p);
+      };
+
+      /* update dust particles */
+      for (let i = a.dustParticles.length - 1; i >= 0; i--) {
+        const d = a.dustParticles[i];
+        d.life -= dt / 1000;
+        d.x += d.vx * dtNorm;
+        d.y += d.vy * dtNorm;
+        d.vy += 0.03 * dtNorm;
+        if (d.life <= 0) a.dustParticles.splice(i, 1);
+      }
+
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        /* smooth the price at figure position to avoid jitter */
-        a.smoothFigPrice = lerp(a.smoothFigPrice, priceAtFig, 0.12 * dtNorm);
-        const chartY = priceToY ? priceToY(a.smoothFigPrice) : a.stageH * 0.5;
+        /* figure stands on chart line with slope alignment */
+        const chartY = getChartYAtX(figScreenX);
         const targetAlt = a.stageH - chartY;
-        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.12 * dtNorm);
-        /* compute slope for tilt */
-        const p0 = a.prices[Math.max(0, pi0 - 1)] ?? a.price;
-        const p1 = a.prices[pi1] ?? a.price;
-        const dy = priceToY ? priceToY(p1) - priceToY(p0) : 0;
-        const dx = 2 * pointSpacing;
-        const slopeDeg = Math.atan2(dy, dx) * (180 / Math.PI);
-        a.smoothRot = lerp(a.smoothRot, slopeDeg * 0.5, 0.08 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.18 * dtNorm);
+        const slopeL = getChartYAtX(figScreenX - FOOT_SPREAD_PX);
+        const slopeR = getChartYAtX(figScreenX + FOOT_SPREAD_PX);
+        const slopeDeg =
+          Math.atan2(slopeR - slopeL, FOOT_SPREAD_PX * 2) * (180 / Math.PI);
+        a.smoothRot = lerp(
+          a.smoothRot,
+          Math.max(-12, Math.min(12, slopeDeg * 0.6)),
+          0.1 * dtNorm,
+        );
+        a.curBobY = 0;
         applyPose("standing", 0);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
-        a.figPrice = a.smoothFigPrice;
+        a.figPrice = priceAtFig;
+        a.smoothFigPrice = priceAtFig;
 
-      } else if (a.state === "RUNNING" || a.state === "JUMPING") {
-        /* smooth following with running bob */
-        a.smoothFigPrice = lerp(a.smoothFigPrice, priceAtFig, 0.15 * dtNorm);
-        const chartY = priceToY ? priceToY(a.smoothFigPrice) : a.stageH * 0.5;
-        const targetAlt = a.stageH - chartY;
-        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.15 * dtNorm);
-        setFig(figScreenX, a.smoothAlt, 0);
-        a.figPrice = a.smoothFigPrice;
+      } else if (a.state === "RUNNING") {
+        /* set runStartTime on first frame */
+        if (a.runStartTime === 0) a.runStartTime = time;
+        const elapsed = time - a.runStartTime;
+
+        if (elapsed > RUN_DURATION) {
+          /* transition to JUMPING */
+          a.state = "JUMPING";
+          setGameState("JUMPING");
+          a.jumpStartTime = time;
+          a.curBobY = 0;
+          applyPose("jetpack", 0);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+        } else {
+          /* advance step phase */
+          a.stepPhase += STEP_FREQ * (dt / 1000) * Math.PI * 2;
+          a.runFrame++;
+
+          /* sample chart at left and right foot positions */
+          const leftFootX = figScreenX - FOOT_SPREAD_PX * 0.5;
+          const rightFootX = figScreenX + FOOT_SPREAD_PX * 0.5;
+          const leftChartY = getChartYAtX(leftFootX);
+          const rightChartY = getChartYAtX(rightFootX);
+
+          /* planted foot synced with leg animation phase */
+          const leftPlanted = Math.sin(a.stepPhase) <= 0;
+          const plantedChartY = leftPlanted ? leftChartY : rightChartY;
+
+          /* body bob: highest at mid-stride push-off, lowest at foot strike */
+          a.curBobY = -Math.abs(Math.sin(a.stepPhase)) * BODY_BOB_PX;
+
+          /* altitude from planted foot's ground contact */
+          const targetAlt = a.stageH - plantedChartY;
+          a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.35 * dtNorm);
+
+          /* slope alignment from foot spread */
+          const slopeDy = rightChartY - leftChartY;
+          const slopeDeg =
+            Math.atan2(slopeDy, FOOT_SPREAD_PX) * (180 / Math.PI);
+          a.smoothRot = lerp(
+            a.smoothRot,
+            Math.max(-18, Math.min(18, slopeDeg * 0.7)),
+            0.2 * dtNorm,
+          );
+
+          /* apply run pose synced to step cycle */
+          applyPose("run", a.stepPhase / 0.5);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+
+          /* spawn dust on each foot plant (half-cycle boundary) */
+          const stepHalf = Math.floor(a.stepPhase / Math.PI);
+          if (stepHalf !== a.prevStepHalf && a.dustParticles.length < DUST_MAX) {
+            const footX = leftPlanted ? leftFootX : rightFootX;
+            const footY = leftPlanted ? leftChartY : rightChartY;
+            for (let k = 0; k < 3; k++) {
+              a.dustParticles.push({
+                x: footX + (Math.random() - 0.5) * 6,
+                y: footY + (Math.random() - 0.3) * 4,
+                vx: -(0.3 + Math.random() * 0.7),
+                vy: -(0.2 + Math.random() * 0.5),
+                life: DUST_LIFE * (0.6 + Math.random() * 0.4),
+                size: 1 + Math.random() * 1.8,
+              });
+            }
+          }
+          a.prevStepHalf = stepHalf;
+        }
+        a.figPrice = priceAtFig;
+        a.smoothFigPrice = priceAtFig;
+
+      } else if (a.state === "JUMPING") {
+        /* liftoff from chart into air */
+        if (a.jumpStartTime === 0) a.jumpStartTime = time;
+        const elapsed = time - a.jumpStartTime;
+
+        if (elapsed > JUMP_DURATION) {
+          /* enter LIVE */
+          a.state = "LIVE";
+          setGameState("LIVE");
+          a.entry = a.price;
+          a.figPrice = a.price;
+          a.figPriceVel = 0.08;
+          a.smoothDelta = 0;
+          a.frame = 0;
+          setLevTagText(a.positionLev + "x");
+          setLevTagShow(true);
+          const fig = figRef.current;
+          if (fig) fig.style.transition = "none";
+        } else {
+          /* rising arc from chart line */
+          const liftT = elapsed / JUMP_DURATION;
+          const liftArc = Math.sin(liftT * Math.PI * 0.5);
+          const chartY = getChartYAtX(figScreenX);
+          const baseAlt = a.stageH - chartY;
+          a.smoothAlt = baseAlt + 40 * liftArc;
+          a.curBobY = 0;
+          a.smoothRot = lerp(a.smoothRot, -10 * liftArc, 0.15 * dtNorm);
+          applyPose("jetpack", a.frame);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          a.figPrice = priceAtFig;
+          a.frame++;
+        }
 
       } else if (a.state === "LIVE") {
         a.frame++;
