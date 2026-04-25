@@ -12,6 +12,11 @@ import type { HistoryEntry } from "./HistoryStrip";
 import { connectPriceStream } from "@/lib/ws";
 
 /* ============ CONSTANTS ============ */
+/*
+ * Physics constants — originally tuned for a 60 ms setInterval tick.
+ * Now running inside requestAnimationFrame (~16 ms). All per-tick forces are
+ * multiplied by dtNorm = dt / 60 so the feel is identical. (Option a from brief.)
+ */
 const GRAVITY = 0.32;
 const DRAG = 0.94;
 const THRUST = 0.55;
@@ -19,6 +24,56 @@ const FALL_FORCE = 0.22;
 const VY_CLAMP = 9;
 const FIG_BODY_X = 18;
 const FIGURE_FOOT_OFFSET = 10;
+
+/* ============ STATIC WAVE GENERATION (Item 2) ============ */
+/* Pre-draw 6 wobbly cream wave paths (manga-style) at build time.
+ * Each path spans 0..800 (2× viewport) so CSS translateX(-50%) loops seamlessly.
+ * Foam tick-marks are also static. No per-frame SVG recalculation needed. */
+const WAVE_Y_BASE = [10, 26, 42, 58, 74, 90];
+const WAVE_AMP = [3.5, 3, 2.5, 2, 1.6, 1.2];
+const WAVE_STROKE = [1.5, 1.3, 1.2, 1.1, 1, 0.9];
+const WAVE_OPACITY = [0.9, 0.75, 0.6, 0.45, 0.35, 0.28];
+/* CSS animation durations per layer — front wave fastest, back slowest */
+const WAVE_DURATIONS = [4, 5, 6, 7, 8, 9];
+
+function generateWavePath(yb: number, amp: number, layerIdx: number): string {
+  const parts: string[] = [];
+  for (let copy = 0; copy < 2; copy++) {
+    const xOff = copy * 400;
+    const ph = layerIdx * 0.7;
+    const x1c = xOff + 65 + Math.sin(ph) * 12;
+    const x2c = xOff + 165 + Math.sin(ph + 0.9) * 12;
+    const x3c = xOff + 265 + Math.sin(ph + 1.7) * 12;
+    const x4c = xOff + 365 + Math.sin(ph + 2.5) * 12;
+    const y1 = yb - amp * Math.sin(ph);
+    const y2 = yb + amp * 0.7 * Math.sin(ph + 1.2);
+    const y3 = yb - amp * 0.85 * Math.sin(ph + 2.0);
+    const y4 = yb + amp * Math.sin(ph + 2.8);
+    const yEnd = yb + amp * 0.5 * Math.sin(ph + 3.5);
+    if (copy === 0) {
+      parts.push(
+        `M0,${yb.toFixed(1)} Q${x1c.toFixed(0)},${y1.toFixed(1)} ${x2c.toFixed(0)},${y2.toFixed(1)} T${x3c.toFixed(0)},${y3.toFixed(1)} T${x4c.toFixed(0)},${y4.toFixed(1)} T400,${yEnd.toFixed(1)}`,
+      );
+    } else {
+      parts.push(
+        `Q${x1c.toFixed(0)},${y1.toFixed(1)} ${x2c.toFixed(0)},${y2.toFixed(1)} T${x3c.toFixed(0)},${y3.toFixed(1)} T${x4c.toFixed(0)},${y4.toFixed(1)} T800,${yEnd.toFixed(1)}`,
+      );
+    }
+  }
+  return parts.join(" ");
+}
+
+const STATIC_WAVES = WAVE_Y_BASE.map((yb, i) => generateWavePath(yb, WAVE_AMP[i], i));
+
+const STATIC_FOAM = Array.from({ length: 14 }, (_, i) => {
+  const idx = i % 7;
+  const copy = Math.floor(i / 7);
+  const xOff = copy * 400;
+  const x = idx * 60;
+  const fx = xOff + x;
+  const fy = WAVE_Y_BASE[0] + Math.sin(x * 0.05) * 2 - 1;
+  return { x1: fx - 2, x2: fx + 2, y1: fy - 1.5, y2: fy + 1.5 };
+});
 
 type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type Tier = "ground" | "clouds" | "strato" | "space";
@@ -220,8 +275,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const stageRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const figRef = useRef<HTMLDivElement>(null);
-  const waveRefs = useRef<(SVGPathElement | null)[]>([]);
-  const foamRef = useRef<SVGGElement>(null);
   const flameRef = useRef<SVGGElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const parachuteRef = useRef<SVGSVGElement>(null);
@@ -250,7 +303,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     bgOffset: 0,
     frame: 0,
     curBobY: 0,
-    waveOffset: 0,
     stageW: 0,
     stageH: 0,
     cliffEdgeX: 0,
@@ -264,6 +316,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     positionWager: 5,
     currentTier: "ground" as Tier,
     lastBeepFrame: 0,
+    /* lerp-smoothed values (Items 3+4) */
+    smoothRot: 0,
+    smoothFlameScale: 1,
+    smoothBgOffset: 0,
   });
 
   /* render-triggering state */
@@ -291,13 +347,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       opacity: +(Math.random() * 0.4 + 0.2).toFixed(2),
     })),
   );
-
-  /* foam line refs */
-  const FOAM_COUNT = 7;
-  const foamLineRefs = useRef<(SVGLineElement | null)[]>([]);
-
-  const waveYBase = [10, 26, 42, 58, 74, 90];
-  const waveAmp = [3.5, 3, 2.5, 2, 1.6, 1.2];
 
   /* ============ MEASURE ============ */
   const measure = useCallback(() => {
@@ -463,6 +512,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setTierClass("tier-tag ground");
     setTierLabel("SEA LEVEL");
     if (dangerRef.current) dangerRef.current.style.opacity = "1";
+    a.smoothRot = 0;
+    a.smoothFlameScale = 1;
+    a.smoothBgOffset = 0;
   }, [setGameState, setFlame, applyPose, placeFigureIdle, onPnlChange]);
 
   /* ============ SPLAT ============ */
@@ -615,57 +667,36 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     stopTrade,
   ]);
 
-  /* ============ TICK ============ */
+  /* ============ MAIN LOOP (Item 6 — unified rAF) ============ */
+  /* Replaces setInterval(tick, 60). Runs at display refresh rate (~60fps).
+   * Physics constants were tuned for 60ms ticks; we multiply per-tick forces
+   * by dtNorm = dt / 60 to preserve identical feel (option a). */
   useEffect(() => {
-    const interval = setInterval(() => {
+    let raf: number;
+    let lastTime = performance.now();
+    /* throttle React setState calls to ~15fps to avoid render churn */
+    let lastPriceRender = 0;
+
+    function loop(now: number) {
+      const dt = Math.min(33, now - lastTime); // clamp dt to ~30fps min
+      lastTime = now;
+      const dtNorm = dt / 60; // 1.0 ≈ original 60ms tick
+
       const a = anim.current;
 
-      /* animate waves */
-      a.waveOffset += 0.1;
-      for (let i = 0; i < 6; i++) {
-        const wave = waveRefs.current[i];
-        if (!wave) continue;
-        const yb = waveYBase[i];
-        const amp = waveAmp[i];
-        const ph = a.waveOffset * (1 - i * 0.08) + i * 0.7;
-        const x1c = 65 + Math.sin(ph) * 12;
-        const x2c = 165 + Math.sin(ph + 0.9) * 12;
-        const x3c = 265 + Math.sin(ph + 1.7) * 12;
-        const x4c = 365 + Math.sin(ph + 2.5) * 12;
-        const y1 = yb - amp * Math.sin(ph);
-        const y2 = yb + amp * 0.7 * Math.sin(ph + 1.2);
-        const y3 = yb - amp * 0.85 * Math.sin(ph + 2.0);
-        const y4 = yb + amp * Math.sin(ph + 2.8);
-        const yEnd = yb + amp * 0.5 * Math.sin(ph + 3.5);
-        wave.setAttribute(
-          "d",
-          `M0,${yb.toFixed(1)} Q${x1c.toFixed(0)},${y1.toFixed(1)} ${x2c.toFixed(0)},${y2.toFixed(1)} T${x3c.toFixed(0)},${y3.toFixed(1)} T${x4c.toFixed(0)},${y4.toFixed(1)} T400,${yEnd.toFixed(1)}`,
-        );
+      /* price drift (mock mode) — scale by dtNorm so drift rate is frame-independent */
+      a.price += (Math.random() - 0.485) * 0.32 * dtNorm;
+      if (now - lastPriceRender > 66) {
+        setPriceDisplay("ETH $" + a.price.toFixed(2));
+        lastPriceRender = now;
       }
 
-      /* foam crests */
-      for (let i = 0; i < FOAM_COUNT; i++) {
-        const ln = foamLineRefs.current[i];
-        if (!ln) continue;
-        const x = i * 60;
-        const fx = x + ((a.waveOffset * 8) % 60);
-        const fy =
-          waveYBase[0] +
-          Math.sin((x + a.waveOffset * 30) * 0.05) * 2 -
-          1;
-        ln.setAttribute("x1", (fx - 2).toFixed(1));
-        ln.setAttribute("x2", (fx + 2).toFixed(1));
-        ln.setAttribute("y1", (fy - 1.5).toFixed(1));
-        ln.setAttribute("y2", (fy + 1.5).toFixed(1));
+      if (a.state !== "LIVE") {
+        raf = requestAnimationFrame(loop);
+        return;
       }
 
-      /* price drift (mock mode) */
-      a.price += (Math.random() - 0.485) * 0.32;
-      setPriceDisplay("ETH $" + a.price.toFixed(2));
-
-      if (a.state !== "LIVE") return;
-
-      a.frame++;
+      a.frame += dtNorm;
       const stageEl = stageRef.current;
       if (stageEl) {
         const r = stageEl.getBoundingClientRect();
@@ -683,24 +714,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const pnlDollars = pnlPct * a.positionWager;
       onPnlChange(pnlDollars);
 
-      /* physics */
-      let force = -GRAVITY;
-      if (pnlPct > 0) force += Math.min(pnlPct, 5) * THRUST;
-      else if (pnlPct < 0)
-        force -= Math.min(1, -pnlPct) * FALL_FORCE;
+      /* physics — forces scaled by dtNorm (Item 6, option a) */
+      let force = -GRAVITY * dtNorm;
+      if (pnlPct > 0) force += Math.min(pnlPct, 5) * THRUST * dtNorm;
+      else if (pnlPct < 0) force -= Math.min(1, -pnlPct) * FALL_FORCE * dtNorm;
       a.vy += force;
-      a.vy *= DRAG;
+      /* DRAG is exponential decay — raise to dtNorm power for frame-rate independence */
+      a.vy *= Math.pow(DRAG, dtNorm);
       a.vy = Math.max(-VY_CLAMP, Math.min(VY_CLAMP * 1.5, a.vy));
-      a.figAlt += a.vy;
-      a.vx += Math.sin(a.frame * 0.04) * 0.3 - a.vx * 0.1;
+      a.figAlt += a.vy * dtNorm;
+      a.vx += (Math.sin(a.frame * 0.04) * 0.3 - a.vx * 0.1) * dtNorm;
 
       const minAlt = a.stageH - a.waterY - 4;
       const figScreenAlt = Math.min(a.figAlt, a.SCROLL_CEILING);
+
+      /* camera smoothing (Item 4) — lerp bgOffset toward target */
       const maxScroll = a.WORLD_HEIGHT - a.stageH;
-      a.bgOffset = Math.max(
-        0,
-        Math.min(maxScroll, a.figAlt - a.SCROLL_CEILING),
-      );
+      const targetBgOffset = Math.max(0, Math.min(maxScroll, a.figAlt - a.SCROLL_CEILING));
+      a.smoothBgOffset += (targetBgOffset - a.smoothBgOffset) * 0.08 * dtNorm;
+      a.bgOffset = a.smoothBgOffset;
       const w = worldRef.current;
       if (w)
         w.style.transform = `translate3d(0px, ${a.bgOffset.toFixed(1)}px, 0)`;
@@ -724,31 +756,41 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         setTierLabel(TIER_LABELS[t]);
       }
 
-      /* pose + flame */
-      let rotation = 0;
+      /* pose + flame with lerp smoothing (Item 3) */
+      let targetRot = 0;
+      let targetFlameScale = 1;
+      let flameOn = false;
+
       if (pnlPct > 0.03) {
-        const flameScale =
-          1 +
-          Math.min(2, pnlPct) * 0.6 +
-          Math.sin(a.frame * 0.6) * 0.18;
-        setFlame(true, flameScale);
-        rotation = -Math.min(15, pnlPct * 10);
+        targetFlameScale =
+          1 + Math.min(2, pnlPct) * 0.6 + Math.sin(a.frame * 0.6) * 0.18;
+        flameOn = true;
+        targetRot = -Math.min(15, pnlPct * 10);
         applyPose("jetpack", a.frame);
       } else if (pnlPct < -0.03) {
-        setFlame(false);
-        rotation = (a.frame * 7) % 360;
+        targetRot = (a.frame * 7) % 360;
+        targetFlameScale = 0;
         applyPose("falling", a.frame);
       } else {
-        setFlame(false);
+        targetFlameScale = 0;
         applyPose("standing", a.frame);
       }
 
-      setFig(figX, figScreenAlt, rotation);
+      /* lerp rotation (Item 3) — smoothing factor scaled by dtNorm */
+      a.smoothRot += (targetRot - a.smoothRot) * 0.1 * dtNorm;
+      /* lerp flame scale (Item 3) */
+      a.smoothFlameScale += (targetFlameScale - a.smoothFlameScale) * 0.15 * dtNorm;
+      setFlame(flameOn || a.smoothFlameScale > 0.05, a.smoothFlameScale);
+
+      setFig(figX, figScreenAlt, a.smoothRot);
 
       if (a.figAlt <= minAlt || pnlPct <= -1) splat();
-    }, 60);
 
-    return () => clearInterval(interval);
+      raf = requestAnimationFrame(loop);
+    }
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
   }, [applyPose, setFig, setFlame, onPnlChange, splat]);
 
   /* ============ PRICE STREAM ============ */
@@ -1222,57 +1264,60 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             </svg>
           </div>
 
-          {/* WATER */}
+          {/* WATER — static SVG waves with CSS translateX drift (Item 2) */}
           <div
             className="water-container"
             style={{ bottom: 0, height: "22%" }}
           >
             <div className="water-bg" />
-            <svg
-              className="wave-svg"
-              viewBox="0 0 400 100"
-              preserveAspectRatio="none"
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: "100%",
-                height: "100%",
-                zIndex: 3,
-              }}
-            >
-              {[0.9, 0.75, 0.6, 0.45, 0.35, 0.28].map(
-                (op, i) => (
+            {STATIC_WAVES.map((d, i) => (
+              <div
+                key={i}
+                className="wave-drift-layer"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "200%",
+                  height: "100%",
+                  zIndex: 3,
+                  animationDuration: `${WAVE_DURATIONS[i]}s`,
+                }}
+              >
+                <svg
+                  viewBox="0 0 800 100"
+                  preserveAspectRatio="none"
+                  style={{ width: "100%", height: "100%", display: "block" }}
+                >
                   <path
-                    key={i}
-                    ref={(el) => {
-                      waveRefs.current[i] = el;
-                    }}
+                    d={d}
                     stroke="#f4ecd8"
-                    strokeWidth={[1.5, 1.3, 1.2, 1.1, 1, 0.9][i]}
+                    strokeWidth={WAVE_STROKE[i]}
                     fill="none"
                     strokeLinecap="round"
-                    opacity={op}
+                    opacity={WAVE_OPACITY[i]}
                   />
-                ),
-              )}
-              <g ref={foamRef}>
-                {Array.from({ length: FOAM_COUNT }, (_, i) => (
-                  <line
-                    key={i}
-                    ref={(el) => {
-                      foamLineRefs.current[i] = el;
-                    }}
-                    stroke="#f4ecd8"
-                    strokeWidth="1"
-                    strokeLinecap="round"
-                    opacity="0.7"
-                  />
-                ))}
-              </g>
-            </svg>
+                  {/* foam ticks on the front wave only */}
+                  {i === 0 && (
+                    <g>
+                      {STATIC_FOAM.map((f, fi) => (
+                        <line
+                          key={fi}
+                          x1={f.x1.toFixed(1)}
+                          x2={f.x2.toFixed(1)}
+                          y1={f.y1.toFixed(1)}
+                          y2={f.y2.toFixed(1)}
+                          stroke="#f4ecd8"
+                          strokeWidth="1"
+                          strokeLinecap="round"
+                          opacity="0.7"
+                        />
+                      ))}
+                    </g>
+                  )}
+                </svg>
+              </div>
+            ))}
           </div>
         </div>
       </div>

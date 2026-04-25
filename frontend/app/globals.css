@@ -276,6 +276,16 @@ body::before {
   width: 100%;
 }
 
+/* ============ WAVE DRIFT (Item 2 — CSS-animated static waves) ============ */
+.wave-drift-layer {
+  animation: waveDrift linear infinite;
+  will-change: transform;
+}
+@keyframes waveDrift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 /* ============ FIGURE ============ */
 .figure-wrap {
   position: absolute;
