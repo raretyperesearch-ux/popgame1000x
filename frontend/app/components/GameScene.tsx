@@ -247,6 +247,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     smoothMaxP: 3550,
     smoothRot: 0,
     smoothFlameScale: 0,
+    smoothAlt: 200, // lerped figure altitude for smooth ground following
+    smoothFigPrice: 3500, // lerped price at figure position
   });
 
   /* render-triggering state */
@@ -711,26 +713,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        /* figure follows chart line */
-        const chartY = priceToY ? priceToY(priceAtFig) : a.stageH * 0.5;
-        const alt = a.stageH - chartY;
+        /* smooth the price at figure position to avoid jitter */
+        a.smoothFigPrice = lerp(a.smoothFigPrice, priceAtFig, 0.12 * dtNorm);
+        const chartY = priceToY ? priceToY(a.smoothFigPrice) : a.stageH * 0.5;
+        const targetAlt = a.stageH - chartY;
+        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.12 * dtNorm);
         /* compute slope for tilt */
         const p0 = a.prices[Math.max(0, pi0 - 1)] ?? a.price;
         const p1 = a.prices[pi1] ?? a.price;
-        const dy = (priceToY ? priceToY(p1) - priceToY(p0) : 0);
+        const dy = priceToY ? priceToY(p1) - priceToY(p0) : 0;
         const dx = 2 * pointSpacing;
         const slopeDeg = Math.atan2(dy, dx) * (180 / Math.PI);
-        a.smoothRot = lerp(a.smoothRot, slopeDeg * 0.6, 0.1 * dtNorm);
+        a.smoothRot = lerp(a.smoothRot, slopeDeg * 0.5, 0.08 * dtNorm);
         applyPose("standing", 0);
-        setFig(figScreenX, alt, a.smoothRot);
-        a.figPrice = priceAtFig;
+        setFig(figScreenX, a.smoothAlt, a.smoothRot);
+        a.figPrice = a.smoothFigPrice;
 
       } else if (a.state === "RUNNING" || a.state === "JUMPING") {
-        /* figure follows chart with running bob */
-        const chartY = priceToY ? priceToY(priceAtFig) : a.stageH * 0.5;
-        const alt = a.stageH - chartY;
-        setFig(figScreenX, alt, 0);
-        a.figPrice = priceAtFig;
+        /* smooth following with running bob */
+        a.smoothFigPrice = lerp(a.smoothFigPrice, priceAtFig, 0.15 * dtNorm);
+        const chartY = priceToY ? priceToY(a.smoothFigPrice) : a.stageH * 0.5;
+        const targetAlt = a.stageH - chartY;
+        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.15 * dtNorm);
+        setFig(figScreenX, a.smoothAlt, 0);
+        a.figPrice = a.smoothFigPrice;
 
       } else if (a.state === "LIVE") {
         a.frame++;
