@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>11 POP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Caveat:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: #050507; font-family: 'VT323', monospace; color: #e8e6d4; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
+  body::before { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px, transparent 1px, transparent 5px); pointer-events: none; z-index: 100; }
+  .cabinet { width: 100%; max-width: 420px; height: 100vh; max-height: 900px; background: #0a0a0c; border: 2px solid #1a1a1e; display: flex; flex-direction: column; position: relative; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 10px; border-bottom: 1px dashed #2a2a30; }
+  .brand { font-family: 'Caveat', cursive; font-size: 24px; font-weight: 700; color: #f4ecd8; opacity: 0.55; transform: rotate(-1.5deg); letter-spacing: 1px; }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .help-btn { background: transparent; border: 1.5px dashed #6e6e75; color: #f4ecd8; font-family: 'Caveat', cursive; font-weight: 700; font-size: 18px; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; transform: rotate(-3deg); transition: all 0.15s; }
+  .help-btn:hover { border-color: #f4ecd8; color: #fff; }
+  .help-overlay { position: absolute; inset: 0; background: rgba(5,5,7,0.88); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; padding: 20px; }
+  .help-overlay.show { opacity: 1; pointer-events: auto; }
+  .help-card { background: #08080f; border: 2px dashed #f4ecd8; padding: 28px 30px 24px; max-width: 340px; width: 100%; font-family: 'Caveat', cursive; color: #f4ecd8; transform: rotate(-0.8deg); }
+  .help-title { font-size: 30px; font-weight: 700; margin-bottom: 16px; text-align: center; transform: rotate(-1.2deg); }
+  .help-list { list-style: none; padding: 0; margin: 0 0 22px 0; font-size: 22px; font-weight: 500; line-height: 1.55; }
+  .help-list li { padding: 3px 0 3px 22px; position: relative; }
+  .help-list li::before { content: "—"; position: absolute; left: 0; color: #6e6e75; }
+  .help-got-it { display: block; margin: 0 auto; background: transparent; border: 2px dashed #f4ecd8; color: #f4ecd8; font-family: 'Caveat', cursive; font-weight: 700; font-size: 24px; padding: 6px 28px; cursor: pointer; transform: rotate(1deg); transition: all 0.15s; }
+  .help-got-it:hover { background: rgba(244,236,216,0.08); }
+  .help-got-it:active { transform: rotate(1deg) scale(0.97); }
+  .connect-btn { background: transparent; border: 1.5px dashed #6e6e75; color: #f4ecd8; font-family: 'Caveat', cursive; font-weight: 600; font-size: 18px; padding: 2px 12px; cursor: pointer; transform: rotate(0.6deg); letter-spacing: 0.5px; transition: all 0.15s; }
+  .connect-btn:hover { border-color: #f4ecd8; color: #fff; }
+  .balance { font-family: 'Caveat', cursive; font-weight: 700; font-size: 22px; color: #e8e6d4; transform: rotate(-0.6deg); }
+  .balance .lab { font-family: 'Caveat', cursive; font-weight: 500; font-size: 14px; color: #6e6e75; margin-right: 5px; letter-spacing: 1px; }
+  .history-row { display: flex; gap: 8px; padding: 8px 16px; align-items: center; border-bottom: 1px dashed #2a2a30; font-size: 16px; min-height: 32px; }
+  .history-row .label { font-family: 'Press Start 2P', monospace; font-size: 8px; color: #6e6e75; letter-spacing: 1px; }
+  .h-tag { font-size: 14px; padding: 2px 6px; border: 1px solid #2a2a30; color: #6e6e75; letter-spacing: 1px; }
+  .h-tag.win { color: #5dd39e; border-color: #5dd39e; }
+  .h-tag.loss { color: #ff5f56; border-color: #ff5f56; }
+  .stage { flex: 1; position: relative; overflow: hidden; background: #060a14; border-bottom: 1px dashed #2a2a30; }
+  .world { position: absolute; left: 0; right: 0; bottom: 0; will-change: transform; background: linear-gradient(180deg, #000208 0%, #050818 8%, #0a0a25 18%, #1a1545 28%, #2a1f55 40%, #25305a 52%, #1a3550 65%, #0a2438 78%, #060a14 90%, #060a14 100%); }
+  .zone { position: absolute; left: 0; right: 0; pointer-events: none; }
+  .star { position: absolute; width: 2px; height: 2px; background: #f4ecd8; opacity: 0.75; }
+  .star.bright { width: 3px; height: 3px; background: #f4ecd8; opacity: 1; }
+  .planet-ring { position: absolute; border: 1px solid #6e6e75; border-radius: 50%; opacity: 0.6; }
+  .cloud-puff { position: absolute; pointer-events: none; }
+  .cliff-container { position: absolute; left: 0; pointer-events: none; }
+  .water-container { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
+  .water-bg { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background: #060a14; }
+  .water-line { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: #4dd0e1; box-shadow: 0 0 10px rgba(77,208,225,0.7); z-index: 5; }
+  .wave-svg { position: absolute; left: 0; right: 0; width: 100%; }
+  .shark-fin { position: absolute; pointer-events: none; will-change: left, transform; z-index: 4; }
+  .parachute { position: absolute; left: 50%; bottom: 50px; transform: translate(-50%, 16px) scale(0); transform-origin: center bottom; opacity: 0; transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease; pointer-events: none; }
+  .parachute.deployed { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  .danger-label { position: absolute; bottom: 4px; right: 12px; font-family: 'Press Start 2P', monospace; font-size: 7px; color: #4dd0e1; letter-spacing: 1.5px; z-index: 6; }
+  .pnl-readout { position: absolute; top: 12px; left: 50%; transform: translateX(-50%) rotate(-1.2deg); padding: 4px 18px; background: transparent; border: 1.5px dashed #6e6e75; font-family: 'Caveat', cursive; font-weight: 700; font-size: 32px; letter-spacing: 1px; color: #6e6e75; z-index: 8; min-width: 120px; text-align: center; line-height: 1; }
+  .pnl-readout.up { color: #5dd39e; border-color: #5dd39e; text-shadow: 0.5px 0.5px 0 rgba(93,211,158,0.3); }
+  .pnl-readout.down { color: #ff5f56; border-color: #ff5f56; text-shadow: 0.5px 0.5px 0 rgba(255,95,86,0.3); }
+  .lev-tag { position: absolute; top: 12px; right: 12px; font-family: 'Press Start 2P', monospace; font-size: 9px; color: #6e6e75; letter-spacing: 1.5px; padding: 4px 8px; border: 1px solid #2a2a30; background: rgba(10,10,12,0.85); z-index: 8; }
+  .lev-tag.show { color: #ffb347; border-color: #ffb347; }
+  .tier-tag { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); font-family: 'Press Start 2P', monospace; font-size: 8px; color: #6e6e75; letter-spacing: 2px; padding: 3px 10px; border: 1px solid #2a2a30; background: rgba(10,10,12,0.7); z-index: 8; transition: all 0.4s; opacity: 0.7; }
+  .tier-tag.ground { color: #5dd39e; border-color: #1d4f30; }
+  .tier-tag.clouds { color: #b6c2e1; border-color: #45527a; opacity: 1; }
+  .tier-tag.strato { color: #c8a4f0; border-color: #5a3a8a; opacity: 1; text-shadow: 0 0 8px rgba(200,164,240,0.4); }
+  .tier-tag.space { color: #ffd700; border-color: #806000; opacity: 1; text-shadow: 0 0 10px rgba(255,215,0,0.5); }
+  .price-tick { position: absolute; top: 80px; left: 12px; font-size: 14px; color: #6e6e75; letter-spacing: 1px; z-index: 8; }
+  .figure-wrap { position: absolute; left: 0; bottom: 0; z-index: 6; will-change: transform; transform: translate3d(0,0,0); transition: transform 0.18s ease; }
+  #flameGroup { transform-origin: 50% 0%; transform-box: fill-box; transition: opacity 0.1s; }
+  .banner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.5); opacity: 0; padding: 16px 28px; font-family: 'Press Start 2P', monospace; font-size: 18px; letter-spacing: 2px; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; z-index: 10; border: 2px solid; }
+  .banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .banner.win { background: #050507; border-color: #5dd39e; color: #5dd39e; box-shadow: 0 0 30px rgba(93,211,158,0.4); }
+  .banner.loss { background: #050507; border-color: #ff5f56; color: #ff5f56; box-shadow: 0 0 30px rgba(255,95,86,0.4); }
+  .controls { padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .slider-row { display: flex; align-items: center; gap: 12px; }
+  .slider-label { font-family: 'Caveat', cursive; font-weight: 500; font-size: 18px; color: #6e6e75; min-width: 78px; transform: rotate(-0.8deg); }
+  .hand-slider { -webkit-appearance: none; appearance: none; flex: 1; height: 28px; background: transparent; cursor: pointer; outline: none; }
+  .hand-slider::-webkit-slider-runnable-track { height: 1px; background: transparent; border-top: 1.5px dashed #6e6e75; }
+  .hand-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; background: #08080f; border: 1.6px solid #f4ecd8; border-radius: 50%; margin-top: -10px; cursor: pointer; transition: transform 0.1s; }
+  .hand-slider::-webkit-slider-thumb:active { transform: scale(1.15); }
+  .hand-slider::-moz-range-track { height: 1px; background: transparent; border-top: 1.5px dashed #6e6e75; }
+  .hand-slider::-moz-range-thumb { width: 22px; height: 22px; background: #08080f; border: 1.6px solid #f4ecd8; border-radius: 50%; cursor: pointer; }
+  .hand-slider:disabled { opacity: 0.3; pointer-events: none; }
+  .slider-value { font-family: 'Caveat', cursive; font-weight: 700; font-size: 22px; color: #f4ecd8; min-width: 56px; text-align: right; transform: rotate(-1deg); }
+  .wager-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .chip { padding: 8px 0; background: transparent; border: 1.5px dashed #2a2a30; color: #6e6e75; font-family: 'Caveat', cursive; font-weight: 600; font-size: 22px; cursor: pointer; transition: all 0.12s; transform: rotate(0deg); }
+  .chip:nth-child(1) { transform: rotate(-0.6deg); }
+  .chip:nth-child(2) { transform: rotate(0.4deg); }
+  .chip:nth-child(3) { transform: rotate(-0.4deg); }
+  .chip:nth-child(4) { transform: rotate(0.6deg); }
+  .chip:hover { color: #f4ecd8; border-color: #6e6e75; }
+  .chip.active { background: rgba(244,236,216,0.08); color: #f4ecd8; border-color: #f4ecd8; border-style: solid; }
+  .chip.disabled { opacity: 0.25; pointer-events: none; }
+  .action { padding: 16px 0; background: transparent; border: 2px dashed #f4ecd8; color: #f4ecd8; font-family: 'Caveat', cursive; font-weight: 700; font-size: 32px; letter-spacing: 2px; cursor: pointer; transition: all 0.1s; transform: rotate(-0.8deg); }
+  .action:hover { background: rgba(244,236,216,0.05); }
+  .action:active { transform: rotate(-0.8deg) scale(0.97); }
+  .action.stop { color: #ff5f56; border-color: #ff5f56; border-style: solid; animation: pulseStop 0.8s ease-in-out infinite; }
+  @keyframes pulseStop { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+  .action.disabled { color: #444; border-color: #2a2a30; pointer-events: none; }
+  .splash-particle { position: absolute; width: 3px; height: 3px; background: #4dd0e1; pointer-events: none; z-index: 6; }
+  .figure-line { stroke: #f4ecd8; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .fig-glow { filter: none; }
+  .helmet-fill { fill: #08080f; stroke: #f4ecd8; stroke-width: 1.4; }
+  .visor { fill: #4dd0e1; opacity: 0.85; }
+  .hand-foot { fill: #08080f; stroke: #f4ecd8; stroke-width: 1.2; }
+</style>
+</head>
+<body>
+<div class="cabinet">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="brand">game</div>
+      <button class="help-btn" id="helpBtn">?</button>
+    </div>
+    <div class="topbar-right">
+      <button class="connect-btn" id="connectBtn">connect</button>
+      <div class="balance"><span class="lab">bal</span><span id="bal">$100.00</span></div>
+    </div>
+  </div>
+  <div class="history-row">
+    <span class="label">LAST 5</span>
+    <span class="h-tag" id="h0">—</span><span class="h-tag" id="h1">—</span>
+    <span class="h-tag" id="h2">—</span><span class="h-tag" id="h3">—</span><span class="h-tag" id="h4">—</span>
+  </div>
+  <div class="stage" id="stage">
+    <!-- the world: 4x stage tall, scrolls vertically based on altitude -->
+    <div class="world" id="world">
+      <!-- SPACE zone: stars + planets, top of world -->
+      <div class="zone" id="zoneSpace"></div>
+      <!-- STRATOSPHERE zone -->
+      <div class="zone" id="zoneStrato"></div>
+      <!-- CLOUDS zone -->
+      <div class="zone" id="zoneCloud"></div>
+      <!-- GROUND zone: cliff + water + low clouds -->
+      <div class="zone" id="zoneGround">
+        <div class="cliff-container" id="cliff"></div>
+        <div class="water-container" id="water">
+          <div class="water-bg"></div>
+          <svg class="wave-svg" id="waveSvg" viewBox="0 0 400 100" preserveAspectRatio="none" style="position: absolute; left: 0; right: 0; top: 0; bottom: 0; width: 100%; height: 100%; z-index: 3;">
+            <path id="wave0" stroke="#f4ecd8" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.9"/>
+            <path id="wave1" stroke="#f4ecd8" stroke-width="1.3" fill="none" stroke-linecap="round" opacity="0.75"/>
+            <path id="wave2" stroke="#f4ecd8" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.6"/>
+            <path id="wave3" stroke="#f4ecd8" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.45"/>
+            <path id="wave4" stroke="#f4ecd8" stroke-width="1" fill="none" stroke-linecap="round" opacity="0.35"/>
+            <path id="wave5" stroke="#f4ecd8" stroke-width="0.9" fill="none" stroke-linecap="round" opacity="0.28"/>
+            <g id="foam"></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <div class="price-tick" id="price">ETH $3500.00</div>
+    <div class="lev-tag" id="levTag">—</div>
+    <div class="tier-tag ground" id="tierTag">SEA LEVEL</div>
+    <div class="pnl-readout" id="pnl">PNL —</div>
+    <div class="danger-label" id="dangerLabel">— LIQUIDATION ZONE —</div>
+    <div class="figure-wrap" id="fig">
+      <svg class="parachute" id="parachute" width="80" height="44" viewBox="0 0 80 44">
+        <!-- canopy: hand-drawn dome -->
+        <path d="M 4 30 C 8 12, 22 8, 40 8 C 58 8, 72 12, 76 30 C 70 26, 62 29, 56 27 C 48 30, 40 27, 32 30 C 24 27, 14 29, 4 30 Z" fill="#ff5f56" stroke="#9a2828" stroke-width="0.8" stroke-linejoin="round"/>
+        <!-- subtle panel lines (curve from base up onto canopy, never above) -->
+        <path d="M 14 28 Q 19 17 25 11" stroke="#9a2828" stroke-width="0.4" fill="none" opacity="0.55"/>
+        <path d="M 28 30 Q 32 19 36 9" stroke="#9a2828" stroke-width="0.4" fill="none" opacity="0.55"/>
+        <path d="M 52 30 Q 48 19 44 9" stroke="#9a2828" stroke-width="0.4" fill="none" opacity="0.55"/>
+        <path d="M 66 28 Q 61 17 55 11" stroke="#9a2828" stroke-width="0.4" fill="none" opacity="0.55"/>
+        <!-- sketchy strings: cream, slight wobble -->
+        <path d="M 8 29 Q 20 36 34 44" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.75" stroke-linecap="round"/>
+        <path d="M 22 29 Q 30 36 37 44" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.75" stroke-linecap="round"/>
+        <path d="M 40 8 L 40 44" stroke="#f4ecd8" stroke-width="0.6" opacity="0.75" stroke-linecap="round"/>
+        <path d="M 58 29 Q 50 36 43 44" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.75" stroke-linecap="round"/>
+        <path d="M 72 29 Q 60 36 46 44" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.75" stroke-linecap="round"/>
+      </svg>
+      <svg width="36" height="58" viewBox="0 0 36 58" class="fig-glow">
+        <!-- jetpack: simple sketchy box on back, hand-drawn feel -->
+        <g id="jetpack">
+          <!-- shoulder straps -->
+          <path d="M 14 13 Q 15 11 16.5 11" stroke="#f4ecd8" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+          <path d="M 22 13 Q 21 11 19.5 11" stroke="#f4ecd8" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+          <!-- main body: wobbly rectangle behind torso -->
+          <path d="M 11 13 C 11 12, 12 12, 13 12 L 23 12 C 24 12, 25 12, 25 13 L 25 27 C 25 28, 24 28, 23 28 L 13 28 C 12 28, 11 28, 11 27 Z" fill="#08080f" stroke="#f4ecd8" stroke-width="1.2" stroke-linejoin="round"/>
+          <!-- second-pass overlapping stroke (sketchy buildup) -->
+          <path d="M 11.3 13.2 L 24.7 13.2 M 11.3 27.5 L 24.7 27.5" stroke="#f4ecd8" stroke-width="0.5" opacity="0.5" stroke-linecap="round"/>
+          <!-- inner panel lines (sketchy) -->
+          <line x1="12" y1="17" x2="24" y2="17" stroke="#f4ecd8" stroke-width="0.5" opacity="0.55"/>
+          <line x1="12" y1="22" x2="24" y2="22" stroke="#f4ecd8" stroke-width="0.5" opacity="0.4"/>
+          <!-- nozzles at the bottom: two small openings -->
+          <path d="M 12 28 L 12 30 L 14.5 30 L 14.5 28" stroke="#f4ecd8" stroke-width="1" fill="#08080f" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 21.5 28 L 21.5 30 L 24 30 L 24 28" stroke="#f4ecd8" stroke-width="1" fill="#08080f" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <!-- flames from nozzles: sketchy teardrop shapes -->
+        <g id="flameGroup" opacity="0">
+          <!-- outer flame: warm orange -->
+          <path d="M 13.25 30 C 12 35, 10 40, 12 45 C 13 42, 13.5 44, 13.5 41 C 14 44, 14.8 41, 15 43 C 15.5 38, 15 34, 14 30 Z" fill="#ff9933" stroke="#ff9933" stroke-width="0.5" opacity="0.85"/>
+          <path d="M 22.75 30 C 21.5 35, 19.5 40, 21.5 45 C 22.5 42, 23 44, 23 41 C 23.5 44, 24.3 41, 24.5 43 C 25 38, 24.5 34, 23.5 30 Z" fill="#ff9933" stroke="#ff9933" stroke-width="0.5" opacity="0.85"/>
+          <!-- inner flame: bright cream -->
+          <path d="M 13.25 31 C 12.5 34, 11.5 38, 12.5 41 C 13.2 39, 13.5 40, 13.5 38 C 14 40, 14.5 38, 14.5 39 C 15 36, 14.5 33, 14 31 Z" fill="#ffd966" stroke="none" opacity="0.95"/>
+          <path d="M 22.75 31 C 22 34, 21 38, 22 41 C 22.7 39, 23 40, 23 38 C 23.5 40, 24 38, 24 39 C 24.5 36, 24 33, 23.5 31 Z" fill="#ffd966" stroke="none" opacity="0.95"/>
+        </g>
+        <!-- body in front of jetpack -->
+        <!-- helmet: wobbly hand-drawn -->
+        <path d="M 12.5 6 C 12.5 2, 23 2, 23.5 6.5 C 23.5 10, 22 11, 18 11 C 14 11, 12.5 10, 12.5 6 Z" class="helmet-fill" id="helmet"/>
+        <!-- second-pass overlapping stroke for hand-drawn feel -->
+        <path d="M 12.7 6 C 13 2.5, 22.5 2.5, 23.3 6.3" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.5"/>
+        <!-- visor: small cyan strip -->
+        <rect x="14" y="5.5" width="8" height="2" rx="0.5" class="visor" id="visor"/>
+        <!-- chin strap -->
+        <line x1="14" y1="9" x2="22" y2="9" stroke="#f4ecd8" stroke-width="0.6" id="strap" opacity="0.7"/>
+        <line class="figure-line" id="torso" x1="18" y1="11" x2="18" y2="28"/>
+        <line class="figure-line" id="upArmL" x1="18" y1="14" x2="14" y2="21"/>
+        <line class="figure-line" id="loArmL" x1="14" y1="21" x2="11" y2="28"/>
+        <line class="figure-line" id="upArmR" x1="18" y1="14" x2="22" y2="21"/>
+        <line class="figure-line" id="loArmR" x1="22" y1="21" x2="25" y2="28"/>
+        <!-- hands -->
+        <circle class="hand-foot" cx="11" cy="28" r="1.4" id="handL"/>
+        <circle class="hand-foot" cx="25" cy="28" r="1.4" id="handR"/>
+        <line class="figure-line" id="upLegL" x1="18" y1="28" x2="14" y2="38"/>
+        <line class="figure-line" id="loLegL" x1="14" y1="38" x2="11" y2="48"/>
+        <line class="figure-line" id="upLegR" x1="18" y1="28" x2="22" y2="38"/>
+        <line class="figure-line" id="loLegR" x1="22" y1="38" x2="25" y2="48"/>
+        <!-- feet -->
+        <ellipse class="hand-foot" cx="11" cy="48.5" rx="2.2" ry="1.2" id="footL"/>
+        <ellipse class="hand-foot" cx="25" cy="48.5" rx="2.2" ry="1.2" id="footR"/>
+      </svg>
+    </div>
+    <div class="banner" id="banner"></div>
+  </div>
+  <div class="controls">
+    <div class="slider-row">
+      <input type="range" class="hand-slider" id="levSlider" min="75" max="250" value="100" step="1">
+      <div class="slider-value" id="levValue">100x</div>
+    </div>
+    <div class="wager-row">
+      <button class="chip" data-amt="1">$1</button>
+      <button class="chip active" data-amt="5">$5</button>
+      <button class="chip" data-amt="10">$10</button>
+      <button class="chip" data-amt="25">$25</button>
+    </div>
+    <div class="slider-row">
+      <input type="range" class="hand-slider" id="wagerSlider" min="1" max="100" value="5" step="1">
+      <div class="slider-value" id="wagerValue">$5</div>
+    </div>
+    <button class="action" id="action">jump</button>
+  </div>
+  <div class="help-overlay" id="helpOverlay">
+    <div class="help-card">
+      <div class="help-title">how this works</div>
+      <ul class="help-list">
+        <li>pick leverage (75–250×) and wager</li>
+        <li>tap jump → opens a long on eth</li>
+        <li>price up → flames fire, you rise</li>
+        <li>price down → no flames, you fall</li>
+        <li>hit water → liquidated, wager gone</li>
+        <li>tap stop anytime → locks in your pnl</li>
+        <li>house fee: 0.8% of wager. wins pay 2.5% to avantis</li>
+      </ul>
+      <button class="help-got-it" id="helpGotIt">got it</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), world = $('world'), fig = $('fig');
+  const pnlEl = $('pnl'), levTag = $('levTag'), tierTag = $('tierTag');
+  const action = $('action'), balEl = $('bal'), banner = $('banner');
+  const priceEl = $('price'), flameGroup = $('flameGroup');
+  const waves = [$('wave0'), $('wave1'), $('wave2'), $('wave3'), $('wave4'), $('wave5')];
+  const waveYBase = [10, 26, 42, 58, 74, 90];
+  const waveAmp = [3.5, 3, 2.5, 2, 1.6, 1.2];
+  const foam = $('foam'), cliffContainer = $('cliff'), water = $('water');
+  const zoneSpace = $('zoneSpace'), zoneStrato = $('zoneStrato'), zoneCloud = $('zoneCloud'), zoneGround = $('zoneGround');
+  const upArmL = $('upArmL'), loArmL = $('loArmL'), upArmR = $('upArmR'), loArmR = $('loArmR');
+  const upLegL = $('upLegL'), loLegL = $('loLegL'), upLegR = $('upLegR'), loLegR = $('loLegR');
+  const handL = $('handL'), handR = $('handR'), footL = $('footL'), footR = $('footR');
+  const helmet = $('helmet'), visor = $('visor'), strap = $('strap');
+  const dangerLabel = $('dangerLabel');
+  const parachute = $('parachute');
+
+  // ============ WORLD/CAMERA SYSTEM ============
+  // worldHeight = 4 * stageH. Background scrolls vertically based on character altitude.
+  // figAlt = character altitude in stage-bottom-px (0 = bottom of stage).
+  // SCROLL_CEILING = altitude at which character stops climbing screen, world starts scrolling.
+  // bgOffset = max(0, figAlt - SCROLL_CEILING). World translates DOWN by this amount.
+
+  let stageW = 0, stageH = 0, cliffEdgeX = 0, cliffTopY = 0, waterY = 0;
+  let SCROLL_CEILING = 0;
+  let WORLD_HEIGHT = 0;
+
+  function measure() {
+    const r = stage.getBoundingClientRect();
+    stageW = r.width; stageH = r.height;
+    cliffEdgeX = stageW * 0.40; cliffTopY = stageH * 0.50; waterY = stageH * 0.78;
+    SCROLL_CEILING = stageH * 0.65; // figure can rise up to here before camera engages
+    WORLD_HEIGHT = stageH * 4;
+  }
+
+  function setupWorld() {
+    measure();
+    world.style.height = WORLD_HEIGHT + 'px';
+
+    // ground zone: bottom of world, contains cliff + water
+    zoneGround.style.bottom = '0';
+    zoneGround.style.height = stageH + 'px';
+
+    // cloud zone: stageH to 2*stageH
+    zoneCloud.style.bottom = stageH + 'px';
+    zoneCloud.style.height = stageH + 'px';
+
+    // strato zone
+    zoneStrato.style.bottom = (stageH * 2) + 'px';
+    zoneStrato.style.height = stageH + 'px';
+
+    // space zone
+    zoneSpace.style.bottom = (stageH * 3) + 'px';
+    zoneSpace.style.height = stageH + 'px';
+
+    buildCliff();
+    buildWater();
+    buildClouds();
+    buildStrato();
+    buildSpace();
+  }
+
+  function buildCliff() {
+    cliffContainer.innerHTML = '';
+    const w = stageW * 0.40, h = stageH * 0.32;
+    cliffContainer.style.width = w + 'px';
+    cliffContainer.style.height = h + 'px';
+    cliffContainer.style.bottom = (stageH * 0.22) + 'px';
+    const svg = `
+<svg viewBox="0 0 160 130" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
+  <!-- back range silhouette: faint hand-drawn outline -->
+  <path d="M -10 130 L 0 80 L 25 55 L 50 75 L 85 40 L 120 65 L 150 30 L 170 90 L 170 130 Z" fill="#0a0a14" opacity="0.85"/>
+  <path d="M 0 80 L 25 55 L 50 75 L 85 40 L 120 65 L 150 30" stroke="#f4ecd8" stroke-width="0.7" fill="none" opacity="0.35" stroke-linecap="round"/>
+  <!-- main cliff body: dark fill with cream outline, irregular bottom edge -->
+  <path d="M 0 15 L 130 15 L 145 28 L 155 55 L 158 85 L 156 115 L 154 122 L 148 128 L 140 124 L 130 130 L 118 125 L 108 130 L 96 126 L 84 130 L 72 125 L 60 130 L 48 126 L 36 130 L 22 124 L 10 130 L 0 128 Z" fill="#08080f" stroke="#f4ecd8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- second-pass overlapping stroke for sketchy feel -->
+  <path d="M 0 15.5 L 130 15.5 L 145 28.5 L 155 55.5 L 158 85.5" stroke="#f4ecd8" stroke-width="0.6" fill="none" opacity="0.5" stroke-linejoin="round"/>
+  <!-- cross-hatching on shaded right face -->
+  <g stroke="#f4ecd8" stroke-width="0.5" opacity="0.5" stroke-linecap="round">
+    <line x1="135" y1="35" x2="148" y2="48"/>
+    <line x1="133" y1="45" x2="150" y2="62"/>
+    <line x1="135" y1="55" x2="153" y2="73"/>
+    <line x1="138" y1="65" x2="155" y2="83"/>
+    <line x1="138" y1="75" x2="156" y2="93"/>
+    <line x1="140" y1="85" x2="157" y2="103"/>
+    <line x1="140" y1="95" x2="156" y2="113"/>
+    <line x1="142" y1="105" x2="155" y2="120"/>
+  </g>
+  <!-- vertical crack -->
+  <path d="M 80 15 Q 78 35 82 55 Q 85 75 82 100 Q 80 115 84 130" stroke="#f4ecd8" stroke-width="0.5" fill="none" opacity="0.35" stroke-linecap="round"/>
+  <!-- doodled grass tufts on top edge -->
+  <path d="M 18 15 q 1 -6 2 -1 q 1 -7 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M 28 15 q 1 -7 2 -2 q 1 -6 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M 56 15 q 1 -8 2 -2 q 1 -7 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M 68 15 q 1 -7 2 -2 q 1 -6 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M 96 15 q 1 -8 2 -2 q 1 -7 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M 110 15 q 1 -6 2 -1 q 1 -5 2 -1" stroke="#f4ecd8" stroke-width="0.7" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <!-- splash/water-line marks where cliff base meets the water (blend) -->
+  <g stroke="#f4ecd8" stroke-width="0.7" fill="none" opacity="0.65" stroke-linecap="round">
+    <path d="M 8 132 q 4 -3 8 0 q 4 3 8 0"/>
+    <path d="M 32 134 q 4 -2 7 0 q 4 2 7 0"/>
+    <path d="M 56 132 q 4 -3 8 0 q 4 2 7 0"/>
+    <path d="M 82 134 q 4 -2 7 0 q 4 3 7 0"/>
+    <path d="M 108 132 q 4 -3 7 0 q 3 2 6 0"/>
+    <path d="M 132 135 q 4 -2 7 0"/>
+    <line x1="20" y1="128" x2="22" y2="125" opacity="0.5"/>
+    <line x1="44" y1="129" x2="46" y2="126" opacity="0.5"/>
+    <line x1="68" y1="128" x2="70" y2="125" opacity="0.5"/>
+    <line x1="100" y1="129" x2="102" y2="126" opacity="0.5"/>
+  </g>
+  <!-- doodled small rocks at base, partially in water -->
+  <circle cx="22" cy="125" r="2.5" fill="#08080f" stroke="#f4ecd8" stroke-width="0.7" opacity="0.85"/>
+  <circle cx="48" cy="129" r="2" fill="#08080f" stroke="#f4ecd8" stroke-width="0.7" opacity="0.8"/>
+  <circle cx="78" cy="124" r="2.2" fill="#08080f" stroke="#f4ecd8" stroke-width="0.7" opacity="0.85"/>
+  <circle cx="105" cy="127" r="2.4" fill="#08080f" stroke="#f4ecd8" stroke-width="0.7" opacity="0.8"/>
+  <circle cx="135" cy="130" r="2" fill="#08080f" stroke="#f4ecd8" stroke-width="0.7" opacity="0.75"/>
+</svg>`;
+    cliffContainer.innerHTML = svg;
+  }
+
+  function buildWater() {
+    water.style.bottom = '0';
+    water.style.height = (stageH * 0.22) + 'px';
+    // foam crests rebuilt each tick
+  }
+
+  function buildClouds() {
+    zoneCloud.innerHTML = '';
+    // multiple cloud puffs at various positions in the cloud zone
+    const positions = [
+      { left: 8, bottom: 0.15, scale: 1.1, opacity: 0.7 },
+      { left: 55, bottom: 0.22, scale: 1.4, opacity: 0.85 },
+      { left: 30, bottom: 0.40, scale: 0.9, opacity: 0.6 },
+      { left: 70, bottom: 0.55, scale: 1.2, opacity: 0.75 },
+      { left: 12, bottom: 0.65, scale: 1.0, opacity: 0.65 },
+      { left: 45, bottom: 0.75, scale: 1.3, opacity: 0.8 },
+      { left: 78, bottom: 0.85, scale: 0.85, opacity: 0.5 },
+      { left: 22, bottom: 0.90, scale: 1.1, opacity: 0.7 }
+    ];
+    positions.forEach((p, i) => {
+      const cloud = document.createElement('div');
+      cloud.className = 'cloud-puff';
+      cloud.style.left = p.left + '%';
+      cloud.style.bottom = (p.bottom * 100) + '%';
+      cloud.style.opacity = p.opacity;
+      cloud.style.transform = `scale(${p.scale})`;
+      cloud.innerHTML = `<svg width="80" height="32" viewBox="0 0 80 32"><ellipse cx="20" cy="20" rx="14" ry="9" fill="#b6c2e1"/><ellipse cx="38" cy="14" rx="18" ry="11" fill="#c8d2ed"/><ellipse cx="58" cy="20" rx="16" ry="9" fill="#b6c2e1"/><ellipse cx="40" cy="22" rx="20" ry="7" fill="#a5b3d8"/></svg>`;
+      zoneCloud.appendChild(cloud);
+    });
+    // also add a few low/sparse clouds in the ground zone (high up)
+    [
+      { left: 18, top: 8, scale: 0.7, opacity: 0.4 },
+      { left: 60, top: 14, scale: 0.6, opacity: 0.35 }
+    ].forEach(p => {
+      const cloud = document.createElement('div');
+      cloud.className = 'cloud-puff';
+      cloud.style.left = p.left + '%';
+      cloud.style.top = p.top + '%';
+      cloud.style.opacity = p.opacity;
+      cloud.style.transform = `scale(${p.scale})`;
+      cloud.innerHTML = `<svg width="60" height="22" viewBox="0 0 60 22"><ellipse cx="15" cy="14" rx="10" ry="6" fill="#3a4565"/><ellipse cx="30" cy="10" rx="13" ry="7" fill="#4a5575"/><ellipse cx="45" cy="14" rx="11" ry="6" fill="#3a4565"/></svg>`;
+      zoneGround.appendChild(cloud);
+    });
+  }
+
+  function buildStrato() {
+    zoneStrato.innerHTML = '';
+    // sparse high clouds, atmospheric haze
+    const positions = [
+      { left: 20, bottom: 0.20, scale: 0.7, opacity: 0.35 },
+      { left: 65, bottom: 0.45, scale: 0.6, opacity: 0.3 },
+      { left: 35, bottom: 0.70, scale: 0.5, opacity: 0.25 },
+      { left: 80, bottom: 0.85, scale: 0.4, opacity: 0.2 }
+    ];
+    positions.forEach(p => {
+      const cloud = document.createElement('div');
+      cloud.className = 'cloud-puff';
+      cloud.style.left = p.left + '%';
+      cloud.style.bottom = (p.bottom * 100) + '%';
+      cloud.style.opacity = p.opacity;
+      cloud.style.transform = `scale(${p.scale})`;
+      cloud.innerHTML = `<svg width="80" height="20" viewBox="0 0 80 20"><ellipse cx="40" cy="10" rx="38" ry="6" fill="#b6a8e1"/></svg>`;
+      zoneStrato.appendChild(cloud);
+    });
+    // few dim stars in upper strato
+    for (let i = 0; i < 10; i++) {
+      const s = document.createElement('div');
+      s.className = 'star';
+      s.style.left = Math.random() * 100 + '%';
+      s.style.bottom = (50 + Math.random() * 50) + '%';
+      s.style.opacity = (Math.random() * 0.4 + 0.2).toFixed(2);
+      zoneStrato.appendChild(s);
+    }
+  }
+
+  function buildSpace() {
+    zoneSpace.innerHTML = '';
+    // many stars
+    for (let i = 0; i < 70; i++) {
+      const s = document.createElement('div');
+      s.className = 'star' + (Math.random() > 0.85 ? ' bright' : '');
+      s.style.left = Math.random() * 100 + '%';
+      s.style.bottom = Math.random() * 100 + '%';
+      s.style.opacity = (Math.random() * 0.6 + 0.4).toFixed(2);
+      zoneSpace.appendChild(s);
+    }
+    // SUN: bright disk with corona and rays, upper-center area
+    const sun = document.createElement('div');
+    sun.style.position = 'absolute';
+    sun.style.left = '32%';
+    sun.style.top = '14%';
+    sun.style.width = '90px';
+    sun.style.height = '90px';
+    sun.style.pointerEvents = 'none';
+    sun.innerHTML = `<svg width="120" height="120" viewBox="0 0 120 120" style="display:block; transform: translate(-15px, -15px);">
+      <path d="M 38 60 C 38 42, 52 36, 62 36 C 76 38, 84 50, 82 64 C 80 78, 66 84, 54 82 C 42 80, 36 70, 38 60 Z" fill="none" stroke="#f4ecd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 39 60 C 39 43, 53 37, 62 37 C 75 39, 83 50, 81 63" fill="none" stroke="#f4ecd8" stroke-width="0.7" opacity="0.5" stroke-linecap="round" transform="translate(0.5, -0.3)"/>
+      <g stroke="#f4ecd8" fill="none" stroke-width="1.4" stroke-linecap="round" opacity="0.85">
+        <line x1="60" y1="22" x2="60" y2="10"/>
+        <line x1="60" y1="98" x2="60" y2="108"/>
+        <line x1="20" y1="60" x2="10" y2="60"/>
+        <line x1="100" y1="60" x2="110" y2="60"/>
+        <line x1="32" y1="32" x2="24" y2="24"/>
+        <line x1="88" y1="32" x2="96" y2="24"/>
+        <line x1="32" y1="88" x2="24" y2="96"/>
+        <line x1="88" y1="88" x2="96" y2="96"/>
+      </g>
+      <g stroke="#f4ecd8" fill="none" stroke-width="0.6" opacity="0.4" stroke-linecap="round">
+        <line x1="48" y1="52" x2="55" y2="59"/>
+        <line x1="46" y1="60" x2="53" y2="67"/>
+        <line x1="55" y1="48" x2="62" y2="55"/>
+        <line x1="52" y1="65" x2="59" y2="72"/>
+        <line x1="63" y1="50" x2="70" y2="57"/>
+        <line x1="60" y1="68" x2="67" y2="75"/>
+      </g>
+    </svg>`;
+    zoneSpace.appendChild(sun);
+    // a planet with ring (moved away from the sun) — sketchy outline
+    const planet = document.createElement('div');
+    planet.style.position = 'absolute';
+    planet.style.right = '8%';
+    planet.style.top = '52%';
+    planet.style.width = '40px';
+    planet.style.height = '40px';
+    planet.innerHTML = `<svg width="40" height="40" viewBox="0 0 40 40">
+      <path d="M 4 20 C 4 8, 14 4, 22 6 C 32 8, 38 18, 36 28 C 32 36, 22 38, 14 34 C 6 30, 3 24, 4 20 Z" fill="none" stroke="#f4ecd8" stroke-width="1.2" stroke-linecap="round"/>
+      <g stroke="#f4ecd8" stroke-width="0.5" opacity="0.45" fill="none" stroke-linecap="round">
+        <line x1="14" y1="14" x2="22" y2="22"/>
+        <line x1="12" y1="20" x2="20" y2="28"/>
+        <line x1="18" y1="12" x2="26" y2="20"/>
+        <line x1="20" y1="26" x2="28" y2="32"/>
+      </g>
+    </svg>`;
+    zoneSpace.appendChild(planet);
+    const ring = document.createElement('div');
+    ring.style.position = 'absolute';
+    ring.style.right = '2%';
+    ring.style.top = '54%';
+    ring.style.width = '60px';
+    ring.style.height = '14px';
+    ring.style.transform = 'rotate(-18deg)';
+    ring.innerHTML = `<svg width="60" height="14" viewBox="0 0 60 14"><ellipse cx="30" cy="7" rx="28" ry="5" fill="none" stroke="#f4ecd8" stroke-width="0.9" opacity="0.55"/></svg>`;
+    zoneSpace.appendChild(ring);
+    // a small moon — sketchy circle
+    const moon = document.createElement('div');
+    moon.style.position = 'absolute';
+    moon.style.left = '12%';
+    moon.style.top = '70%';
+    moon.style.width = '16px';
+    moon.style.height = '16px';
+    moon.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16"><path d="M 2 8 C 2 4, 6 2, 10 3 C 13 4, 14 8, 13 11 C 11 13, 7 14, 4 12 C 2 11, 1 9, 2 8 Z" fill="none" stroke="#f4ecd8" stroke-width="0.9" stroke-linecap="round"/></svg>`;
+    zoneSpace.appendChild(moon);
+  }
+
+  // ============ FIGURE POSING ============
+  const HIP = { x: 18, y: 28 };
+  const SHO = { x: 18, y: 14 };
+  const UP_LEG = 10, LO_LEG = 10;
+  const UP_ARM = 7, LO_ARM = 7;
+
+  function setLine(el, x1, y1, x2, y2) {
+    el.setAttribute('x1', x1.toFixed(1)); el.setAttribute('y1', y1.toFixed(1));
+    el.setAttribute('x2', x2.toFixed(1)); el.setAttribute('y2', y2.toFixed(1));
+  }
+  function applyLeg(upEl, loEl, footEl, hipAngle, kneeBend) {
+    const kx = HIP.x + Math.sin(hipAngle) * UP_LEG;
+    const ky = HIP.y + Math.cos(hipAngle) * UP_LEG;
+    const loAngle = hipAngle - kneeBend;
+    const fx = kx + Math.sin(loAngle) * LO_LEG;
+    const fy = ky + Math.cos(loAngle) * LO_LEG;
+    setLine(upEl, HIP.x, HIP.y, kx, ky);
+    setLine(loEl, kx, ky, fx, fy);
+    if (footEl) {
+      footEl.setAttribute('cx', fx.toFixed(1));
+      footEl.setAttribute('cy', (fy + 0.5).toFixed(1));
+    }
+  }
+  function applyArm(upEl, loEl, handEl, shoulderAngle, elbowBend) {
+    const ex = SHO.x + Math.sin(shoulderAngle) * UP_ARM;
+    const ey = SHO.y + Math.cos(shoulderAngle) * UP_ARM;
+    const loAngle = shoulderAngle - elbowBend;
+    const hx = ex + Math.sin(loAngle) * LO_ARM;
+    const hy = ey + Math.cos(loAngle) * LO_ARM;
+    setLine(upEl, SHO.x, SHO.y, ex, ey);
+    setLine(loEl, ex, ey, hx, hy);
+    if (handEl) {
+      handEl.setAttribute('cx', hx.toFixed(1));
+      handEl.setAttribute('cy', hy.toFixed(1));
+    }
+  }
+  function poseStanding() {
+    applyLeg(upLegL, loLegL, footL, -0.18, 0);
+    applyLeg(upLegR, loLegR, footR, 0.18, 0);
+    applyArm(upArmL, loArmL, handL, -0.4, 0.2);
+    applyArm(upArmR, loArmR, handR, 0.4, 0.2);
+  }
+  function poseRun(t) {
+    const phase = t * 0.5;
+    const phaseL = phase, phaseR = phase + Math.PI;
+    const hipL = Math.sin(phaseL) * 0.85;
+    const hipR = Math.sin(phaseR) * 0.85;
+    const kneeL = Math.max(0.2, 0.4 - Math.sin(phaseL) * 0.9);
+    const kneeR = Math.max(0.2, 0.4 - Math.sin(phaseR) * 0.9);
+    applyLeg(upLegL, loLegL, footL, hipL, kneeL);
+    applyLeg(upLegR, loLegR, footR, hipR, kneeR);
+    const shoL = Math.sin(phaseR) * 0.7;
+    const shoR = Math.sin(phaseL) * 0.7;
+    applyArm(upArmL, loArmL, handL, shoL - 0.1, 1.2);
+    applyArm(upArmR, loArmR, handR, shoR + 0.1, 1.2);
+  }
+  function poseJetpack(t) {
+    const wob = Math.sin(t * 0.3) * 0.08;
+    applyLeg(upLegL, loLegL, footL, -0.15 + wob, 0.2);
+    applyLeg(upLegR, loLegR, footR, 0.15 - wob, 0.2);
+    applyArm(upArmL, loArmL, handL, -1.4 + wob, 0.3);
+    applyArm(upArmR, loArmR, handR, 1.4 - wob, 0.3);
+  }
+  function poseFalling(t) {
+    const flailA = Math.sin(t * 0.35) * 0.7;
+    const flailB = Math.cos(t * 0.4) * 0.7;
+    applyLeg(upLegL, loLegL, footL, -0.6 + flailA, 0.6);
+    applyLeg(upLegR, loLegR, footR, 0.6 + flailB, 0.6);
+    applyArm(upArmL, loArmL, handL, -1.8 + flailB, 0.9);
+    applyArm(upArmR, loArmR, handR, 1.8 - flailA, 0.9);
+  }
+  function poseParachute() {
+    applyLeg(upLegL, loLegL, footL, -0.2, 0.1);
+    applyLeg(upLegR, loLegR, footR, 0.2, 0.1);
+    applyArm(upArmL, loArmL, handL, -2.4, 0.3);
+    applyArm(upArmR, loArmR, handR, 2.4, 0.3);
+  }
+
+  // ============ STATE ============
+  let state = 'IDLE', leverage = 100, wager = 5, balance = 100;
+  let entry = 3500, price = 3500, position = null, frame = 0, history = [];
+  let waveOffset = 0;
+  let figAlt = 0, vy = 0, vx = 0, bgOffset = 0;
+  const GRAVITY = 0.32, DRAG = 0.94, THRUST = 0.55, FALL_FORCE = 0.22, VY_CLAMP = 9;
+  const FIGURE_FOOT_OFFSET = 10;
+  const FIG_BODY_X = 18; // figure body center x within the 36-wide wrap
+
+  // GPU-composited transform-based positioning (lighter than bottom/left)
+  let curBobY = 0;
+  function setFig(x, alt, rot) {
+    const tx = (x - FIG_BODY_X).toFixed(1);
+    const ty = (FIGURE_FOOT_OFFSET - alt + curBobY).toFixed(1);
+    fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${(rot || 0).toFixed(1)}deg)`;
+  }
+
+  function placeFigureIdle() {
+    measure();
+    fig.style.transition = 'none';
+    figAlt = stageH - cliffTopY;
+    curBobY = 0;
+    setFig(8 + FIG_BODY_X, figAlt, 0);
+    bgOffset = 0;
+    world.style.transform = 'translate3d(0px, 0px, 0)';
+    setTimeout(() => { fig.style.transition = 'transform 0.18s ease'; }, 50);
+  }
+
+  // ============ AUDIO ============
+  let audioCtx = null;
+  function ensureAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
+  function beep(freq, dur, type, gain) {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain || 0.15, audioCtx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  }
+  function sweep(from, to, dur, type, gain) {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || 'square';
+    o.frequency.setValueAtTime(from, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(to, audioCtx.currentTime + dur);
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain || 0.15, audioCtx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  }
+  function noise(dur, gain) {
+    if (!audioCtx) return;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length);
+    const src = audioCtx.createBufferSource(), g = audioCtx.createGain();
+    g.gain.value = gain || 0.2; src.buffer = buf;
+    src.connect(g); g.connect(audioCtx.destination); src.start();
+  }
+
+  function setLev(v) { 
+    if (state !== 'IDLE') return; 
+    leverage = Math.max(2, Math.min(500, v)); 
+    $('levSlider').value = leverage;
+    $('levValue').textContent = leverage + 'x';
+  }
+  function setWager(v) { 
+    if (state !== 'IDLE') return; 
+    wager = Math.max(1, Math.min(balance, v)); 
+    $('wagerSlider').value = wager;
+    $('wagerValue').textContent = '$' + wager;
+    document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', parseInt(c.dataset.amt,10) === wager));
+  }
+  function refreshWagerMax() {
+    const slider = $('wagerSlider');
+    slider.max = Math.max(1, Math.floor(balance));
+    if (wager > balance) setWager(Math.max(1, Math.floor(balance)));
+  }
+  function disableControls(d) { 
+    document.querySelectorAll('.chip').forEach(el => el.classList.toggle('disabled', d));
+    $('levSlider').disabled = d;
+    $('wagerSlider').disabled = d;
+  }
+  function pushHistory(amt, win) {
+    history.push({ amt, win }); if (history.length > 5) history.shift();
+    for (let i = 0; i < 5; i++) {
+      const el = $('h' + i), h = history[i];
+      if (!h) { el.textContent = '—'; el.className = 'h-tag'; continue; }
+      el.textContent = (h.win ? '+' : '−') + '$' + Math.abs(h.amt).toFixed(2);
+      el.className = 'h-tag ' + (h.win ? 'win' : 'loss');
+    }
+  }
+
+  function setFlame(on, scale) {
+    if (on) {
+      flameGroup.setAttribute('opacity', '1');
+      flameGroup.style.transform = 'scaleY(' + (scale || 1).toFixed(2) + ')';
+    } else {
+      flameGroup.setAttribute('opacity', '0');
+      flameGroup.style.transform = 'scaleY(1)';
+    }
+  }
+
+  // ============ TIER DETECTION ============
+  let currentTier = 'ground';
+  function updateTier(pnlPct) {
+    let t;
+    if (pnlPct < 0.5) t = 'ground';
+    else if (pnlPct < 1.5) t = 'clouds';
+    else if (pnlPct < 3.5) t = 'strato';
+    else t = 'space';
+    if (t !== currentTier) {
+      currentTier = t;
+      tierTag.className = 'tier-tag ' + t;
+      const labels = { ground: 'SEA LEVEL', clouds: 'CLOUDS', strato: 'STRATOSPHERE', space: 'SPACE' };
+      tierTag.textContent = labels[t];
+      // ding sound on tier upgrade
+      if (state === 'LIVE') {
+        beep(1320, 0.08, 'sine', 0.12);
+        setTimeout(() => beep(1760, 0.08, 'sine', 0.1), 80);
+      }
+    }
+  }
+
+  // ============ GAME LOOP ============
+  function startJump() {
+    ensureAudio(); if (balance < wager) return;
+    state = 'RUNNING';
+    balance -= wager; balEl.textContent = '$' + balance.toFixed(2);
+    disableControls(true);
+    action.textContent = 'stop'; action.classList.remove('disabled'); action.classList.add('stop');
+    sweep(440, 880, 0.25, 'sawtooth', 0.1);
+    runPhase();
+  }
+
+  let runFrameCount = 0, runInterval = null;
+  function runPhase() {
+    measure();
+    fig.style.transition = 'transform 1.0s ease-out';
+    const runStartX = 8 + FIG_BODY_X;
+    const runEndX = cliffEdgeX - 18 + FIG_BODY_X;
+    runFrameCount = 0;
+    let runProgress = 0;
+    const runStartTime = performance.now();
+    runInterval = setInterval(() => {
+      poseRun(runFrameCount);
+      const elapsed = performance.now() - runStartTime;
+      runProgress = Math.min(1, elapsed / 1600);
+      const easeProgress = 1 - Math.pow(1 - runProgress, 3);
+      const x = runStartX + (runEndX - runStartX) * easeProgress;
+      curBobY = -Math.abs(Math.sin(runFrameCount * 0.5)) * 1.8;
+      fig.style.transition = 'none';
+      setFig(x, figAlt, 0);
+      runFrameCount += 1;
+      if (runFrameCount % 4 === 0) beep(660, 0.04, 'square', 0.06);
+    }, 50);
+    setTimeout(() => { clearInterval(runInterval); curBobY = 0; jumpPhase(); }, 1600);
+  }
+
+  function jumpPhase() {
+    state = 'JUMPING'; measure();
+    curBobY = 0;
+    fig.style.transition = 'transform 0.6s cubic-bezier(0.2, 0, 0.4, 1.4)';
+    figAlt = stageH - cliffTopY + 50;
+    setFig(cliffEdgeX + 56 + FIG_BODY_X, figAlt, -8);
+    poseJetpack(0);
+    sweep(660, 1320, 0.4, 'square', 0.12);
+    setTimeout(() => { enterAirborne(); }, 600);
+  }
+
+  function enterAirborne() {
+    measure(); state = 'LIVE';
+    entry = price; position = { lev: leverage, entry, wager };
+    levTag.textContent = leverage + 'x'; levTag.classList.add('show');
+    fig.style.transition = 'none';
+    world.style.transition = 'none';
+    curBobY = 0;
+    vy = 1.8; vx = 0;
+    frame = 0;
+  }
+
+  // pre-create foam line elements once (avoid innerHTML rebuild every frame)
+  const FOAM_COUNT = 7;
+  const foamLines = [];
+  for (let i = 0; i < FOAM_COUNT; i++) {
+    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    ln.setAttribute('stroke', '#f4ecd8');
+    ln.setAttribute('stroke-width', '1');
+    ln.setAttribute('stroke-linecap', 'round');
+    ln.setAttribute('opacity', '0.7');
+    foam.appendChild(ln);
+    foamLines.push(ln);
+  }
+
+  let lastBeepFrame = 0;
+  function tick() {
+    // animate water (multiple wobbly hand-drawn lines, manga-style)
+    waveOffset += 0.10;
+    for (let i = 0; i < 6; i++) {
+      const yb = waveYBase[i];
+      const a = waveAmp[i];
+      const ph = waveOffset * (1 - i * 0.08) + i * 0.7;
+      const x1c = 65 + Math.sin(ph) * 12;
+      const x2c = 165 + Math.sin(ph + 0.9) * 12;
+      const x3c = 265 + Math.sin(ph + 1.7) * 12;
+      const x4c = 365 + Math.sin(ph + 2.5) * 12;
+      const y1 = yb - a * Math.sin(ph);
+      const y2 = yb + a * 0.7 * Math.sin(ph + 1.2);
+      const y3 = yb - a * 0.85 * Math.sin(ph + 2.0);
+      const y4 = yb + a * Math.sin(ph + 2.8);
+      const yEnd = yb + a * 0.5 * Math.sin(ph + 3.5);
+      waves[i].setAttribute('d',
+        `M0,${yb.toFixed(1)} Q${x1c.toFixed(0)},${y1.toFixed(1)} ${x2c.toFixed(0)},${y2.toFixed(1)} T${x3c.toFixed(0)},${y3.toFixed(1)} T${x4c.toFixed(0)},${y4.toFixed(1)} T400,${yEnd.toFixed(1)}`
+      );
+    }
+
+    // foam crests — small ink ticks on the top wave only
+    for (let i = 0; i < FOAM_COUNT; i++) {
+      const x = i * 60;
+      const fx = x + (waveOffset * 8) % 60;
+      const fy = waveYBase[0] + Math.sin((x + waveOffset * 30) * 0.05) * 2 - 1;
+      const ln = foamLines[i];
+      ln.setAttribute('x1', (fx-2).toFixed(1));
+      ln.setAttribute('x2', (fx+2).toFixed(1));
+      ln.setAttribute('y1', (fy-1.5).toFixed(1));
+      ln.setAttribute('y2', (fy+1.5).toFixed(1));
+    }
+
+    price += (Math.random() - 0.485) * 0.32;
+    priceEl.textContent = 'ETH $' + price.toFixed(2);
+    if (state !== 'LIVE') return;
+    frame++; measure();
+    const move = (price - position.entry) / position.entry;
+    const pnlPct = move * position.lev;
+    const pnlDollars = pnlPct * position.wager;
+
+    if (pnlDollars >= 0) { pnlEl.textContent = '+$' + pnlDollars.toFixed(2); pnlEl.className = 'pnl-readout up'; }
+    else { const shown = Math.min(position.wager, Math.abs(pnlDollars)); pnlEl.textContent = '−$' + shown.toFixed(2); pnlEl.className = 'pnl-readout down'; }
+
+    // physics
+    let force = -GRAVITY;
+    if (pnlPct > 0) force += Math.min(pnlPct, 5) * THRUST;
+    else if (pnlPct < 0) force -= Math.min(1, -pnlPct) * FALL_FORCE;
+    vy += force; vy *= DRAG;
+    vy = Math.max(-VY_CLAMP, Math.min(VY_CLAMP * 1.5, vy));
+    figAlt += vy;
+    vx += (Math.sin(frame * 0.04) * 0.3 - vx * 0.1);
+
+    // no upper ceiling — figure can keep climbing into space
+    const minAlt = (stageH - waterY) - 4;
+
+    // camera scroll: figure stays at SCROLL_CEILING on screen, world translates down
+    const maxScroll = WORLD_HEIGHT - stageH;
+    const figScreenAlt = Math.min(figAlt, SCROLL_CEILING);
+    bgOffset = Math.max(0, Math.min(maxScroll, figAlt - SCROLL_CEILING));
+    world.style.transform = `translate3d(0px, ${bgOffset.toFixed(1)}px, 0)`;
+
+    // hide danger label when way above ground
+    dangerLabel.style.opacity = bgOffset > stageH * 0.5 ? '0' : '1';
+
+    const baseX = cliffEdgeX + 60;
+    const figX = baseX + vx * 8;
+
+    updateTier(pnlPct);
+
+    let rotation = 0;
+    if (pnlPct > 0.03) {
+      const flameScale = 1 + Math.min(2, pnlPct) * 0.6 + Math.sin(frame * 0.6) * 0.18;
+      setFlame(true, flameScale);
+      rotation = -Math.min(15, pnlPct * 10);
+      poseJetpack(frame);
+      if (frame - lastBeepFrame > 18) { beep(880 + Math.min(pnlPct, 3) * 220, 0.05, 'sine', 0.08); lastBeepFrame = frame; }
+    } else if (pnlPct < -0.03) {
+      setFlame(false);
+      rotation = (frame * 7) % 360;
+      poseFalling(frame);
+      if (frame - lastBeepFrame > 10) { beep(220 - Math.abs(pnlPct) * 50, 0.06, 'sawtooth', 0.08); lastBeepFrame = frame; }
+    } else {
+      setFlame(false);
+      poseStanding();
+    }
+
+    setFig(figX, figScreenAlt, rotation);
+
+    if (figAlt <= minAlt) splat();
+    if (pnlPct <= -1) splat();
+  }
+
+  function stop() {
+    if (state !== 'LIVE') return;
+    state = 'STOPPED'; setFlame(false);
+    parachute.classList.add('deployed');
+    const move = (price - position.entry) / position.entry;
+    const pnlPct = move * position.lev;
+    const pnlDollars = pnlPct * position.wager;
+    balance += position.wager + pnlDollars; balEl.textContent = '$' + balance.toFixed(2);
+    refreshWagerMax();
+    poseParachute();
+    fig.style.transition = 'transform 1.4s cubic-bezier(0.4,0,0.2,1)';
+    figAlt = stageH - cliffTopY + 60;
+    setFig(cliffEdgeX + 60, figAlt, 0);
+    world.style.transition = 'transform 1.4s cubic-bezier(0.4,0,0.2,1)';
+    world.style.transform = 'translate3d(0px, 0px, 0)';
+    bgOffset = 0;
+    setTimeout(() => { world.style.transition = 'none'; }, 1500);
+    const sign = pnlDollars >= 0 ? '+' : '−';
+    showBanner(pnlDollars >= 0 ? 'win' : 'loss', sign + '$' + Math.abs(pnlDollars).toFixed(2));
+    pushHistory(pnlDollars, pnlDollars >= 0);
+    if (pnlDollars >= 0) { sweep(440, 880, 0.15, 'square', 0.15); setTimeout(() => sweep(660, 1320, 0.18, 'square', 0.15), 130); }
+    else { sweep(440, 220, 0.3, 'sawtooth', 0.15); }
+    setTimeout(reset, 2000);
+  }
+
+  function splat() {
+    if (state === 'DEAD') return;
+    state = 'DEAD'; setFlame(false);
+    fig.style.transition = 'transform 0.3s ease-in';
+    figAlt = (stageH - waterY) - 6;
+    // rotation 180 + scale = use direct transform with scale (setFig only handles rotation)
+    const tx = (cliffEdgeX + 60 - FIG_BODY_X).toFixed(1);
+    const ty = (FIGURE_FOOT_OFFSET - figAlt).toFixed(1);
+    fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(180deg) scale(1.3, 0.35)`;
+    world.style.transition = 'transform 0.3s ease-out';
+    world.style.transform = 'translate3d(0px, 0px, 0)';
+    bgOffset = 0;
+    setTimeout(() => { world.style.transition = 'none'; }, 400);
+    spawnSplash();
+    showBanner('loss', '−$' + position.wager.toFixed(2));
+    pushHistory(-position.wager, false);
+    noise(0.4, 0.25);
+    setTimeout(reset, 1900);
+  }
+
+  function spawnSplash() {
+    const stageBox = stage.getBoundingClientRect();
+    const figBox = fig.getBoundingClientRect();
+    const cx = figBox.left + figBox.width/2 - stageBox.left;
+    const cy = stageBox.height - (stageH - waterY);
+    for (let i = 0; i < 24; i++) {
+      const p = document.createElement('div'); p.className = 'splash-particle';
+      p.style.left = cx + 'px'; p.style.top = cy + 'px'; stage.appendChild(p);
+      const angle = -Math.PI/2 + (Math.random() - 0.5) * Math.PI * 0.95;
+      const dist = 35 + Math.random() * 100;
+      const dx = Math.cos(angle) * dist, dy = Math.sin(angle) * dist;
+      p.animate(
+        [{ transform: 'translate(0,0)', opacity: 1 },
+         { transform: 'translate(' + dx + 'px,' + (dy + 60) + 'px)', opacity: 0 }],
+        { duration: 900, easing: 'cubic-bezier(0.4,0,0.6,1)' }
+      );
+      setTimeout(() => p.remove(), 950);
+    }
+  }
+
+  function showBanner(kind, text) {
+    banner.textContent = text;
+    banner.className = 'banner show ' + kind;
+    setTimeout(() => banner.classList.remove('show'), 1500);
+  }
+
+  function reset() {
+    state = 'IDLE'; position = null; setFlame(false);
+    parachute.classList.remove('deployed');
+    poseStanding(); placeFigureIdle();
+    pnlEl.textContent = 'PNL —'; pnlEl.className = 'pnl-readout';
+    levTag.classList.remove('show'); levTag.textContent = '—';
+    currentTier = 'ground';
+    tierTag.className = 'tier-tag ground';
+    tierTag.textContent = 'SEA LEVEL';
+    dangerLabel.style.opacity = '1';
+    disableControls(false);
+    action.textContent = 'jump'; action.classList.remove('stop');
+    if (balance < 1) { action.classList.add('disabled'); action.textContent = 'out'; }
+  }
+
+  $('levSlider').addEventListener('input', (e) => { ensureAudio(); setLev(parseInt(e.target.value, 10)); });
+  $('wagerSlider').addEventListener('input', (e) => { ensureAudio(); setWager(parseInt(e.target.value, 10)); });
+  document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { ensureAudio(); setWager(parseInt(c.dataset.amt,10)); beep(440, 0.04, 'square', 0.08); }));
+  $('connectBtn').addEventListener('click', () => { ensureAudio(); beep(660, 0.04, 'square', 0.08); /* placeholder — Privy auth wiring TBD */ });
+
+  // ============ HELP OVERLAY ============
+  const helpOverlay = $('helpOverlay');
+  function showHelp() { helpOverlay.classList.add('show'); }
+  function hideHelp() {
+    helpOverlay.classList.remove('show');
+    try { localStorage.setItem('handdrawn_help_seen', '1'); } catch (e) {}
+  }
+  $('helpBtn').addEventListener('click', () => { ensureAudio(); beep(660, 0.04, 'square', 0.08); showHelp(); });
+  $('helpGotIt').addEventListener('click', () => { ensureAudio(); beep(880, 0.05, 'sine', 0.1); hideHelp(); });
+  helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) hideHelp(); });
+  let _helpSeen = false;
+  try { _helpSeen = !!localStorage.getItem('handdrawn_help_seen'); } catch (e) {}
+  if (!_helpSeen) setTimeout(showHelp, 600);
+  action.addEventListener('click', () => { ensureAudio(); if (state === 'IDLE') startJump(); else if (state === 'LIVE') stop(); });
+  window.addEventListener('resize', () => { setupWorld(); if (state === 'IDLE') placeFigureIdle(); });
+
+  poseStanding();
+  requestAnimationFrame(() => { setupWorld(); placeFigureIdle(); });
+  setInterval(tick, 60);
+})();
+</script>
+</body>
+</html>
