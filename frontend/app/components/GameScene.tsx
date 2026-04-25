@@ -744,24 +744,61 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        /* figure stands on chart line with slope alignment */
-        const chartY = getChartYAtX(figScreenX);
-        const targetAlt = a.stageH - chartY;
-        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.18 * dtNorm);
-        const slopeL = getChartYAtX(figScreenX - FOOT_SPREAD_PX);
-        const slopeR = getChartYAtX(figScreenX + FOOT_SPREAD_PX);
+        /* character always runs on the chart line */
+        const IDLE_STEP_FREQ = 2.8; // slower jog in idle
+        a.stepPhase += IDLE_STEP_FREQ * (dt / 1000) * Math.PI * 2;
+        a.runFrame++;
+
+        /* sample chart at left and right foot positions */
+        const leftFootX = figScreenX - FOOT_SPREAD_PX * 0.5;
+        const rightFootX = figScreenX + FOOT_SPREAD_PX * 0.5;
+        const leftChartY = getChartYAtX(leftFootX);
+        const rightChartY = getChartYAtX(rightFootX);
+
+        /* planted foot synced with leg animation */
+        const leftPlanted = Math.sin(a.stepPhase) <= 0;
+        const plantedChartY = leftPlanted ? leftChartY : rightChartY;
+
+        /* body bob */
+        a.curBobY = -Math.abs(Math.sin(a.stepPhase)) * BODY_BOB_PX * 0.7;
+
+        /* altitude from planted foot */
+        const targetAlt = a.stageH - plantedChartY;
+        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.3 * dtNorm);
+
+        /* slope alignment */
+        const slopeDy = rightChartY - leftChartY;
         const slopeDeg =
-          Math.atan2(slopeR - slopeL, FOOT_SPREAD_PX * 2) * (180 / Math.PI);
+          Math.atan2(slopeDy, FOOT_SPREAD_PX) * (180 / Math.PI);
         a.smoothRot = lerp(
           a.smoothRot,
-          Math.max(-12, Math.min(12, slopeDeg * 0.6)),
-          0.1 * dtNorm,
+          Math.max(-15, Math.min(15, slopeDeg * 0.65)),
+          0.15 * dtNorm,
         );
-        a.curBobY = 0;
-        applyPose("standing", 0);
+
+        /* run pose + position */
+        applyPose("run", a.stepPhase / 0.5);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
+
+        /* idle dust (less frequent) */
+        const stepHalf = Math.floor(a.stepPhase / Math.PI);
+        if (stepHalf !== a.prevStepHalf && a.dustParticles.length < DUST_MAX) {
+          const footX = leftPlanted ? leftFootX : rightFootX;
+          const footY = leftPlanted ? leftChartY : rightChartY;
+          for (let k = 0; k < 2; k++) {
+            a.dustParticles.push({
+              x: footX + (Math.random() - 0.5) * 5,
+              y: footY + (Math.random() - 0.3) * 3,
+              vx: -(0.2 + Math.random() * 0.5),
+              vy: -(0.15 + Math.random() * 0.4),
+              life: DUST_LIFE * (0.5 + Math.random() * 0.4),
+              size: 0.8 + Math.random() * 1.2,
+            });
+          }
+        }
+        a.prevStepHalf = stepHalf;
 
       } else if (a.state === "RUNNING") {
         /* set runStartTime on first frame */
