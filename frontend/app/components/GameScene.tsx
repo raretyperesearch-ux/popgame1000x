@@ -264,6 +264,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   /* mutable animation state */
   const anim = useRef({
     price: 3500,
+    renderPrice: 3500,
     prevPrice: 3500,
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
@@ -578,20 +579,56 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       a.chartPointSpacing = pointSpacing;
 
-      /* mountain terrain fill under chart */
-      const terrainFill = ctx.createLinearGradient(0, chartTop, 0, chartBot);
-      terrainFill.addColorStop(0, "rgba(93,211,158,0.05)");
-      terrainFill.addColorStop(0.45, "rgba(77,208,225,0.08)");
-      terrainFill.addColorStop(1, "rgba(6,10,20,0.45)");
-      ctx.fillStyle = terrainFill;
-      ctx.beginPath();
-      ctx.moveTo(pts[0]?.x ?? 0, chartBot);
+      /* terrain ground fill (grass + dirt) */
+      const groundPath = new Path2D();
+      groundPath.moveTo(pts[0]?.x ?? 0, chartBot);
       for (let i = 0; i < pts.length; i++) {
-        ctx.lineTo(pts[i].x, pts[i].y);
+        groundPath.lineTo(pts[i].x, pts[i].y);
       }
-      ctx.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
-      ctx.closePath();
-      ctx.fill();
+      groundPath.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
+      groundPath.closePath();
+
+      const dirtFill = ctx.createLinearGradient(0, chartTop, 0, chartBot);
+      dirtFill.addColorStop(0, "rgba(114,84,50,0.22)");
+      dirtFill.addColorStop(0.35, "rgba(84,58,35,0.26)");
+      dirtFill.addColorStop(1, "rgba(26,18,13,0.40)");
+      ctx.fillStyle = dirtFill;
+      ctx.fill(groundPath);
+
+      /* hand-drawn dirt texture */
+      ctx.save();
+      ctx.clip(groundPath);
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = "#7c5b3a";
+      ctx.lineWidth = 1;
+      for (let x = -20; x < w + 20; x += 12) {
+        const yBase = chartTop + (Math.sin((x + a.frame * 0.3) * 0.03) * 8);
+        ctx.beginPath();
+        ctx.moveTo(x, yBase + 25);
+        ctx.lineTo(x + 8, yBase + 36 + Math.random() * 6);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      /* grass fringe along the terrain crest */
+      for (let i = 1; i < pts.length; i += 2) {
+        const p0 = pts[i - 1];
+        const p1 = pts[i];
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const len = Math.max(0.001, Math.hypot(dx, dy));
+        const nx = -dy / len;
+        const ny = dx / len;
+        const hBlade = 3 + Math.random() * 3;
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = i % 4 === 0 ? "#7be39f" : "#5dbb79";
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p1.x + nx * hBlade, p1.y + ny * hBlade);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
 
       /* trend glow by segment direction */
       ctx.lineWidth = 7;
@@ -832,6 +869,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* price drift (mock mode) */
       a.price += (Math.random() - 0.485) * MOCK_DRIFT * dtNorm;
+      a.renderPrice = lerp(a.renderPrice, a.price, 0.08 * dtNorm);
 
       /* chart scroll speed based on state */
       let speed = CHART_SPEED_IDLE;
@@ -845,7 +883,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.scrollFrac -= 1;
         /* add new price point from current price */
         const last = a.prices[a.prices.length - 1];
-        const step = (a.price - last) * 0.3 + (Math.random() - 0.48) * PRICE_VOL;
+        const step = (a.renderPrice - last) * 0.26 + (Math.random() - 0.48) * PRICE_VOL * 0.75;
         a.prices.push(last + step);
         if (a.prices.length > TOTAL_POINTS * 1.5) a.prices.shift();
       }
@@ -1225,7 +1263,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       {pnlReadout}
 
       {/* FIGURE */}
-      <div className="figure-wrap" ref={figRef} style={{ zIndex: 1, opacity: 0.92 }}>
+      <div className="figure-wrap" ref={figRef} style={{ zIndex: 3, opacity: 1 }}>
         <svg
           className="parachute"
           ref={parachuteRef}
