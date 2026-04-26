@@ -33,15 +33,18 @@ const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
-const BODY_HEIGHT_PX = 11;
+const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
 const GROUND_Y_PCT = 0.66;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
 const GRASS_TILE_W = 760;
 const GRASS_TILE_H = 190;
 const GRASS_SURFACE_Y = 52;
-const SPRITE_NATIVE = 320; // source frame size in spritesheet
-const SPRITE_DISPLAY = 110; // rendered sprite size in px
+const SPRITE_FRAME_W = 72;
+const SPRITE_FRAME_H = 80;
+const SPRITE_SCALE = 2;
+const SPRITE_DISPLAY_W = SPRITE_FRAME_W * SPRITE_SCALE;
+const SPRITE_DISPLAY_H = SPRITE_FRAME_H * SPRITE_SCALE;
 const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
@@ -250,7 +253,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const fig = figRef.current;
       if (!fig) return;
       const a = anim.current;
-      const tx = (x - SPRITE_DISPLAY / 2).toFixed(1);
+      const tx = (x - SPRITE_DISPLAY_W / 2).toFixed(1);
       const ty = (-(alt + a.curBobY)).toFixed(1);
       fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
     },
@@ -288,14 +291,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!img || !spriteImageReadyRef.current) return;
-    const sx = (frameIdx % SPRITE_COLS) * SPRITE_NATIVE;
-    const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_NATIVE;
+    const sx = (frameIdx % SPRITE_COLS) * SPRITE_FRAME_W;
+    const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_FRAME_H;
     const dpr = window.devicePixelRatio || 1;
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
       img,
-      sx, sy, SPRITE_NATIVE, SPRITE_NATIVE,
-      0, 0, SPRITE_DISPLAY * dpr, SPRITE_DISPLAY * dpr,
+      sx, sy, SPRITE_FRAME_W, SPRITE_FRAME_H,
+      0, 0, SPRITE_DISPLAY_W * dpr, SPRITE_DISPLAY_H * dpr,
     );
   }, []);
 
@@ -1353,8 +1356,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         style={{
           zIndex: 3,
           opacity: 1,
-          width: SPRITE_DISPLAY,
-          height: SPRITE_DISPLAY,
+          width: SPRITE_DISPLAY_W,
+          height: SPRITE_DISPLAY_H,
           transformOrigin: "50% 100%",
         }}
       >
@@ -1364,7 +1367,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           width={80}
           height={44}
           viewBox="0 0 80 44"
-          style={{ bottom: SPRITE_DISPLAY * 0.7 }}
+          style={{ bottom: SPRITE_DISPLAY_H * 0.7 }}
         >
           <path
             d="M 4 30 C 8 12, 22 8, 40 8 C 58 8, 72 12, 76 30 C 70 26, 62 29, 56 27 C 48 30, 40 27, 32 30 C 24 27, 14 29, 4 30 Z"
@@ -1385,15 +1388,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         </svg>
         <canvas
           ref={spriteCanvasRef}
-          width={SPRITE_DISPLAY * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
-          height={SPRITE_DISPLAY * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
+          width={SPRITE_DISPLAY_W * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
+          height={SPRITE_DISPLAY_H * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
           style={{
             position: "absolute",
             left: 0,
             bottom: 0,
-            width: SPRITE_DISPLAY,
-            height: SPRITE_DISPLAY,
-            imageRendering: "auto",
+            width: SPRITE_DISPLAY_W,
+            height: SPRITE_DISPLAY_H,
+            imageRendering: "pixelated",
             pointerEvents: "none",
           }}
         />
