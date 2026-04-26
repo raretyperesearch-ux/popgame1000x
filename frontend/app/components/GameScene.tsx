@@ -206,6 +206,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteRunStart: 0, // timestamp when run animation started
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
+    groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     dustParticles: [] as Array<{
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
@@ -371,7 +372,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     ctx.fill();
 
     if (img && groundImageReadyRef.current) {
-      const scroll = (anim.current.scrollFrac * 18) % GRASS_TILE_W;
+      const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
         const sampleX = x + GRASS_SLICE_W * 0.5;
         const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
@@ -1049,6 +1050,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* advance chart scroll */
       a.scrollFrac += speed * dtNorm;
+      a.groundScrollAcc += speed * dtNorm; // monotonic mirror; never wraps so the grass texture doesn't snap
       while (a.scrollFrac >= 1) {
         a.scrollFrac -= 1;
         /* add new price point from current price */
