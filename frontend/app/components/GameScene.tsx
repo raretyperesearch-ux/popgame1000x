@@ -205,6 +205,12 @@ function solveKnee(
   return { x: midX + nx * h, y: midY + ny * h };
 }
 
+function terrainifyNorm(t: number): number {
+  const c = clamp(t, 0, 1);
+  const ridge = Math.sin(c * Math.PI) * 0.045;
+  return clamp(Math.pow(c, 0.88) + ridge, 0, 1);
+}
+
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
   startJump: (leverage: number, wager: number) => void;
@@ -367,7 +373,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const chartTop = a.stageH * CHART_TOP_PCT;
     const chartBot = a.stageH * CHART_BOT_PCT;
     const range = Math.max(1e-6, a.chartMaxP - a.chartMinP);
-    return chartBot - ((p - a.chartMinP) / range) * (chartBot - chartTop);
+    const n = (p - a.chartMinP) / range;
+    const terrainN = terrainifyNorm(n);
+    return chartBot - terrainN * (chartBot - chartTop);
   }, [getPriceAtWorldX]);
 
   const getChartSlope = useCallback((worldX: number) => {
@@ -540,8 +548,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.chartMinP = minP;
       a.chartMaxP = maxP;
 
-      const priceToY = (p: number) =>
-        chartBot - ((p - minP) / rangeP) * (chartBot - chartTop);
+      const priceToY = (p: number) => {
+        const n = (p - minP) / rangeP;
+        const terrainN = terrainifyNorm(n);
+        return chartBot - terrainN * (chartBot - chartTop);
+      };
 
       /* faint grid lines */
       const gridLines = 6;
@@ -566,6 +577,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         pts.push({ x, y });
       }
       a.chartPointSpacing = pointSpacing;
+
+      /* mountain terrain fill under chart */
+      const terrainFill = ctx.createLinearGradient(0, chartTop, 0, chartBot);
+      terrainFill.addColorStop(0, "rgba(93,211,158,0.05)");
+      terrainFill.addColorStop(0.45, "rgba(77,208,225,0.08)");
+      terrainFill.addColorStop(1, "rgba(6,10,20,0.45)");
+      ctx.fillStyle = terrainFill;
+      ctx.beginPath();
+      ctx.moveTo(pts[0]?.x ?? 0, chartBot);
+      for (let i = 0; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
+      ctx.closePath();
+      ctx.fill();
 
       /* trend glow by segment direction */
       ctx.lineWidth = 7;
@@ -1187,7 +1213,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           inset: 0,
           width: "100%",
           height: "100%",
-          zIndex: 1,
+          zIndex: 2,
         }}
       />
 
@@ -1199,7 +1225,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       {pnlReadout}
 
       {/* FIGURE */}
-      <div className="figure-wrap" ref={figRef} style={{ zIndex: 6 }}>
+      <div className="figure-wrap" ref={figRef} style={{ zIndex: 1, opacity: 0.92 }}>
         <svg
           className="parachute"
           ref={parachuteRef}
