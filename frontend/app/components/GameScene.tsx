@@ -1037,10 +1037,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
         const ridgeY = getTerrainY(figWorldX);
         loco.bodyY = ridgeY - BODY_HEIGHT_PX;
-        a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
+        a.curBobY = 0;
         const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.65 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1112,10 +1112,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           }
           const ridgeY = getTerrainY(figWorldX);
           loco.bodyY = ridgeY - BODY_HEIGHT_PX;
-          a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
+          a.curBobY = 0;
           const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.65 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
