@@ -43,7 +43,7 @@ const GRASS_SRC_H = 256;
 const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
-const GRASS_SLICE_W = 8;
+const GRASS_SLICE_W = 16;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
 const SPRITE_SCALE = 1.5;
@@ -311,33 +311,45 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   }, []);
 
   const drawGrassGround = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, pts: { x: number; y: number }[]) => {
+    const smoothPts = pts.map((p, i) => {
+      const prev = pts[Math.max(0, i - 1)];
+      const next = pts[Math.min(pts.length - 1, i + 1)];
+      return { x: p.x, y: (prev.y + p.y * 4 + next.y) / 6 };
+    });
     const groundYAt = (x: number) => {
-      if (pts.length < 2) return terrainAt(0, h, 0);
-      for (let i = 1; i < pts.length; i++) {
-        if (x <= pts[i].x) {
-          const prev = pts[i - 1];
-          const cur = pts[i];
+      if (smoothPts.length < 2) return terrainAt(0, h, 0);
+      for (let i = 1; i < smoothPts.length; i++) {
+        if (x <= smoothPts[i].x) {
+          const prev = smoothPts[i - 1];
+          const cur = smoothPts[i];
           const span = Math.max(1, cur.x - prev.x);
           return lerp(prev.y, cur.y, clamp((x - prev.x) / span, 0, 1));
         }
       }
-      return pts[pts.length - 1].y;
+      return smoothPts[smoothPts.length - 1].y;
     };
     const img = groundImageRef.current;
     const firstY = groundYAt(0);
+    const minY = Math.min(...smoothPts.map((p) => p.y));
 
     const shadow = ctx.createLinearGradient(0, firstY - 48, 0, firstY + 24);
     shadow.addColorStop(0, "rgba(0,0,0,0)");
     shadow.addColorStop(1, "rgba(0,0,0,0.24)");
     ctx.fillStyle = shadow;
-    ctx.fillRect(0, Math.min(...pts.map((p) => p.y)) - 48, w, 120);
+    ctx.fillRect(0, minY - 48, w, 120);
 
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    for (let x = 0; x <= w; x += 8) {
-      ctx.lineTo(x, groundYAt(x) + GRASS_TILE_H - GRASS_SURFACE_Y - 8);
+    ctx.moveTo(0, groundYAt(0) + GRASS_TILE_H - GRASS_SURFACE_Y - 10);
+    for (let x = 0; x <= w; x += GRASS_SLICE_W) {
+      const midX = x + GRASS_SLICE_W * 0.5;
+      const endX = x + GRASS_SLICE_W;
+      ctx.quadraticCurveTo(
+        midX, groundYAt(midX) + GRASS_TILE_H - GRASS_SURFACE_Y - 10,
+        endX, groundYAt(endX) + GRASS_TILE_H - GRASS_SURFACE_Y - 10,
+      );
     }
     ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
     ctx.closePath();
     const dirt = ctx.createLinearGradient(0, firstY, 0, h);
     dirt.addColorStop(0, "#17261b");
@@ -349,12 +361,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (img && groundImageReadyRef.current) {
       const scroll = (anim.current.scrollFrac * 18) % GRASS_TILE_W;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
+        const sampleX = x + GRASS_SLICE_W * 0.5;
         const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
         const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * GRASS_SLICE_W / GRASS_TILE_W)));
         ctx.drawImage(
           img,
           sourceX, 0, sourceW, GRASS_SRC_H,
-          x, groundYAt(x) - GRASS_SURFACE_Y, GRASS_SLICE_W + 1, GRASS_TILE_H,
+          x, groundYAt(sampleX) - GRASS_SURFACE_Y, GRASS_SLICE_W + 1, GRASS_TILE_H,
         );
       }
       return;
@@ -897,10 +910,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const i = a.terrainPoints.length;
         const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
         const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
-        const priceTilt = clamp(step, -1.2, 1.2) * -34;
-        const desired = lerp(terrainRaw, prev + priceTilt, 0.72);
+        const priceTilt = clamp(step, -1.2, 1.2) * -9;
+        const desired = lerp(terrainRaw, prev + priceTilt, 0.3);
         const terrainNext = clamp(
-          lerp(prev, desired, 0.42),
+          lerp(prev, desired, 0.16),
           (a.stageH || 700) * TERRAIN_MIN_PCT,
           (a.stageH || 700) * TERRAIN_MAX_PCT,
         );
@@ -1015,7 +1028,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const ridgeY = getTerrainY(figWorldX);
         loco.bodyY = ridgeY - BODY_HEIGHT_PX;
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
-        const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
+        const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
         a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
@@ -1090,7 +1103,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const ridgeY = getTerrainY(figWorldX);
           loco.bodyY = ridgeY - BODY_HEIGHT_PX;
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
-          const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
+          const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
           a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
