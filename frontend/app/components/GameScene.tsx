@@ -30,12 +30,14 @@ const PRICE_VOL = 0.65; // random walk step for new chart points
 const MOCK_DRIFT = 0.18; // per-frame mini drift
 const JITTER = 1.0; // hand-drawn jitter amplitude
 const STEP_FREQ = 4.2; // step cycles per second during run
-const FOOT_SPREAD_PX = 16; // horizontal pixel spread for ground sampling
 const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
 const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
+const BODY_HEIGHT_PX = 22;
+const CAMERA_LERP = 0.2;
+const DEBUG_FEET = false;
 
 type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -183,6 +185,72 @@ function generatePriceSeries(count: number, start: number): number[] {
   return prices;
 }
 
+function featureNoise(n: number): number {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function terrainAt(worldX: number, stageH: number, seed: number): number {
+  const x = worldX * 12;
+  const baseY = stageH * 0.48;
+  const a1 = stageH * 0.22;
+  const a2 = stageH * 0.12;
+  const a3 = stageH * 0.06;
+  let y = baseY
+    + Math.sin(x * 0.006 + seed) * a1
+    + Math.sin(x * 0.014 + seed * 2.1) * a2
+    + Math.sin(x * 0.031 + seed * 4.7) * a3;
+
+  const featureSpan = 600 + featureNoise(seed + Math.floor(x / 700)) * 300;
+  const featureId = Math.floor(x / featureSpan);
+  const local = (x - featureId * featureSpan) / featureSpan; // 0..1
+  const mode = Math.floor(featureNoise(seed * 3.7 + featureId * 0.91) * 5);
+  if (mode === 0) y -= Math.sin(local * Math.PI) * stageH * 0.14; // peak
+  else if (mode === 1) y += Math.sin(local * Math.PI) * stageH * 0.13; // valley
+  else if (mode === 2) y -= local * stageH * 0.18; // up ramp
+  else if (mode === 3) y += local * stageH * 0.18; // down ramp
+  else y += Math.sin(local * Math.PI * 2) * stageH * 0.07; // rolling
+
+  return clamp(y, stageH * 0.22, stageH * 0.72);
+}
+
+function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
+  const raw: number[] = [];
+  for (let i = 0; i < count; i++) raw.push(terrainAt(startWorldX + i, stageH, seed));
+  const out = [...raw];
+  for (let i = 1; i < count - 1; i++) {
+    out[i] = (raw[i - 1] + raw[i] * 2 + raw[i + 1]) / 4;
+  }
+  return out;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function solveKnee(
+  hip: { x: number; y: number },
+  foot: { x: number; y: number },
+  bendDir: 1 | -1,
+) {
+  const dx = foot.x - hip.x;
+  const dy = foot.y - hip.y;
+  const dist = Math.max(0.001, Math.hypot(dx, dy));
+  const d = Math.min(dist, UP_LEG + LO_LEG - 0.001);
+  const midX = hip.x + (dx * 0.5);
+  const midY = hip.y + (dy * 0.5);
+  const h = Math.sqrt(Math.max(0, UP_LEG * UP_LEG - (d * d) / 4));
+  const nx = (-dy / dist) * bendDir;
+  const ny = (dx / dist) * bendDir;
+  return { x: midX + nx * h, y: midY + ny * h };
+}
+
+function terrainifyNorm(t: number): number {
+  const c = clamp(t, 0, 1);
+  const ridge = Math.sin(c * Math.PI) * 0.045;
+  return clamp(Math.pow(c, 0.88) + ridge, 0, 1);
+}
+
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
   startJump: (leverage: number, wager: number) => void;
@@ -236,9 +304,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   /* mutable animation state */
   const anim = useRef({
     price: 3500,
+    renderPrice: 3500,
     prevPrice: 3500,
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
+    terrainSeed: Math.random() * Math.PI * 2,
+    terrainPoints: Array.from({ length: TOTAL_POINTS }, () => 320),
     scrollFrac: 0,
     stageW: 0,
     stageH: 0,
@@ -258,6 +329,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     smoothFigPrice: 3500, // lerped price at figure position
     stepPhase: 0, // step cycle phase (radians)
     runFrame: 0,
+    cameraWorldX: 0,
+    chartMinP: 3450,
+    chartMaxP: 3550,
+    chartPointSpacing: 4,
+    chartStartIdx: 0,
+    chartVisibleCount: 0,
+    mountainCache: null as HTMLCanvasElement | null,
+    mountainCacheKey: "",
     runStartTime: 0, // timestamp when RUNNING began
     jumpStartTime: 0, // timestamp when JUMPING began
     prevStepHalf: 0, // tracks half-cycle for dust spawn
@@ -265,6 +344,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
     }>,
+    loco: {
+      bodyX: 0,
+      bodyY: 0,
+      velocityX: 0,
+      velocityY: 0,
+      grounded: true,
+      leftFoot: { x: 0, y: 0, planted: true },
+      rightFoot: { x: 0, y: 0, planted: false },
+      plantedFoot: "left" as "left" | "right",
+      stepPhase: 0,
+      stepLength: 2.8,
+      stepHeight: 7,
+      squash: 0,
+      leftTargetX: 0,
+      rightTargetX: 0,
+    },
   });
 
   /* render-triggering state */
@@ -295,6 +390,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
     a.stageW = rect.width;
     a.stageH = rect.height;
+    const terrainCount = Math.max(a.terrainPoints.length || 0, a.prices.length || TOTAL_POINTS);
+    const startWorld = Math.max(0, a.prices.length - terrainCount);
+    a.terrainPoints = buildTerrainPoints(terrainCount, startWorld, rect.height, a.terrainSeed);
   }, []);
 
   /* ============ FIGURE POSITIONING ============ */
@@ -306,6 +404,76 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const tx = (x - FIG_BODY_X).toFixed(1);
       const ty = (FIGURE_FOOT_OFFSET - alt + a.curBobY).toFixed(1);
       fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
+    },
+    [],
+  );
+
+  const getTerrainY = useCallback((worldX: number) => {
+    const a = anim.current;
+    const base = Math.floor(worldX);
+    const frac = worldX - base;
+    const i0 = clamp(base, 0, a.terrainPoints.length - 1);
+    const i1 = clamp(base + 1, 0, a.terrainPoints.length - 1);
+    return lerp(a.terrainPoints[i0] ?? a.stageH * 0.6, a.terrainPoints[i1] ?? a.stageH * 0.6, frac);
+  }, []);
+
+  const getTerrainSlope = useCallback((worldX: number) => {
+    const a = anim.current;
+    const dx = 0.6;
+    const y0 = getTerrainY(worldX - dx);
+    const y1 = getTerrainY(worldX + dx);
+    const pxDx = dx * Math.max(1, a.chartPointSpacing);
+    return (y1 - y0) / Math.max(1, pxDx);
+  }, [getTerrainY]);
+
+  const getTerrainNormal = useCallback((worldX: number) => {
+    const slope = getTerrainSlope(worldX);
+    const nx = -slope;
+    const ny = 1;
+    const len = Math.max(1e-6, Math.hypot(nx, ny));
+    return { x: nx / len, y: ny / len };
+  }, [getTerrainSlope]);
+
+  const applyRunPose = useCallback(
+    (phase01: number, leftFoot: { x: number; y: number }, rightFoot: { x: number; y: number }, squash = 0) => {
+      const setL = (el: SVGLineElement | null, p0: { x: number; y: number }, p1: { x: number; y: number }) => {
+        if (!el) return;
+        el.setAttribute("x1", p0.x.toFixed(1));
+        el.setAttribute("y1", p0.y.toFixed(1));
+        el.setAttribute("x2", p1.x.toFixed(1));
+        el.setAttribute("y2", p1.y.toFixed(1));
+      };
+      const hip = { x: HIP.x, y: HIP.y + squash * 1.6 };
+      const lKnee = solveKnee(hip, leftFoot, -1);
+      const rKnee = solveKnee(hip, rightFoot, 1);
+      setL(upLegLRef.current, hip, lKnee);
+      setL(loLegLRef.current, lKnee, leftFoot);
+      setL(upLegRRef.current, hip, rKnee);
+      setL(loLegRRef.current, rKnee, rightFoot);
+      if (footLRef.current) {
+        footLRef.current.setAttribute("cx", leftFoot.x.toFixed(1));
+        footLRef.current.setAttribute("cy", (leftFoot.y + 0.4).toFixed(1));
+      }
+      if (footRRef.current) {
+        footRRef.current.setAttribute("cx", rightFoot.x.toFixed(1));
+        footRRef.current.setAttribute("cy", (rightFoot.y + 0.4).toFixed(1));
+      }
+
+      const swing = Math.sin(phase01 * Math.PI * 2) * 0.75;
+      const aL = armAttrs(-0.25 - swing, 1.1);
+      const aR = armAttrs(0.25 + swing, 1.1);
+      setL(upArmLRef.current, { x: +aL.up.x1, y: +aL.up.y1 }, { x: +aL.up.x2, y: +aL.up.y2 });
+      setL(loArmLRef.current, { x: +aL.lo.x1, y: +aL.lo.y1 }, { x: +aL.lo.x2, y: +aL.lo.y2 });
+      setL(upArmRRef.current, { x: +aR.up.x1, y: +aR.up.y1 }, { x: +aR.up.x2, y: +aR.up.y2 });
+      setL(loArmRRef.current, { x: +aR.lo.x1, y: +aR.lo.y1 }, { x: +aR.lo.x2, y: +aR.lo.y2 });
+      if (handLRef.current) {
+        handLRef.current.setAttribute("cx", aL.hand.cx);
+        handLRef.current.setAttribute("cy", aL.hand.cy);
+      }
+      if (handRRef.current) {
+        handRRef.current.setAttribute("cx", aR.hand.cx);
+        handRRef.current.setAttribute("cy", aR.hand.cy);
+      }
     },
     [],
   );
@@ -395,7 +563,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const pointSpacing = w / VISIBLE_POINTS;
       const numVisible = Math.min(VISIBLE_POINTS + 2, a.prices.length);
       const startIdx = Math.max(0, a.prices.length - numVisible);
+      a.chartStartIdx = startIdx;
+      a.chartVisibleCount = numVisible;
       const visiblePrices = a.prices.slice(startIdx);
+      const visibleTerrain = a.terrainPoints.slice(startIdx, startIdx + numVisible);
 
       /* compute auto-scale range */
       let rawMin = Infinity,
@@ -422,9 +593,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const minP = a.smoothMinP;
       const maxP = a.smoothMaxP;
       const rangeP = maxP - minP || 1;
+      a.chartMinP = minP;
+      a.chartMaxP = maxP;
 
-      const priceToY = (p: number) =>
-        chartBot - ((p - minP) / rangeP) * (chartBot - chartTop);
+      const priceToY = (p: number) => {
+        const n = (p - minP) / rangeP;
+        const terrainN = terrainifyNorm(n);
+        return chartBot - terrainN * (chartBot - chartTop);
+      };
 
       /* faint grid lines */
       const gridLines = 6;
@@ -443,18 +619,107 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* build chart screen points */
       const pts: { x: number; y: number }[] = [];
-      for (let i = 0; i < visiblePrices.length; i++) {
+      for (let i = 0; i < visibleTerrain.length; i++) {
         const x = (i - a.scrollFrac) * pointSpacing;
-        const y = priceToY(visiblePrices[i]);
+        const y = visibleTerrain[i] ?? h * 0.65;
         pts.push({ x, y });
       }
+      a.chartPointSpacing = pointSpacing;
 
-      /* trend glow (soft color under line) */
-      const lastP = a.prices[a.prices.length - 1];
-      const refP = a.prices[Math.max(0, a.prices.length - 15)];
-      const trendUp = lastP >= refP;
-      ctx.globalAlpha = 0.08;
-      ctx.strokeStyle = trendUp ? "#5dd39e" : "#ff5f56";
+      const terrainKey = `${startIdx}-${w}-${h}-${Math.round(pts[0]?.y ?? 0)}-${Math.round(pts[pts.length - 1]?.y ?? 0)}`;
+      if (!a.mountainCache || a.mountainCache.width !== w || a.mountainCache.height !== h) {
+        a.mountainCache = document.createElement("canvas");
+        a.mountainCache.width = w;
+        a.mountainCache.height = h;
+        a.mountainCacheKey = "";
+      }
+      if (a.mountainCacheKey !== terrainKey && a.mountainCache) {
+        const bg = a.mountainCache.getContext("2d");
+        if (bg) {
+          bg.clearRect(0, 0, w, h);
+          /* far parallax mountains */
+          const drawRidge = (baseY: number, amp: number, color: string, alpha: number, freq: number) => {
+            bg.globalAlpha = alpha;
+            bg.fillStyle = color;
+            bg.beginPath();
+            bg.moveTo(0, h);
+            for (let x = 0; x <= w; x += 8) {
+              const y = baseY + Math.sin((x + startIdx * 3) * freq) * amp + Math.sin((x + startIdx * 2) * freq * 0.55) * (amp * 0.5);
+              bg.lineTo(x, y);
+            }
+            bg.lineTo(w, h);
+            bg.closePath();
+            bg.fill();
+          };
+          drawRidge(h * 0.56, h * 0.09, "#10243a", 0.55, 0.012);
+          drawRidge(h * 0.64, h * 0.07, "#0b1c2f", 0.65, 0.018);
+
+          const groundPath = new Path2D();
+          groundPath.moveTo(pts[0]?.x ?? 0, chartBot);
+          for (let i = 0; i < pts.length; i++) groundPath.lineTo(pts[i].x, pts[i].y);
+          groundPath.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
+          groundPath.closePath();
+
+          const groundFill = bg.createLinearGradient(0, chartTop, 0, h);
+          groundFill.addColorStop(0, "rgba(28,58,35,0.88)");
+          groundFill.addColorStop(0.42, "rgba(20,42,28,0.92)");
+          groundFill.addColorStop(1, "rgba(8,14,18,0.95)");
+          bg.fillStyle = groundFill;
+          bg.fill(groundPath);
+
+          bg.save();
+          bg.clip(groundPath);
+          /* rock faces / cliff shadows */
+          for (let i = 2; i < pts.length; i += 3) {
+            const slopeSeg = pts[i].y - pts[i - 1].y;
+            bg.globalAlpha = 0.14;
+            bg.strokeStyle = slopeSeg > 1.2 ? "#7b2e2a" : "#8ea596";
+            bg.lineWidth = 1.1;
+            bg.beginPath();
+            bg.moveTo(pts[i].x, pts[i].y + 3);
+            bg.lineTo(pts[i].x - 8, pts[i].y + 18 + (featureNoise(i * 1.3) * 10));
+            bg.stroke();
+          }
+          /* moss patches */
+          for (let i = 2; i < pts.length; i += 2) {
+            bg.globalAlpha = 0.18;
+            bg.fillStyle = i % 5 === 0 ? "#5fae58" : "#4e8d49";
+            bg.fillRect(pts[i].x - 1, pts[i].y + 2, 2 + (i % 3), 8 + (i % 4));
+          }
+          /* valley mist */
+          for (let m = 0; m < 3; m++) {
+            const mistY = h * (0.62 + m * 0.06);
+            const mg = bg.createLinearGradient(0, mistY - 20, 0, mistY + 20);
+            mg.addColorStop(0, "rgba(200,220,235,0)");
+            mg.addColorStop(0.5, "rgba(200,220,235,0.08)");
+            mg.addColorStop(1, "rgba(200,220,235,0)");
+            bg.fillStyle = mg;
+            bg.fillRect(0, mistY - 18, w, 36);
+          }
+          /* pine silhouettes near flatter sections */
+          for (let i = 3; i < pts.length; i += 8) {
+            const slopeAbs = Math.abs(pts[i].y - pts[i - 1].y);
+            if (slopeAbs > 2.8) continue;
+            const tx = pts[i].x;
+            const ty = pts[i].y + 14;
+            bg.globalAlpha = 0.42;
+            bg.fillStyle = "#0a1712";
+            bg.beginPath();
+            bg.moveTo(tx, ty - 9);
+            bg.lineTo(tx - 4, ty + 2);
+            bg.lineTo(tx + 4, ty + 2);
+            bg.closePath();
+            bg.fill();
+          }
+          bg.restore();
+          a.mountainCacheKey = terrainKey;
+        }
+      }
+      if (a.mountainCache) ctx.drawImage(a.mountainCache, 0, 0);
+
+      /* bold cream glow backbone */
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = "#f4ecd8";
       ctx.lineWidth = 10;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -464,6 +729,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         else ctx.lineTo(pts[i].x, pts[i].y);
       }
       ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      /* trend glow by segment direction */
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
 
       /* main chart line (hand-drawn double-pass) */
@@ -513,6 +793,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.fillText("ENTRY", w - 6, ey - 5);
         ctx.textAlign = "start";
       }
+
+      /* subtle liquidation water zone at bottom */
+      const waterTop = h * 0.82;
+      const water = ctx.createLinearGradient(0, waterTop, 0, h);
+      water.addColorStop(0, "rgba(77,208,225,0.02)");
+      water.addColorStop(1, "rgba(77,208,225,0.10)");
+      ctx.fillStyle = water;
+      ctx.fillRect(0, waterTop, w, h - waterTop);
 
       /* liquidation line + zone */
       if (isLive && liqPrice !== null) {
@@ -599,6 +887,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.jumpStartTime = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
+    a.loco.grounded = true;
+    a.loco.stepPhase = 0;
+    a.loco.plantedFoot = "left";
+    a.loco.squash = 0;
   }, [setGameState, setFlame, applyPose, onPnlChange]);
 
   /* ============ SPLAT (liquidation) ============ */
@@ -650,6 +942,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.runStartTime = 0; // set on first tick
       a.jumpStartTime = 0;
       a.dustParticles.length = 0;
+      a.loco.grounded = true;
+      a.loco.stepPhase = 0;
+      a.loco.plantedFoot = "left";
+      a.loco.leftFoot = { x: a.loco.bodyX - 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: true };
+      a.loco.rightFoot = { x: a.loco.bodyX + 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: false };
+      a.loco.squash = 0;
     },
     [setGameState],
   );
@@ -672,6 +970,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* price drift (mock mode) */
       a.price += (Math.random() - 0.485) * MOCK_DRIFT * dtNorm;
+      a.renderPrice = lerp(a.renderPrice, a.price, 0.08 * dtNorm);
 
       /* chart scroll speed based on state */
       let speed = CHART_SPEED_IDLE;
@@ -685,9 +984,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.scrollFrac -= 1;
         /* add new price point from current price */
         const last = a.prices[a.prices.length - 1];
-        const step = (a.price - last) * 0.3 + (Math.random() - 0.48) * PRICE_VOL;
+        const step = (a.renderPrice - last) * 0.26 + (Math.random() - 0.48) * PRICE_VOL * 0.75;
         a.prices.push(last + step);
+        const i = a.terrainPoints.length;
+        const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
+        const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
+        const terrainNext = lerp(prev, terrainRaw, 0.38);
+        a.terrainPoints.push(terrainNext);
         if (a.prices.length > TOTAL_POINTS * 1.5) a.prices.shift();
+        if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
       }
 
       /* update price display (throttled) */
@@ -697,15 +1002,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const figScreenX = a.stageW * FIG_X_PCT;
       const pointSpacing = a.stageW / VISIBLE_POINTS;
 
-      /* get chart Y at figure's X */
+      /* world camera + figure world anchor */
       const numVisible = Math.min(VISIBLE_POINTS + 2, a.prices.length);
       const startIdx = Math.max(0, a.prices.length - numVisible);
-      const figDataIdx = a.scrollFrac + (figScreenX / pointSpacing);
+      const worldLeft = startIdx + a.scrollFrac;
+      const figDataIdx = worldLeft + (figScreenX / pointSpacing);
       const iFloor = Math.floor(figDataIdx);
       const iFrac = figDataIdx - iFloor;
-      const pi0 = startIdx + Math.max(0, Math.min(numVisible - 1, iFloor));
-      const pi1 = startIdx + Math.max(0, Math.min(numVisible - 1, iFloor + 1));
+      const pi0 = Math.max(0, Math.min(a.prices.length - 1, iFloor));
+      const pi1 = Math.max(0, Math.min(a.prices.length - 1, iFloor + 1));
       const priceAtFig = lerp(a.prices[pi0] ?? a.price, a.prices[pi1] ?? a.price, iFrac);
+      const figWorldX = figDataIdx;
+      a.cameraWorldX = lerp(a.cameraWorldX || worldLeft, worldLeft, CAMERA_LERP * dtNorm);
 
       /* compute liqPrice */
       const liqPrice = a.state === "LIVE" || a.state === "STOPPED"
@@ -720,17 +1028,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         liqPrice,
       );
 
-      /* helper: chart screen-Y at any screen-X */
-      const getChartYAtX = (screenX: number): number => {
-        if (!priceToY) return a.stageH * 0.5;
-        const di = a.scrollFrac + screenX / pointSpacing;
-        const fl = Math.floor(di);
-        const fr = di - fl;
-        const j0 = startIdx + Math.max(0, Math.min(numVisible - 1, fl));
-        const j1 = startIdx + Math.max(0, Math.min(numVisible - 1, fl + 1));
-        const p = lerp(a.prices[j0] ?? a.price, a.prices[j1] ?? a.price, fr);
-        return priceToY(p);
-      };
+      const worldToScreenX = (worldX: number) =>
+        (worldX - a.cameraWorldX) * pointSpacing;
 
       /* update dust particles */
       for (let i = a.dustParticles.length - 1; i >= 0; i--) {
@@ -742,63 +1041,67 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (d.life <= 0) a.dustParticles.splice(i, 1);
       }
 
+      if (DEBUG_FEET) {
+        const ctx = canvasRef.current?.getContext("2d");
+        if (ctx) {
+          const lx = worldToScreenX(a.loco.leftFoot.x);
+          const rx = worldToScreenX(a.loco.rightFoot.x);
+          const ly = getTerrainY(a.loco.leftFoot.x);
+          const ry = getTerrainY(a.loco.rightFoot.x);
+          const drawDot = (x: number, y: number, c: string, r = 3) => {
+            ctx.fillStyle = c;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+          };
+          drawDot(worldToScreenX(a.loco.leftTargetX), getTerrainY(a.loco.leftTargetX), "#ff4444", 2.6);
+          drawDot(worldToScreenX(a.loco.rightTargetX), getTerrainY(a.loco.rightTargetX), "#4499ff", 2.6);
+          drawDot(lx, ly, "#ffd94d", 2.4);
+          drawDot(rx, ry, "#ffd94d", 2.4);
+          drawDot(figScreenX, a.stageH - a.smoothAlt, "#ffffff", 2.2);
+        }
+      }
+
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        /* character always runs on the chart line */
-        const IDLE_STEP_FREQ = 2.8; // slower jog in idle
-        a.stepPhase += IDLE_STEP_FREQ * (dt / 1000) * Math.PI * 2;
-        a.runFrame++;
-
-        /* sample chart at left and right foot positions */
-        const leftFootX = figScreenX - FOOT_SPREAD_PX * 0.5;
-        const rightFootX = figScreenX + FOOT_SPREAD_PX * 0.5;
-        const leftChartY = getChartYAtX(leftFootX);
-        const rightChartY = getChartYAtX(rightFootX);
-
-        /* planted foot synced with leg animation */
-        const leftPlanted = Math.sin(a.stepPhase) <= 0;
-        const plantedChartY = leftPlanted ? leftChartY : rightChartY;
-
-        /* body bob */
-        a.curBobY = -Math.abs(Math.sin(a.stepPhase)) * BODY_BOB_PX * 0.7;
-
-        /* altitude from planted foot */
-        const targetAlt = a.stageH - plantedChartY;
-        a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.3 * dtNorm);
-
-        /* slope alignment */
-        const slopeDy = rightChartY - leftChartY;
-        const slopeDeg =
-          Math.atan2(slopeDy, FOOT_SPREAD_PX) * (180 / Math.PI);
-        a.smoothRot = lerp(
-          a.smoothRot,
-          Math.max(-15, Math.min(15, slopeDeg * 0.65)),
-          0.15 * dtNorm,
-        );
-
-        /* run pose + position */
-        applyPose("run", a.stepPhase / 0.5);
+        const loco = a.loco;
+        const stepHz = 1.8;
+        loco.bodyX = figWorldX;
+        loco.grounded = true;
+        loco.stepPhase = (loco.stepPhase + stepHz * (dt / 1000)) % 1;
+        const supportLeft = loco.plantedFoot === "left";
+        const planted = supportLeft ? loco.leftFoot : loco.rightFoot;
+        const swing = supportLeft ? loco.rightFoot : loco.leftFoot;
+        if (!planted.x) {
+          planted.x = figWorldX - loco.stepLength * 0.5;
+          planted.y = getTerrainY(planted.x);
+        }
+        planted.y = getTerrainY(planted.x);
+        const stepT = loco.stepPhase;
+        const swingTargetX = planted.x + loco.stepLength;
+        swing.x = lerp(swing.x || planted.x, planted.x + loco.stepLength * stepT, 0.55 * dtNorm);
+        swing.y = lerp(swing.y || planted.y, getTerrainY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight, 0.55 * dtNorm);
+        if (stepT >= 0.99) {
+          swing.x = swingTargetX;
+          swing.y = getTerrainY(swing.x);
+          swing.planted = true;
+          planted.planted = false;
+          loco.plantedFoot = supportLeft ? "right" : "left";
+          loco.stepPhase = 0;
+        }
+        const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
+        const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
+        loco.bodyY = midY - BODY_HEIGHT_PX;
+        a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
+        const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
+        a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.15 * dtNorm);
+        const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
+        const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
+        applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
-
-        /* idle dust (less frequent) */
-        const stepHalf = Math.floor(a.stepPhase / Math.PI);
-        if (stepHalf !== a.prevStepHalf && a.dustParticles.length < DUST_MAX) {
-          const footX = leftPlanted ? leftFootX : rightFootX;
-          const footY = leftPlanted ? leftChartY : rightChartY;
-          for (let k = 0; k < 2; k++) {
-            a.dustParticles.push({
-              x: footX + (Math.random() - 0.5) * 5,
-              y: footY + (Math.random() - 0.3) * 3,
-              vx: -(0.2 + Math.random() * 0.5),
-              vy: -(0.15 + Math.random() * 0.4),
-              life: DUST_LIFE * (0.5 + Math.random() * 0.4),
-              size: 0.8 + Math.random() * 1.2,
-            });
-          }
-        }
-        a.prevStepHalf = stepHalf;
 
       } else if (a.state === "RUNNING") {
         /* set runStartTime on first frame */
@@ -814,58 +1117,71 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           applyPose("jetpack", 0);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         } else {
-          /* advance step phase */
-          a.stepPhase += STEP_FREQ * (dt / 1000) * Math.PI * 2;
-          a.runFrame++;
-
-          /* sample chart at left and right foot positions */
-          const leftFootX = figScreenX - FOOT_SPREAD_PX * 0.5;
-          const rightFootX = figScreenX + FOOT_SPREAD_PX * 0.5;
-          const leftChartY = getChartYAtX(leftFootX);
-          const rightChartY = getChartYAtX(rightFootX);
-
-          /* planted foot synced with leg animation phase */
-          const leftPlanted = Math.sin(a.stepPhase) <= 0;
-          const plantedChartY = leftPlanted ? leftChartY : rightChartY;
-
-          /* body bob: highest at mid-stride push-off, lowest at foot strike */
-          a.curBobY = -Math.abs(Math.sin(a.stepPhase)) * BODY_BOB_PX;
-
-          /* altitude from planted foot's ground contact */
-          const targetAlt = a.stageH - plantedChartY;
-          a.smoothAlt = lerp(a.smoothAlt, targetAlt, 0.35 * dtNorm);
-
-          /* slope alignment from foot spread */
-          const slopeDy = rightChartY - leftChartY;
-          const slopeDeg =
-            Math.atan2(slopeDy, FOOT_SPREAD_PX) * (180 / Math.PI);
-          a.smoothRot = lerp(
-            a.smoothRot,
-            Math.max(-18, Math.min(18, slopeDeg * 0.7)),
-            0.2 * dtNorm,
+          const loco = a.loco;
+          loco.grounded = true;
+          loco.bodyX = figWorldX;
+          const slope = getTerrainSlope(loco.bodyX);
+          const slopeFactor = clamp(1 - slope * 3.2, 0.7, 1.3);
+          const stepHz = STEP_FREQ * 0.28 * slopeFactor;
+          const speedMag = Math.abs(stepHz * loco.stepLength);
+          const roughness = Math.abs(getTerrainSlope(loco.bodyX - 1.5) - getTerrainSlope(loco.bodyX + 1.5)) * 80;
+          loco.stepLength = clamp(speedMag * 12, 18, 42);
+          loco.stepHeight = 12 + roughness * 0.4;
+          loco.stepPhase = (loco.stepPhase + stepHz * (dt / 1000)) % 1;
+          const supportLeft = loco.plantedFoot === "left";
+          const planted = supportLeft ? loco.leftFoot : loco.rightFoot;
+          const swing = supportLeft ? loco.rightFoot : loco.leftFoot;
+          if (!planted.x) {
+            planted.x = figWorldX - loco.stepLength * 0.5;
+            planted.y = getTerrainY(planted.x);
+          }
+          planted.y = getTerrainY(planted.x);
+          const stepT = loco.stepPhase;
+          let swingTargetX = loco.bodyX + loco.stepLength * slopeFactor;
+          if (Math.abs(getTerrainSlope(swingTargetX)) > 0.95) {
+            swingTargetX = planted.x + loco.stepLength * 0.6 * slopeFactor;
+          }
+          swingTargetX = clamp(swingTargetX, planted.x - 8, planted.x + 4.2);
+          if (supportLeft) loco.rightTargetX = swingTargetX;
+          else loco.leftTargetX = swingTargetX;
+          swing.x = lerp(swing.x || planted.x, planted.x + (swingTargetX - planted.x) * stepT, 0.62 * dtNorm);
+          swing.y = lerp(
+            swing.y || planted.y,
+            getTerrainY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight,
+            0.62 * dtNorm,
           );
-
-          /* apply run pose synced to step cycle */
-          applyPose("run", a.stepPhase / 0.5);
-          setFig(figScreenX, a.smoothAlt, a.smoothRot);
-
-          /* spawn dust on each foot plant (half-cycle boundary) */
-          const stepHalf = Math.floor(a.stepPhase / Math.PI);
-          if (stepHalf !== a.prevStepHalf && a.dustParticles.length < DUST_MAX) {
-            const footX = leftPlanted ? leftFootX : rightFootX;
-            const footY = leftPlanted ? leftChartY : rightChartY;
-            for (let k = 0; k < 3; k++) {
-              a.dustParticles.push({
-                x: footX + (Math.random() - 0.5) * 6,
-                y: footY + (Math.random() - 0.3) * 4,
-                vx: -(0.3 + Math.random() * 0.7),
-                vy: -(0.2 + Math.random() * 0.5),
-                life: DUST_LIFE * (0.6 + Math.random() * 0.4),
-                size: 1 + Math.random() * 1.8,
-              });
+          if (stepT >= 0.99) {
+            swing.x = swingTargetX;
+            swing.y = getTerrainY(swing.x);
+            swing.planted = true;
+            planted.planted = false;
+            loco.plantedFoot = supportLeft ? "right" : "left";
+            loco.stepPhase = 0;
+            if (a.dustParticles.length < DUST_MAX) {
+              const sx = worldToScreenX(swing.x);
+              for (let k = 0; k < 3; k++) {
+                a.dustParticles.push({
+                  x: sx + (Math.random() - 0.5) * 6,
+                  y: swing.y + (Math.random() - 0.3) * 4,
+                  vx: -(0.3 + Math.random() * 0.7),
+                  vy: -(0.2 + Math.random() * 0.5),
+                  life: DUST_LIFE * (0.6 + Math.random() * 0.4),
+                  size: 1 + Math.random() * 1.8,
+                });
+              }
             }
           }
-          a.prevStepHalf = stepHalf;
+          const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
+          const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
+          loco.bodyY = midY - BODY_HEIGHT_PX;
+          a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
+          const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
+          a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.2 * dtNorm);
+          const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
+          const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
+          applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -874,6 +1190,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         /* liftoff from chart into air */
         if (a.jumpStartTime === 0) a.jumpStartTime = time;
         const elapsed = time - a.jumpStartTime;
+        const loco = a.loco;
+        if (loco.grounded) {
+          loco.grounded = false;
+          const n = getTerrainNormal(loco.bodyX || figWorldX);
+          loco.velocityX = 0.55;
+          loco.velocityY = -0.22 - n.x * 0.25;
+          a.figPriceVel = 0.06 + n.y * 0.02;
+        }
 
         if (elapsed > JUMP_DURATION) {
           /* enter LIVE */
@@ -892,7 +1216,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           /* rising arc from chart line */
           const liftT = elapsed / JUMP_DURATION;
           const liftArc = Math.sin(liftT * Math.PI * 0.5);
-          const chartY = getChartYAtX(figScreenX);
+          const chartY = getTerrainY(figWorldX);
           const baseAlt = a.stageH - chartY;
           a.smoothAlt = baseAlt + 40 * liftArc;
           a.curBobY = 0;
@@ -905,14 +1229,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       } else if (a.state === "LIVE") {
         a.frame++;
+        const loco = a.loco;
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
         a.smoothDelta = lerp(a.smoothDelta, priceDelta, 0.12 * dtNorm);
 
         /* physics */
-        if (a.smoothDelta > 0) {
-          a.figPriceVel += a.smoothDelta * THRUST_MULT * dtNorm;
+        const thrust = clamp(a.smoothDelta * THRUST_MULT, -0.08, 0.12);
+        if (a.smoothDelta > 0.001) {
+          a.figPriceVel += thrust * dtNorm;
+        } else if (Math.abs(a.smoothDelta) <= 0.0015) {
+          a.figPriceVel += (-GRAVITY_P * 0.25) * dtNorm;
+        } else {
+          a.figPriceVel += (thrust * 0.35 - GRAVITY_P * 1.2) * dtNorm;
         }
         a.figPriceVel -= GRAVITY_P * dtNorm;
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
@@ -931,13 +1261,23 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             Math.sin(a.frame * 0.6) * 0.15;
           a.smoothFlameScale = lerp(a.smoothFlameScale, targetFlame, 0.15 * dtNorm);
           setFlame(true, a.smoothFlameScale);
-          const targetRot = -Math.min(18, a.figPriceVel * 35);
+          const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
           a.smoothRot = lerp(a.smoothRot, targetRot, 0.1 * dtNorm);
           applyPose("jetpack", a.frame);
+          if (a.dustParticles.length < DUST_MAX) {
+            a.dustParticles.push({
+              x: figScreenX - 6 + Math.random() * 5,
+              y: a.stageH - (a.smoothAlt - 20),
+              vx: -0.5 - Math.random() * 0.6,
+              vy: 0.2 + Math.random() * 0.4,
+              life: 0.2 + Math.random() * 0.2,
+              size: 0.6 + Math.random() * 1.2,
+            });
+          }
         } else if (a.smoothDelta < -0.001) {
           setFlame(false);
           a.smoothFlameScale = lerp(a.smoothFlameScale, 0, 0.1 * dtNorm);
-          const targetRot = (a.frame * 5) % 360;
+          const targetRot = clamp(a.figPriceVel * 45, -15, 15);
           a.smoothRot = lerp(a.smoothRot, targetRot, 0.05 * dtNorm);
           applyPose("falling", a.frame);
         } else {
@@ -951,7 +1291,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (priceToY) {
           const figY = priceToY(a.figPrice);
           const alt = a.stageH - figY;
-          setFig(figScreenX, alt, a.smoothRot);
+          a.smoothAlt = lerp(a.smoothAlt, alt, 0.22 * dtNorm);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          const groundY = getTerrainY(figWorldX);
+          if (figY >= groundY - 4 && a.figPriceVel < 0) {
+            loco.grounded = true;
+            loco.bodyX = figWorldX;
+            loco.bodyY = groundY - BODY_HEIGHT_PX;
+            loco.leftFoot = { x: figWorldX - 1.2, y: getTerrainY(figWorldX - 1.2), planted: true };
+            loco.rightFoot = { x: figWorldX + 1.2, y: getTerrainY(figWorldX + 1.2), planted: true };
+            loco.plantedFoot = "left";
+            loco.squash = 2.5;
+            a.state = "RUNNING";
+            setGameState("RUNNING");
+            a.runStartTime = time - RUN_DURATION * 0.72;
+            setFlame(false);
+          }
         }
 
         /* liquidation check */
@@ -960,13 +1315,26 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
       } else if (a.state === "STOPPED") {
-        /* parachute descent: lerp figPrice toward chart price */
+        /* parachute descent: lerp figPrice toward chart price and land softly */
         a.figPrice = lerp(a.figPrice, priceAtFig, 0.02 * dtNorm);
         if (priceToY) {
           const figY = priceToY(a.figPrice);
           const alt = a.stageH - figY;
           a.smoothRot = lerp(a.smoothRot, 0, 0.05 * dtNorm);
           setFig(figScreenX, alt, a.smoothRot);
+          const groundY = getTerrainY(figWorldX);
+          if (figY >= groundY - 3) {
+            const loco = a.loco;
+            loco.grounded = true;
+            loco.bodyX = figWorldX;
+            loco.bodyY = groundY - BODY_HEIGHT_PX;
+            loco.leftFoot = { x: figWorldX - 1.1, y: getTerrainY(figWorldX - 1.1), planted: true };
+            loco.rightFoot = { x: figWorldX + 1.1, y: getTerrainY(figWorldX + 1.1), planted: true };
+            loco.squash = lerp(loco.squash, 2.2, 0.5);
+            applyRunPose(0, { x: 16, y: 49 }, { x: 20, y: 49 }, loco.squash);
+          } else {
+            applyPose("parachute", 0);
+          }
         }
 
       } else if (a.state === "DEAD") {
@@ -987,7 +1355,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [drawScene, applyPose, setFig, setFlame, onPnlChange, splat]);
+  }, [drawScene, applyPose, applyRunPose, setFig, setFlame, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
 
   /* ============ PRICE STREAM ============ */
   useEffect(() => {
@@ -1021,7 +1389,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           inset: 0,
           width: "100%",
           height: "100%",
-          zIndex: 1,
+          zIndex: 2,
         }}
       />
 
@@ -1033,7 +1401,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       {pnlReadout}
 
       {/* FIGURE */}
-      <div className="figure-wrap" ref={figRef} style={{ zIndex: 6 }}>
+      <div className="figure-wrap" ref={figRef} style={{ zIndex: 3, opacity: 1 }}>
         <svg
           className="parachute"
           ref={parachuteRef}
