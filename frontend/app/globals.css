@@ -260,7 +260,7 @@ body::before {
 }
 .figure-line {
   stroke: var(--ink);
-  stroke-width: 1.6;
+  stroke-width: 2;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -268,19 +268,10 @@ body::before {
 .fig-glow {
   filter: none;
 }
-.helmet-fill {
-  fill: var(--night);
-  stroke: var(--ink);
-  stroke-width: 1.4;
-}
-.visor {
-  fill: var(--cyan);
-  opacity: 0.85;
-}
 .hand-foot {
   fill: var(--night);
   stroke: var(--ink);
-  stroke-width: 1.2;
+  stroke-width: 1.5;
 }
 
 /* ============ PARACHUTE ============ */

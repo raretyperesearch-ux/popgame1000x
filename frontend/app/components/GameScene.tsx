@@ -49,7 +49,7 @@ type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED"
 
 /* ============ FIGURE POSE HELPERS ============ */
 const HIP = { x: 18, y: 28 };
-const SHO = { x: 18, y: 14 };
+const SHO = { x: 18, y: 15 };
 const UP_LEG = 10,
   LO_LEG = 10,
   UP_ARM = 7,
@@ -302,8 +302,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const loLegRRef = useRef<SVGLineElement>(null);
   const handLRef = useRef<SVGCircleElement>(null);
   const handRRef = useRef<SVGCircleElement>(null);
-  const footLRef = useRef<SVGEllipseElement>(null);
-  const footRRef = useRef<SVGEllipseElement>(null);
+  const footLRef = useRef<SVGCircleElement>(null);
+  const footRRef = useRef<SVGCircleElement>(null);
 
   /* mutable animation state */
   const anim = useRef({
@@ -1541,59 +1541,52 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           viewBox="0 0 36 58"
           className="fig-glow"
         >
-          {/* jetpack */}
+          {/* jetpack (small box on back) */}
           <g>
-            <path d="M 14 13 Q 15 11 16.5 11" stroke="#f4ecd8" strokeWidth="0.8" fill="none" strokeLinecap="round" />
-            <path d="M 22 13 Q 21 11 19.5 11" stroke="#f4ecd8" strokeWidth="0.8" fill="none" strokeLinecap="round" />
-            <path
-              d="M 11 13 C 11 12, 12 12, 13 12 L 23 12 C 24 12, 25 12, 25 13 L 25 27 C 25 28, 24 28, 23 28 L 13 28 C 12 28, 11 28, 11 27 Z"
-              fill="#08080f"
-              stroke="#f4ecd8"
-              strokeWidth="1.2"
-              strokeLinejoin="round"
-            />
-            <path d="M 11.3 13.2 L 24.7 13.2 M 11.3 27.5 L 24.7 27.5" stroke="#f4ecd8" strokeWidth="0.5" opacity="0.5" strokeLinecap="round" />
-            <line x1="12" y1="17" x2="24" y2="17" stroke="#f4ecd8" strokeWidth="0.5" opacity="0.55" />
-            <line x1="12" y1="22" x2="24" y2="22" stroke="#f4ecd8" strokeWidth="0.5" opacity="0.4" />
-            <path d="M 12 28 L 12 30 L 14.5 30 L 14.5 28" stroke="#f4ecd8" strokeWidth="1" fill="#08080f" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M 21.5 28 L 21.5 30 L 24 30 L 24 28" stroke="#f4ecd8" strokeWidth="1" fill="#08080f" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x="8" y="16" width="6" height="10" rx="1.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="1.6" strokeLinejoin="round" />
+            <line x1="9.5" y1="19" x2="12.5" y2="19" stroke="#f4ecd8" strokeWidth="0.7" opacity="0.5" />
+            <line x1="9.5" y1="22" x2="12.5" y2="22" stroke="#f4ecd8" strokeWidth="0.7" opacity="0.4" />
+            <rect x="9" y="26" width="2" height="2.5" rx="0.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="0.8" />
+            <rect x="12" y="26" width="2" height="2.5" rx="0.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="0.8" />
           </g>
-          {/* flames */}
+          {/* blue electric flames */}
           <g
             ref={flameRef}
             opacity="0"
             style={{
-              transformOrigin: "50% 0%",
+              transformOrigin: "11px 28px",
               transformBox: "fill-box" as const,
             }}
           >
-            <path d="M 13.25 30 C 12 35, 10 40, 12 45 C 13 42, 13.5 44, 13.5 41 C 14 44, 14.8 41, 15 43 C 15.5 38, 15 34, 14 30 Z" fill="#ff9933" stroke="#ff9933" strokeWidth="0.5" opacity="0.85" />
-            <path d="M 22.75 30 C 21.5 35, 19.5 40, 21.5 45 C 22.5 42, 23 44, 23 41 C 23.5 44, 24.3 41, 24.5 43 C 25 38, 24.5 34, 23.5 30 Z" fill="#ff9933" stroke="#ff9933" strokeWidth="0.5" opacity="0.85" />
-            <path d="M 13.25 31 C 12.5 34, 11.5 38, 12.5 41 C 13.2 39, 13.5 40, 13.5 38 C 14 40, 14.5 38, 14.5 39 C 15 36, 14.5 33, 14 31 Z" fill="#ffd966" stroke="none" opacity="0.95" />
-            <path d="M 22.75 31 C 22 34, 21 38, 22 41 C 22.7 39, 23 40, 23 38 C 23.5 40, 24 38, 24 39 C 24.5 36, 24 33, 23.5 31 Z" fill="#ffd966" stroke="none" opacity="0.95" />
+            {/* outer blue glow */}
+            <path d="M 9.5 28.5 C 8 33, 6.5 38, 8.5 44 C 9.5 40, 10 42, 10 39 C 10.5 42, 11 39, 11.2 41 C 11.8 36, 11.2 32, 10.5 28.5 Z" fill="#4dc9f6" stroke="#4dc9f6" strokeWidth="0.5" opacity="0.75" />
+            <path d="M 12.5 28.5 C 11 33, 9.5 38, 11.5 44 C 12.5 40, 13 42, 13 39 C 13.5 42, 14 39, 14.2 41 C 14.8 36, 14.2 32, 13.5 28.5 Z" fill="#4dc9f6" stroke="#4dc9f6" strokeWidth="0.5" opacity="0.75" />
+            {/* inner white-blue core */}
+            <path d="M 9.8 29 C 9 32, 8 35, 9 38 C 9.5 36, 10 37, 10 35.5 C 10.3 37, 10.8 35, 10.8 36 C 11 34, 10.8 31, 10.2 29 Z" fill="#b8ecff" stroke="none" opacity="0.9" />
+            <path d="M 12.8 29 C 12 32, 11 35, 12 38 C 12.5 36, 13 37, 13 35.5 C 13.3 37, 13.8 35, 13.8 36 C 14 34, 13.8 31, 13.2 29 Z" fill="#b8ecff" stroke="none" opacity="0.9" />
+            {/* electric crackle lines */}
+            <path d="M 10 33 L 8.5 36 L 10 35 L 8 39" stroke="#e0f4ff" strokeWidth="0.6" fill="none" opacity="0.7" strokeLinecap="round" />
+            <path d="M 13 33 L 14.5 36 L 13 35 L 15 39" stroke="#e0f4ff" strokeWidth="0.6" fill="none" opacity="0.7" strokeLinecap="round" />
           </g>
-          {/* helmet */}
-          <path
-            d="M 12.5 6 C 12.5 2, 23 2, 23.5 6.5 C 23.5 10, 22 11, 18 11 C 14 11, 12.5 10, 12.5 6 Z"
-            className="helmet-fill"
-          />
-          <path d="M 12.7 6 C 13 2.5, 22.5 2.5, 23.3 6.3" stroke="#f4ecd8" strokeWidth="0.6" fill="none" opacity="0.5" />
-          <rect x="14" y="5.5" width="8" height="2" rx="0.5" className="visor" />
-          <line x1="14" y1="9" x2="22" y2="9" stroke="#f4ecd8" strokeWidth="0.6" opacity="0.7" />
+          {/* round head */}
+          <circle cx="18" cy="7" r="5.5" fill="#0a0a14" stroke="#f4ecd8" strokeWidth="2" />
           {/* body */}
-          <line className="figure-line" x1="18" y1="11" x2="18" y2="28" />
-          <line className="figure-line" ref={upArmLRef} x1="18" y1="14" x2="14" y2="21" />
-          <line className="figure-line" ref={loArmLRef} x1="14" y1="21" x2="11" y2="28" />
-          <line className="figure-line" ref={upArmRRef} x1="18" y1="14" x2="22" y2="21" />
-          <line className="figure-line" ref={loArmRRef} x1="22" y1="21" x2="25" y2="28" />
-          <circle className="hand-foot" ref={handLRef} cx="11" cy="28" r="1.4" />
-          <circle className="hand-foot" ref={handRRef} cx="25" cy="28" r="1.4" />
-          <line className="figure-line" ref={upLegLRef} x1="18" y1="28" x2="14" y2="38" />
-          <line className="figure-line" ref={loLegLRef} x1="14" y1="38" x2="11" y2="48" />
-          <line className="figure-line" ref={upLegRRef} x1="18" y1="28" x2="22" y2="38" />
-          <line className="figure-line" ref={loLegRRef} x1="22" y1="38" x2="25" y2="48" />
-          <ellipse className="hand-foot" ref={footLRef} cx="11" cy="48.5" rx="2.2" ry="1.2" />
-          <ellipse className="hand-foot" ref={footRRef} cx="25" cy="48.5" rx="2.2" ry="1.2" />
+          <line className="figure-line" x1="18" y1="12" x2="18" y2="28" strokeWidth="2.2" />
+          {/* arms */}
+          <line className="figure-line" ref={upArmLRef} x1="18" y1="15" x2="14" y2="22" strokeWidth="2" />
+          <line className="figure-line" ref={loArmLRef} x1="14" y1="22" x2="11" y2="28" strokeWidth="2" />
+          <line className="figure-line" ref={upArmRRef} x1="18" y1="15" x2="22" y2="22" strokeWidth="2" />
+          <line className="figure-line" ref={loArmRRef} x1="22" y1="22" x2="25" y2="28" strokeWidth="2" />
+          <circle className="hand-foot" ref={handLRef} cx="11" cy="28" r="1.6" />
+          <circle className="hand-foot" ref={handRRef} cx="25" cy="28" r="1.6" />
+          {/* legs */}
+          <line className="figure-line" ref={upLegLRef} x1="18" y1="28" x2="14" y2="38" strokeWidth="2" />
+          <line className="figure-line" ref={loLegLRef} x1="14" y1="38" x2="11" y2="48" strokeWidth="2" />
+          <line className="figure-line" ref={upLegRRef} x1="18" y1="28" x2="22" y2="38" strokeWidth="2" />
+          <line className="figure-line" ref={loLegRRef} x1="22" y1="38" x2="25" y2="48" strokeWidth="2" />
+          {/* feet (simple circles, not ovals) */}
+          <circle className="hand-foot" ref={footLRef} cx="11" cy="49" r="1.8" />
+          <circle className="hand-foot" ref={footRRef} cx="25" cy="49" r="1.8" />
         </svg>
       </div>
       <div className="banner" ref={bannerRef} />
