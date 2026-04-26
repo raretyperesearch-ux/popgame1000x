@@ -9,6 +9,7 @@ import {
   useImperativeHandle,
 } from "react";
 import type { HistoryEntry } from "./HistoryStrip";
+import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
 
 /* ============ CONSTANTS ============ */
@@ -233,6 +234,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const [priceDisplay, setPriceDisplay] = useState("ETH $3500.00");
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
+  const [endOfGame, setEndOfGame] = useState<EndOfGameData | null>(null);
 
   /* stars (generated once for atmosphere) */
   const [stars] = useState(() =>
@@ -979,10 +981,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "DEAD";
     setGameState("DEAD");
     setSpriteState("fail");
-    showBanner("loss", "\u2212$" + a.positionWager.toFixed(2));
     onHistoryPush({ amt: -a.positionWager, win: false });
-    setTimeout(reset, 1900);
-  }, [setGameState, setSpriteState, showBanner, onHistoryPush, reset]);
+    // brief pause so the splat animation reads, then show modal
+    setTimeout(() => {
+      setEndOfGame({
+        kind: "rekt",
+        pnlDollars: -a.positionWager,
+        pnlPct: -1,
+        entry: a.entry,
+        exit: null,
+        boost: a.positionLev,
+        wager: a.positionWager,
+      });
+    }, 900);
+  }, [setGameState, setSpriteState, onHistoryPush]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -996,14 +1008,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const pnlDollars = pnlPct * a.positionWager;
     setBalance((prev: number) => prev + a.positionWager + pnlDollars);
     setSpriteState("land");
-    const sign = pnlDollars >= 0 ? "+" : "\u2212";
-    showBanner(
-      pnlDollars >= 0 ? "win" : "loss",
-      sign + "$" + Math.abs(pnlDollars).toFixed(2),
-    );
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
-    setTimeout(reset, 2000);
-  }, [setGameState, setBalance, setSpriteState, showBanner, onHistoryPush, reset]);
+    // wait for parachute descent to settle before showing modal
+    setTimeout(() => {
+      setEndOfGame({
+        kind: pnlDollars >= 0 ? "win" : "loss",
+        pnlDollars,
+        pnlPct,
+        entry: a.entry,
+        exit: a.price,
+        boost: a.positionLev,
+        wager: a.positionWager,
+      });
+    }, 900);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush]);
+
+  const closeEndOfGame = useCallback(() => {
+    setEndOfGame(null);
+    reset();
+  }, [reset]);
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
@@ -1585,6 +1608,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         />
       </div>
       <div className="banner" ref={bannerRef} />
+      <EndOfGameModal data={endOfGame} onClose={closeEndOfGame} />
     </div>
   );
 });

@@ -604,3 +604,243 @@ body::before {
 .help-got-it:active {
   transform: rotate(1deg) scale(0.97);
 }
+
+/* ============ END OF GAME MODAL ============ */
+.eog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: eog-fade-in 0.25s ease-out;
+}
+@keyframes eog-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.eog-card {
+  position: relative;
+  width: min(92vw, 520px);
+  border-radius: 18px;
+  padding: 28px 26px 22px;
+  font-family: 'Press Start 2P', monospace;
+  color: var(--ink);
+  overflow: hidden;
+  animation: eog-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes eog-pop {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.eog-card.win {
+  background: linear-gradient(160deg, #0e1d2c 0%, #0a1828 60%, #061018 100%);
+  border: 3px solid #2a4456;
+  box-shadow: 0 0 60px rgba(93, 211, 158, 0.25), inset 0 0 0 1px rgba(93, 211, 158, 0.15);
+}
+.eog-card.loss {
+  background: linear-gradient(160deg, #1f1810 0%, #1a1408 60%, #0f0a04 100%);
+  border: 3px solid #4a3818;
+  box-shadow: 0 0 60px rgba(255, 153, 51, 0.18), inset 0 0 0 1px rgba(255, 153, 51, 0.12);
+}
+.eog-card.rekt {
+  background: linear-gradient(160deg, #240808 0%, #1a0606 60%, #0d0202 100%);
+  border: 3px solid #5a1818;
+  box-shadow: 0 0 80px rgba(255, 95, 86, 0.32), inset 0 0 0 1px rgba(255, 95, 86, 0.2);
+}
+.eog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 2;
+}
+.eog-title {
+  font-size: 16px;
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+.eog-subtitle {
+  font-size: 8px;
+  margin-top: 6px;
+  color: var(--cyan);
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+}
+.eog-card.loss .eog-subtitle { color: #ffc56b; }
+.eog-card.rekt .eog-subtitle { color: #ff8a82; }
+.eog-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 2px solid;
+  font-size: 14px;
+  background: rgba(0,0,0,0.35);
+  flex-shrink: 0;
+}
+.eog-badge.win { color: var(--green); border-color: var(--green); }
+.eog-badge.loss { color: var(--orange); border-color: var(--orange); }
+.eog-badge.rekt { color: var(--red); border-color: var(--red); }
+.eog-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  align-items: center;
+  margin: 6px 0 18px;
+  position: relative;
+  z-index: 2;
+}
+.eog-sprite-frame {
+  width: 144px;
+  height: 160px;
+  background-image: url(/spritesheet.png);
+  background-repeat: no-repeat;
+  background-size: 720px 320px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 4px 0 rgba(0,0,0,0.4));
+}
+.eog-sprite-frame.f8 { background-position: -432px -160px; }
+.eog-sprite-frame.f6 { background-position: -144px -160px; }
+.eog-sprite-frame.f9 { background-position: -576px -160px; }
+.eog-pnl-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.eog-pnl-label {
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 1px;
+  position: relative;
+}
+.eog-pnl-label::before, .eog-pnl-label::after {
+  content: '> ';
+  color: var(--muted);
+  font-size: 12px;
+}
+.eog-pnl-label::after { content: ' <'; }
+.eog-pnl-amount {
+  font-size: 36px;
+  line-height: 1;
+  text-shadow: 3px 3px 0 rgba(0,0,0,0.5);
+  letter-spacing: -1px;
+}
+.eog-card.win .eog-pnl-amount { color: var(--green); }
+.eog-card.loss .eog-pnl-amount { color: var(--orange); }
+.eog-card.rekt .eog-pnl-amount { color: var(--red); }
+.eog-pnl-pct {
+  padding: 4px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.eog-card.win .eog-pnl-pct { background: rgba(93,211,158,0.18); color: var(--green); }
+.eog-card.loss .eog-pnl-pct { background: rgba(255,153,51,0.18); color: var(--orange); }
+.eog-card.rekt .eog-pnl-pct { background: rgba(255,95,86,0.22); color: var(--red); }
+.eog-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(244,236,216,0.08);
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 2;
+}
+.eog-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+}
+.eog-stat-label {
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.eog-stat-value {
+  font-size: 11px;
+  color: var(--ink);
+  text-align: center;
+  white-space: nowrap;
+}
+.eog-stat-sub {
+  font-size: 7px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.eog-stat-divider {
+  width: 1px;
+  background: rgba(244,236,216,0.12);
+}
+.eog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+.eog-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  padding: 12px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(0,0,0,0.4);
+  border: 2px solid rgba(244,236,216,0.25);
+  color: var(--ink);
+  letter-spacing: 0.5px;
+  transition: all 0.12s;
+}
+.eog-btn:hover { background: rgba(244,236,216,0.08); border-color: var(--ink); transform: translateY(-1px); }
+.eog-btn:active { transform: translateY(0); }
+.eog-btn.primary {
+  background: var(--ink);
+  color: var(--night);
+  border-color: var(--ink);
+}
+.eog-btn.primary:hover { background: #fff; }
+.eog-decor {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+.eog-spark {
+  width: 10px; height: 10px;
+  background: var(--gold);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px rgba(255,215,0,0.6);
+}
+.eog-card.loss .eog-spark { background: var(--orange); box-shadow: 0 0 8px rgba(255,153,51,0.5); }
+.eog-card.rekt .eog-spark { background: var(--red); box-shadow: 0 0 10px rgba(255,95,86,0.7); }
+.eog-coin {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff7c0 0%, var(--gold) 50%, #b8860b 100%);
+  border: 2px solid #6e5300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: #6e5300;
+}
+.eog-card.rekt .eog-coin {
+  background: radial-gradient(circle at 35% 35%, #6a1010 0%, #3a0808 100%);
+  border-color: #200;
+  color: #ff5f56;
+}
