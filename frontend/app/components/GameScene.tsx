@@ -191,25 +191,23 @@ function featureNoise(n: number): number {
 }
 
 function terrainAt(worldX: number, stageH: number, seed: number): number {
-  const x = worldX * 12;
+  const x = worldX * 14;
   const baseY = stageH * 0.48;
-  const a1 = stageH * 0.22;
-  const a2 = stageH * 0.12;
-  const a3 = stageH * 0.06;
+  const a1 = stageH * 0.27;
+  const a2 = stageH * 0.16;
+  const a3 = stageH * 0.08;
   let y = baseY
-    + Math.sin(x * 0.006 + seed) * a1
-    + Math.sin(x * 0.014 + seed * 2.1) * a2
-    + Math.sin(x * 0.031 + seed * 4.7) * a3;
+    + Math.sin(x * 0.0046 + seed) * a1
+    + Math.sin(x * 0.0105 + seed * 2.1) * a2
+    + Math.sin(x * 0.021 + seed * 4.7) * a3;
 
-  const featureSpan = 600 + featureNoise(seed + Math.floor(x / 700)) * 300;
-  const featureId = Math.floor(x / featureSpan);
-  const local = (x - featureId * featureSpan) / featureSpan; // 0..1
-  const mode = Math.floor(featureNoise(seed * 3.7 + featureId * 0.91) * 5);
-  if (mode === 0) y -= Math.sin(local * Math.PI) * stageH * 0.14; // peak
-  else if (mode === 1) y += Math.sin(local * Math.PI) * stageH * 0.13; // valley
-  else if (mode === 2) y -= local * stageH * 0.18; // up ramp
-  else if (mode === 3) y += local * stageH * 0.18; // down ramp
-  else y += Math.sin(local * Math.PI * 2) * stageH * 0.07; // rolling
+  const cycle = 5200;
+  const t = ((x % cycle) + cycle) % cycle / cycle;
+  if (t < 0.2) y -= (t / 0.2) * stageH * 0.22; // long uphill ramp
+  else if (t < 0.34) y -= Math.sin(((t - 0.2) / 0.14) * Math.PI) * stageH * 0.2; // tall peak
+  else if (t < 0.52) y += ((t - 0.34) / 0.18) * stageH * 0.28; // steep downhill
+  else if (t < 0.68) y += Math.sin(((t - 0.52) / 0.16) * Math.PI) * stageH * 0.2; // deep valley
+  else y += Math.sin(((t - 0.68) / 0.32) * Math.PI * 3) * stageH * 0.08; // rolling hills
 
   return clamp(y, stageH * 0.22, stageH * 0.72);
 }
@@ -219,7 +217,7 @@ function buildTerrainPoints(count: number, startWorldX: number, stageH: number, 
   for (let i = 0; i < count; i++) raw.push(terrainAt(startWorldX + i, stageH, seed));
   const out = [...raw];
   for (let i = 1; i < count - 1; i++) {
-    out[i] = (raw[i - 1] + raw[i] * 2 + raw[i + 1]) / 4;
+    out[i] = (raw[i - 1] + raw[i] * 3 + raw[i + 1]) / 5;
   }
   return out;
 }
@@ -655,9 +653,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           drawRidge(h * 0.64, h * 0.07, "#0b1c2f", 0.65, 0.018);
 
           const groundPath = new Path2D();
-          groundPath.moveTo(pts[0]?.x ?? 0, chartBot);
+          groundPath.moveTo(pts[0]?.x ?? 0, h);
           for (let i = 0; i < pts.length; i++) groundPath.lineTo(pts[i].x, pts[i].y);
-          groundPath.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
+          groundPath.lineTo(pts[pts.length - 1]?.x ?? w, h);
           groundPath.closePath();
 
           const groundFill = bg.createLinearGradient(0, chartTop, 0, h);
@@ -721,6 +719,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.globalAlpha = 0.18;
       ctx.strokeStyle = "#f4ecd8";
       ctx.lineWidth = 10;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      /* trend glow by segment direction */
+      ctx.lineWidth = 7;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       for (let i = 1; i < pts.length; i++) {
@@ -1094,14 +1107,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
         const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
         const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
-        loco.bodyY = midY - BODY_HEIGHT_PX;
+        const ridgeY = Math.min(loco.leftFoot.y, loco.rightFoot.y);
+        loco.bodyY = ridgeY - BODY_HEIGHT_PX;
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
         const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.15 * dtNorm);
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
         applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.35 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1176,14 +1190,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           }
           const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
           const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
-          loco.bodyY = midY - BODY_HEIGHT_PX;
+          const ridgeY = Math.min(loco.leftFoot.y, loco.rightFoot.y);
+          loco.bodyY = ridgeY - BODY_HEIGHT_PX;
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
           const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.2 * dtNorm);
           const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
           const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
           applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.35 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
