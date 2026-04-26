@@ -38,7 +38,7 @@ const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 22;
 const GAME_SPEED = 0.45;
 const CAMERA_LERP = 0.045;
-const BODY_LERP = 0.12;
+const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
@@ -1150,6 +1150,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
       }
 
+      /* snap figure to terrain on very first frame */
+      if (a.frame <= 1) {
+        const initY = getTerrainY(figWorldX);
+        a.smoothAlt = a.stageH - initY;
+      }
+
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
         const loco = a.loco;
@@ -1187,7 +1193,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
         applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, BODY_LERP * dtNorm);
+        { const targetAlt = a.stageH - ridgeY; const gap = Math.abs(targetAlt - a.smoothAlt); const adaptiveLerp = Math.min(1, BODY_LERP + gap * 0.005); a.smoothAlt = lerp(a.smoothAlt, targetAlt, adaptiveLerp * dtNorm); }
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1266,7 +1272,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
           const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
           applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, BODY_LERP * dtNorm);
+          { const targetAlt = a.stageH - ridgeY; const gap = Math.abs(targetAlt - a.smoothAlt); const adaptiveLerp = Math.min(1, BODY_LERP + gap * 0.005); a.smoothAlt = lerp(a.smoothAlt, targetAlt, adaptiveLerp * dtNorm); }
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
