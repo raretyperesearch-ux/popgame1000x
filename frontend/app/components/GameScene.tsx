@@ -200,6 +200,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     runStartTime: 0, // timestamp when RUNNING began
     prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
+    idleStartTime: 0, // timestamp when IDLE began (sprite-only)
     prevStepHalf: 0, // tracks half-cycle for dust spawn
     spriteState: "idle" as SpriteState,
     spriteRunStart: 0, // timestamp when run animation started
@@ -816,6 +817,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.runStartTime = 0;
     a.prepareStartTime = 0;
     a.jumpStartTime = 0;
+    a.idleStartTime = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
     a.loco.grounded = true;
@@ -905,6 +907,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       /* chart scroll speed based on state */
       let speed = CHART_SPEED_IDLE;
       if (a.state === "RUNNING" || a.state === "PREPARE" || a.state === "JUMPING") speed = CHART_SPEED_RUN;
+      else if (a.state === "IDLE" && a.idleStartTime > 0 && time - a.idleStartTime >= 800) speed = CHART_SPEED_RUN;
       else if (a.state === "LIVE") speed = CHART_SPEED_LIVE;
       else if (a.state === "STOPPED") speed = CHART_SPEED_IDLE;
       speed *= GAME_SPEED;
@@ -1009,7 +1012,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        setSpriteState("idle", time);
+        if (a.idleStartTime === 0) a.idleStartTime = time;
+        const idleHold = time - a.idleStartTime < 800;
+        setSpriteState(idleHold ? "idle" : "run", time);
         const loco = a.loco;
         const stepHz = 1.8;
         loco.bodyX = figWorldX;
