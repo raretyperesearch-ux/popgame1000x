@@ -19,6 +19,9 @@ const VY_CLAMP_P = 0.6; // max velocity in price-space
 const FIG_X_PCT = 0.35; // figure at 35% from left
 const CHART_TOP_PCT = 0.12; // chart area top
 const CHART_BOT_PCT = 0.88; // chart area bottom
+const TERRAIN_BASE_PCT = 0.66;
+const TERRAIN_MIN_PCT = 0.48;
+const TERRAIN_MAX_PCT = 0.76;
 const VISIBLE_POINTS = 90; // price points visible on screen
 const TOTAL_POINTS = 150; // buffer size
 const CHART_SPEED_IDLE = 0.25; // sub-point scroll per frame (idle)
@@ -26,7 +29,6 @@ const CHART_SPEED_RUN = 1.0; // sub-point scroll per frame (running)
 const CHART_SPEED_LIVE = 0.45; // sub-point scroll per frame (live)
 const PRICE_VOL = 0.65; // random walk step for new chart points
 const MOCK_DRIFT = 0.18; // per-frame mini drift
-const JITTER = 1.0; // hand-drawn jitter amplitude
 const STEP_FREQ = 4.2; // step cycles per second during run
 const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
 const DUST_MAX = 15; // max dust particles alive
@@ -35,16 +37,19 @@ const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
-const GROUND_Y_PCT = 0.66;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
-const GRASS_TILE_W = 760;
-const GRASS_TILE_H = 190;
-const GRASS_SURFACE_Y = 52;
+const GRASS_SRC_W = 1024;
+const GRASS_SRC_H = 256;
+const GRASS_TILE_W = 520;
+const GRASS_TILE_H = 130;
+const GRASS_SURFACE_Y = 36;
+const GRASS_SLICE_W = 8;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
-const SPRITE_SCALE = 2;
+const SPRITE_SCALE = 1.5;
 const SPRITE_DISPLAY_W = SPRITE_FRAME_W * SPRITE_SCALE;
 const SPRITE_DISPLAY_H = SPRITE_FRAME_H * SPRITE_SCALE;
+const SPRITE_FOOT_GAP = 8 * SPRITE_SCALE;
 const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
@@ -84,9 +89,12 @@ function featureNoise(n: number): number {
   return s - Math.floor(s);
 }
 
-function terrainAt(_worldX: number, stageH: number, _seed: number): number {
-  void _seed;
-  return stageH * GROUND_Y_PCT;
+function terrainAt(worldX: number, stageH: number, seed: number): number {
+  const base = stageH * TERRAIN_BASE_PCT;
+  const y = base
+    + Math.sin(worldX * 0.11 + seed) * stageH * 0.035
+    + Math.sin(worldX * 0.041 + seed * 1.7) * stageH * 0.045;
+  return clamp(y, stageH * TERRAIN_MIN_PCT, stageH * TERRAIN_MAX_PCT);
 }
 
 function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
@@ -254,7 +262,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       if (!fig) return;
       const a = anim.current;
       const tx = (x - SPRITE_DISPLAY_W / 2).toFixed(1);
-      const ty = (-(alt + a.curBobY)).toFixed(1);
+      const ty = (SPRITE_FOOT_GAP - alt - a.curBobY).toFixed(1);
       fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
     },
     [],
@@ -302,36 +310,63 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     );
   }, []);
 
-  const drawGrassGround = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number) => {
-    const groundY = terrainAt(0, h, 0);
+  const drawGrassGround = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, pts: { x: number; y: number }[]) => {
+    const groundYAt = (x: number) => {
+      if (pts.length < 2) return terrainAt(0, h, 0);
+      for (let i = 1; i < pts.length; i++) {
+        if (x <= pts[i].x) {
+          const prev = pts[i - 1];
+          const cur = pts[i];
+          const span = Math.max(1, cur.x - prev.x);
+          return lerp(prev.y, cur.y, clamp((x - prev.x) / span, 0, 1));
+        }
+      }
+      return pts[pts.length - 1].y;
+    };
     const img = groundImageRef.current;
+    const firstY = groundYAt(0);
 
-    const shadow = ctx.createLinearGradient(0, groundY - 48, 0, groundY + 24);
+    const shadow = ctx.createLinearGradient(0, firstY - 48, 0, firstY + 24);
     shadow.addColorStop(0, "rgba(0,0,0,0)");
     shadow.addColorStop(1, "rgba(0,0,0,0.24)");
     ctx.fillStyle = shadow;
-    ctx.fillRect(0, groundY - 48, w, 72);
+    ctx.fillRect(0, Math.min(...pts.map((p) => p.y)) - 48, w, 120);
+
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 8) {
+      ctx.lineTo(x, groundYAt(x) + GRASS_TILE_H - GRASS_SURFACE_Y - 8);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    const dirt = ctx.createLinearGradient(0, firstY, 0, h);
+    dirt.addColorStop(0, "#17261b");
+    dirt.addColorStop(0.35, "#141210");
+    dirt.addColorStop(1, "#05080d");
+    ctx.fillStyle = dirt;
+    ctx.fill();
 
     if (img && groundImageReadyRef.current) {
-      const drawY = groundY - GRASS_SURFACE_Y;
-      const scroll = (anim.current.scrollFrac * 12) % GRASS_TILE_W;
-      for (let x = -scroll - GRASS_TILE_W; x < w + GRASS_TILE_W; x += GRASS_TILE_W) {
-        ctx.drawImage(img, x, drawY, GRASS_TILE_W, GRASS_TILE_H);
-      }
-      if (drawY + GRASS_TILE_H < h) {
-        ctx.fillStyle = "#05080d";
-        ctx.fillRect(0, drawY + GRASS_TILE_H - 2, w, h - (drawY + GRASS_TILE_H) + 2);
+      const scroll = (anim.current.scrollFrac * 18) % GRASS_TILE_W;
+      for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
+        const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
+        const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * GRASS_SLICE_W / GRASS_TILE_W)));
+        ctx.drawImage(
+          img,
+          sourceX, 0, sourceW, GRASS_SRC_H,
+          x, groundYAt(x) - GRASS_SURFACE_Y, GRASS_SLICE_W + 1, GRASS_TILE_H,
+        );
       }
       return;
     }
 
-    const fallback = ctx.createLinearGradient(0, groundY, 0, h);
+    const fallback = ctx.createLinearGradient(0, firstY, 0, h);
     fallback.addColorStop(0, "#3f8f3e");
     fallback.addColorStop(0.12, "#1f5f30");
     fallback.addColorStop(0.18, "#2f261d");
     fallback.addColorStop(1, "#05080d");
     ctx.fillStyle = fallback;
-    ctx.fillRect(0, groundY - 8, w, h - groundY + 8);
+    ctx.fillRect(0, firstY - 8, w, h - firstY + 8);
   }, []);
 
   const getTerrainY = useCallback((worldX: number) => {
@@ -592,51 +627,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       if (a.mountainCache) ctx.drawImage(a.mountainCache, 0, 0);
 
-      /* bold green/red glow backbone */
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.lineWidth = 6;
-      for (let i = 1; i < pts.length; i++) {
-        const up = pts[i].y <= pts[i - 1].y;
-        ctx.globalAlpha = 0.1;
-        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
-        ctx.beginPath();
-        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* main chart line (hand-drawn double-pass) */
-      for (let pass = 0; pass < 2; pass++) {
-        ctx.globalAlpha = pass === 0 ? 0.85 : 0.3;
-        ctx.strokeStyle = "#f4ecd8";
-        ctx.lineWidth = pass === 0 ? 2 : 1.2;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        const j = pass === 0 ? JITTER : JITTER * 1.6;
-        ctx.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          const jx = pts[i].x + (Math.random() - 0.5) * j;
-          const jy = pts[i].y + (Math.random() - 0.5) * j;
-          if (i === 0) ctx.moveTo(jx, jy);
-          else {
-            /* smooth curves through midpoints */
-            if (i < pts.length - 1) {
-              const nx = pts[i + 1].x + (Math.random() - 0.5) * j;
-              const ny = pts[i + 1].y + (Math.random() - 0.5) * j;
-              const mx = (jx + nx) / 2;
-              const my = (jy + ny) / 2;
-              ctx.quadraticCurveTo(jx, jy, mx, my);
-            } else {
-              ctx.lineTo(jx, jy);
-            }
-          }
-        }
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
       if (DEBUG_TERRAIN) {
         ctx.strokeStyle = "rgba(255,230,80,0.8)";
         ctx.lineWidth = 1;
@@ -753,7 +743,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const curY = priceToY(a.price);
       ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
 
-      drawGrassGround(ctx, w, h);
+      drawGrassGround(ctx, w, h, pts);
 
       /* dust particles */
       const dust = anim.current.dustParticles;
@@ -907,7 +897,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const i = a.terrainPoints.length;
         const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
         const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
-        const terrainNext = lerp(prev, terrainRaw, 0.38);
+        const priceTilt = clamp(step, -1.2, 1.2) * -34;
+        const desired = lerp(terrainRaw, prev + priceTilt, 0.72);
+        const terrainNext = clamp(
+          lerp(prev, desired, 0.42),
+          (a.stageH || 700) * TERRAIN_MIN_PCT,
+          (a.stageH || 700) * TERRAIN_MAX_PCT,
+        );
         a.terrainPoints.push(terrainNext);
         if (a.prices.length > TOTAL_POINTS * 1.5) a.prices.shift();
         if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
