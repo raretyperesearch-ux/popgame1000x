@@ -185,16 +185,43 @@ function generatePriceSeries(count: number, start: number): number[] {
   return prices;
 }
 
-function generateTerrainSeries(count: number, startY: number): number[] {
-  const ys = [startY];
-  let vel = 0;
-  for (let i = 1; i < count; i++) {
-    vel = vel * 0.92 + (Math.random() - 0.5) * 0.75;
-    const wave = Math.sin(i * 0.12) * 0.9 + Math.sin(i * 0.043) * 2.2;
-    const next = ys[i - 1] + vel + wave * 0.12;
-    ys.push(clamp(next, 110, 430));
+function featureNoise(n: number): number {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function terrainAt(worldX: number, stageH: number, seed: number): number {
+  const x = worldX * 12;
+  const baseY = stageH * 0.48;
+  const a1 = stageH * 0.22;
+  const a2 = stageH * 0.12;
+  const a3 = stageH * 0.06;
+  let y = baseY
+    + Math.sin(x * 0.006 + seed) * a1
+    + Math.sin(x * 0.014 + seed * 2.1) * a2
+    + Math.sin(x * 0.031 + seed * 4.7) * a3;
+
+  const featureSpan = 600 + featureNoise(seed + Math.floor(x / 700)) * 300;
+  const featureId = Math.floor(x / featureSpan);
+  const local = (x - featureId * featureSpan) / featureSpan; // 0..1
+  const mode = Math.floor(featureNoise(seed * 3.7 + featureId * 0.91) * 5);
+  if (mode === 0) y -= Math.sin(local * Math.PI) * stageH * 0.14; // peak
+  else if (mode === 1) y += Math.sin(local * Math.PI) * stageH * 0.13; // valley
+  else if (mode === 2) y -= local * stageH * 0.18; // up ramp
+  else if (mode === 3) y += local * stageH * 0.18; // down ramp
+  else y += Math.sin(local * Math.PI * 2) * stageH * 0.07; // rolling
+
+  return clamp(y, stageH * 0.22, stageH * 0.72);
+}
+
+function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
+  const raw: number[] = [];
+  for (let i = 0; i < count; i++) raw.push(terrainAt(startWorldX + i, stageH, seed));
+  const out = [...raw];
+  for (let i = 1; i < count - 1; i++) {
+    out[i] = (raw[i - 1] + raw[i] * 2 + raw[i + 1]) / 4;
   }
-  return ys;
+  return out;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -281,8 +308,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     prevPrice: 3500,
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
-    terrainPoints: generateTerrainSeries(TOTAL_POINTS, 320),
-    terrainVel: 0,
+    terrainSeed: Math.random() * Math.PI * 2,
+    terrainPoints: Array.from({ length: TOTAL_POINTS }, () => 320),
     scrollFrac: 0,
     stageW: 0,
     stageH: 0,
@@ -308,6 +335,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     chartPointSpacing: 4,
     chartStartIdx: 0,
     chartVisibleCount: 0,
+    mountainCache: null as HTMLCanvasElement | null,
+    mountainCacheKey: "",
     runStartTime: 0, // timestamp when RUNNING began
     jumpStartTime: 0, // timestamp when JUMPING began
     prevStepHalf: 0, // tracks half-cycle for dust spawn
@@ -361,6 +390,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
     a.stageW = rect.width;
     a.stageH = rect.height;
+    const terrainCount = Math.max(a.terrainPoints.length || 0, a.prices.length || TOTAL_POINTS);
+    const startWorld = Math.max(0, a.prices.length - terrainCount);
+    a.terrainPoints = buildTerrainPoints(terrainCount, startWorld, rect.height, a.terrainSeed);
   }, []);
 
   /* ============ FIGURE POSITIONING ============ */
@@ -594,53 +626,110 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       a.chartPointSpacing = pointSpacing;
 
-      /* terrain ground fill (grass + dirt) */
-      const groundPath = new Path2D();
-      groundPath.moveTo(pts[0]?.x ?? 0, chartBot);
-      for (let i = 0; i < pts.length; i++) {
-        groundPath.lineTo(pts[i].x, pts[i].y);
+      const terrainKey = `${startIdx}-${w}-${h}-${Math.round(pts[0]?.y ?? 0)}-${Math.round(pts[pts.length - 1]?.y ?? 0)}`;
+      if (!a.mountainCache || a.mountainCache.width !== w || a.mountainCache.height !== h) {
+        a.mountainCache = document.createElement("canvas");
+        a.mountainCache.width = w;
+        a.mountainCache.height = h;
+        a.mountainCacheKey = "";
       }
-      groundPath.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
-      groundPath.closePath();
+      if (a.mountainCacheKey !== terrainKey && a.mountainCache) {
+        const bg = a.mountainCache.getContext("2d");
+        if (bg) {
+          bg.clearRect(0, 0, w, h);
+          /* far parallax mountains */
+          const drawRidge = (baseY: number, amp: number, color: string, alpha: number, freq: number) => {
+            bg.globalAlpha = alpha;
+            bg.fillStyle = color;
+            bg.beginPath();
+            bg.moveTo(0, h);
+            for (let x = 0; x <= w; x += 8) {
+              const y = baseY + Math.sin((x + startIdx * 3) * freq) * amp + Math.sin((x + startIdx * 2) * freq * 0.55) * (amp * 0.5);
+              bg.lineTo(x, y);
+            }
+            bg.lineTo(w, h);
+            bg.closePath();
+            bg.fill();
+          };
+          drawRidge(h * 0.56, h * 0.09, "#10243a", 0.55, 0.012);
+          drawRidge(h * 0.64, h * 0.07, "#0b1c2f", 0.65, 0.018);
 
-      const dirtFill = ctx.createLinearGradient(0, chartTop, 0, chartBot);
-      dirtFill.addColorStop(0, "rgba(114,84,50,0.22)");
-      dirtFill.addColorStop(0.35, "rgba(84,58,35,0.26)");
-      dirtFill.addColorStop(1, "rgba(26,18,13,0.40)");
-      ctx.fillStyle = dirtFill;
-      ctx.fill(groundPath);
+          const groundPath = new Path2D();
+          groundPath.moveTo(pts[0]?.x ?? 0, chartBot);
+          for (let i = 0; i < pts.length; i++) groundPath.lineTo(pts[i].x, pts[i].y);
+          groundPath.lineTo(pts[pts.length - 1]?.x ?? w, chartBot);
+          groundPath.closePath();
 
-      /* hand-drawn dirt texture */
-      ctx.save();
-      ctx.clip(groundPath);
-      ctx.globalAlpha = 0.12;
-      ctx.strokeStyle = "#7c5b3a";
-      ctx.lineWidth = 1;
-      for (let x = -20; x < w + 20; x += 12) {
-        const yBase = chartTop + (Math.sin((x + a.frame * 0.3) * 0.03) * 8);
-        ctx.beginPath();
-        ctx.moveTo(x, yBase + 25);
-        ctx.lineTo(x + 8, yBase + 36 + Math.random() * 6);
-        ctx.stroke();
+          const groundFill = bg.createLinearGradient(0, chartTop, 0, h);
+          groundFill.addColorStop(0, "rgba(28,58,35,0.88)");
+          groundFill.addColorStop(0.42, "rgba(20,42,28,0.92)");
+          groundFill.addColorStop(1, "rgba(8,14,18,0.95)");
+          bg.fillStyle = groundFill;
+          bg.fill(groundPath);
+
+          bg.save();
+          bg.clip(groundPath);
+          /* rock faces / cliff shadows */
+          for (let i = 2; i < pts.length; i += 3) {
+            const slopeSeg = pts[i].y - pts[i - 1].y;
+            bg.globalAlpha = 0.14;
+            bg.strokeStyle = slopeSeg > 1.2 ? "#7b2e2a" : "#8ea596";
+            bg.lineWidth = 1.1;
+            bg.beginPath();
+            bg.moveTo(pts[i].x, pts[i].y + 3);
+            bg.lineTo(pts[i].x - 8, pts[i].y + 18 + (featureNoise(i * 1.3) * 10));
+            bg.stroke();
+          }
+          /* moss patches */
+          for (let i = 2; i < pts.length; i += 2) {
+            bg.globalAlpha = 0.18;
+            bg.fillStyle = i % 5 === 0 ? "#5fae58" : "#4e8d49";
+            bg.fillRect(pts[i].x - 1, pts[i].y + 2, 2 + (i % 3), 8 + (i % 4));
+          }
+          /* valley mist */
+          for (let m = 0; m < 3; m++) {
+            const mistY = h * (0.62 + m * 0.06);
+            const mg = bg.createLinearGradient(0, mistY - 20, 0, mistY + 20);
+            mg.addColorStop(0, "rgba(200,220,235,0)");
+            mg.addColorStop(0.5, "rgba(200,220,235,0.08)");
+            mg.addColorStop(1, "rgba(200,220,235,0)");
+            bg.fillStyle = mg;
+            bg.fillRect(0, mistY - 18, w, 36);
+          }
+          /* pine silhouettes near flatter sections */
+          for (let i = 3; i < pts.length; i += 8) {
+            const slopeAbs = Math.abs(pts[i].y - pts[i - 1].y);
+            if (slopeAbs > 2.8) continue;
+            const tx = pts[i].x;
+            const ty = pts[i].y + 14;
+            bg.globalAlpha = 0.42;
+            bg.fillStyle = "#0a1712";
+            bg.beginPath();
+            bg.moveTo(tx, ty - 9);
+            bg.lineTo(tx - 4, ty + 2);
+            bg.lineTo(tx + 4, ty + 2);
+            bg.closePath();
+            bg.fill();
+          }
+          bg.restore();
+          a.mountainCacheKey = terrainKey;
+        }
       }
-      ctx.restore();
+      if (a.mountainCache) ctx.drawImage(a.mountainCache, 0, 0);
 
-      /* grass fringe along the terrain crest */
-      for (let i = 1; i < pts.length; i += 2) {
-        const p0 = pts[i - 1];
-        const p1 = pts[i];
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
-        const len = Math.max(0.001, Math.hypot(dx, dy));
-        const nx = -dy / len;
-        const ny = dx / len;
-        const hBlade = 3 + Math.random() * 3;
-        ctx.globalAlpha = 0.35;
-        ctx.strokeStyle = i % 4 === 0 ? "#7be39f" : "#5dbb79";
-        ctx.lineWidth = 0.9;
+      /* bold cream glow backbone */
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = "#f4ecd8";
+      ctx.lineWidth = 10;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
         ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p1.x + nx * hBlade, p1.y + ny * hBlade);
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
@@ -900,11 +989,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const last = a.prices[a.prices.length - 1];
         const step = (a.renderPrice - last) * 0.26 + (Math.random() - 0.48) * PRICE_VOL * 0.75;
         a.prices.push(last + step);
-        const terrainLast = a.terrainPoints[a.terrainPoints.length - 1] ?? a.stageH * 0.65;
-        a.terrainVel = a.terrainVel * 0.9 + (Math.random() - 0.5) * 0.35;
         const i = a.terrainPoints.length;
-        const wave = Math.sin(i * 0.11) * 1.8 + Math.sin(i * 0.037) * 2.8;
-        const terrainNext = clamp(terrainLast + a.terrainVel + wave * 0.18, a.stageH * 0.24, a.stageH * 0.86);
+        const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
+        const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
+        const terrainNext = lerp(prev, terrainRaw, 0.38);
         a.terrainPoints.push(terrainNext);
         if (a.prices.length > TOTAL_POINTS * 1.5) a.prices.shift();
         if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
