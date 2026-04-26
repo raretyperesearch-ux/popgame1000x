@@ -561,6 +561,46 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       ctx.globalAlpha = 1;
 
+      /* crescent moon */
+      const moonX = w * 0.82, moonY = h * 0.09, moonR = 14;
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#f4ecd8";
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath();
+      ctx.arc(moonX + 7, moonY - 3, moonR * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+
+      /* sketch clouds */
+      const cloudScroll = a.scrollFrac * 0.08;
+      const cloudPositions = [
+        { x: 0.12, y: 0.06, s: 1.1 },
+        { x: 0.35, y: 0.10, s: 0.8 },
+        { x: 0.58, y: 0.04, s: 1.3 },
+        { x: 0.78, y: 0.12, s: 0.9 },
+        { x: 0.92, y: 0.07, s: 1.0 },
+      ];
+      ctx.strokeStyle = "rgba(244,236,216,0.06)";
+      ctx.lineWidth = 1.2;
+      for (const c of cloudPositions) {
+        const cx = ((c.x * w + cloudScroll * w * 0.5) % (w + 60)) - 30;
+        const cy = c.y * h;
+        const s = c.s * 18;
+        ctx.beginPath();
+        ctx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx - s * 0.45, cy + 2, s * 0.35, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx + s * 0.45, cy + 2, s * 0.38, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
       /* price-to-Y mapping */
       const chartTop = h * CHART_TOP_PCT;
       const chartBot = h * CHART_BOT_PCT;
@@ -721,60 +761,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       if (a.mountainCache) ctx.drawImage(a.mountainCache, 0, 0);
 
-      /* bold cream glow backbone */
-      ctx.globalAlpha = 0.18;
-      ctx.strokeStyle = "#f4ecd8";
-      ctx.lineWidth = 10;
+      /* bold green/red glow backbone */
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+      ctx.lineWidth = 6;
       for (let i = 1; i < pts.length; i++) {
         const up = pts[i].y <= pts[i - 1].y;
-        ctx.globalAlpha = 0.13;
-        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
-        ctx.beginPath();
-        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* trend glow by segment direction */
-      ctx.lineWidth = 7;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      for (let i = 1; i < pts.length; i++) {
-        const up = pts[i].y <= pts[i - 1].y;
-        ctx.globalAlpha = 0.13;
-        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
-        ctx.beginPath();
-        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* trend glow by segment direction */
-      ctx.lineWidth = 7;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      for (let i = 1; i < pts.length; i++) {
-        const up = pts[i].y <= pts[i - 1].y;
-        ctx.globalAlpha = 0.13;
-        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
-        ctx.beginPath();
-        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* trend glow by segment direction */
-      ctx.lineWidth = 7;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      for (let i = 1; i < pts.length; i++) {
-        const up = pts[i].y <= pts[i - 1].y;
-        ctx.globalAlpha = 0.13;
+        ctx.globalAlpha = 0.1;
         ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
         ctx.beginPath();
         ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
@@ -852,13 +845,47 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      /* subtle liquidation water zone at bottom */
+      /* water zone with animated waves */
       const waterTop = h * 0.82;
-      const water = ctx.createLinearGradient(0, waterTop, 0, h);
-      water.addColorStop(0, "rgba(77,208,225,0.02)");
-      water.addColorStop(1, "rgba(77,208,225,0.10)");
-      ctx.fillStyle = water;
+      const waterGrad = ctx.createLinearGradient(0, waterTop, 0, h);
+      waterGrad.addColorStop(0, "rgba(77,208,225,0.02)");
+      waterGrad.addColorStop(0.3, "rgba(40,140,170,0.08)");
+      waterGrad.addColorStop(1, "rgba(20,60,90,0.18)");
+      ctx.fillStyle = waterGrad;
       ctx.fillRect(0, waterTop, w, h - waterTop);
+
+      /* animated wave lines */
+      const waveTime = a.frame * 0.03;
+      for (let wl = 0; wl < 5; wl++) {
+        const wy = waterTop + 6 + wl * 12;
+        ctx.globalAlpha = 0.06 - wl * 0.008;
+        ctx.strokeStyle = "#4dd0e1";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 6) {
+          const y = wy + Math.sin(x * 0.025 + waveTime + wl * 1.8) * 3;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      /* shark fins */
+      const sharkPositions = [0.2, 0.55, 0.85];
+      for (const sp of sharkPositions) {
+        const sx = ((sp * w + waveTime * 12) % (w + 40)) - 20;
+        const sy = waterTop + 10 + Math.sin(waveTime + sp * 10) * 3;
+        ctx.globalAlpha = 0.15;
+        ctx.fillStyle = "#1a3040";
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx - 5, sy + 10);
+        ctx.lineTo(sx + 5, sy + 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
 
       /* liquidation line + zone */
       if (isLive && liqPrice !== null) {
