@@ -894,11 +894,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const curY = priceToY(a.price);
       ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
 
-      /* ground fades away as we climb out of the atmosphere */
+      /* ground fades away as we climb out of the atmosphere; rendered grayscale to match the UI */
       const groundAlpha = clamp(1 - a.skyAlt * 1.6, 0, 1);
       if (groundAlpha > 0.01) {
         ctx.save();
         ctx.globalAlpha = groundAlpha;
+        ctx.filter = "grayscale(1) contrast(1.15) brightness(0.95)";
         drawGrassGround(ctx, w, h, pts);
         ctx.restore();
       }
@@ -1099,13 +1100,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       let skyTarget = 0;
       if (a.state === "LIVE") {
         const pnlPct = (a.price - a.entry) / a.entry * a.positionLev;
-        skyTarget = clamp(pnlPct * 0.2, 0, 1);
+        skyTarget = clamp(pnlPct * 0.5, 0, 1);
       } else if (a.state === "STOPPED") {
         skyTarget = 0; // decay back to ground while parachuting
       } else if (a.state === "JUMPING") {
-        skyTarget = 0.05; // tiny lift during liftoff
+        skyTarget = 0.08; // brief lift during liftoff
       }
-      a.skyAlt = lerp(a.skyAlt, skyTarget, 0.04 * dtNorm);
+      a.skyAlt = lerp(a.skyAlt, skyTarget, 0.08 * dtNorm);
 
       /* draw chart (returns priceToY function) */
       const priceToY = drawScene(
