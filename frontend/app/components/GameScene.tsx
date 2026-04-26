@@ -46,7 +46,7 @@ const GRASS_SURFACE_Y = 36;
 const GRASS_SLICE_W = 16;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
-const SPRITE_SCALE = 1.5;
+const SPRITE_SCALE = 0.5;
 const SPRITE_DISPLAY_W = SPRITE_FRAME_W * SPRITE_SCALE;
 const SPRITE_DISPLAY_H = SPRITE_FRAME_H * SPRITE_SCALE;
 const SPRITE_FOOT_GAP = 8 * SPRITE_SCALE;
@@ -92,17 +92,21 @@ function featureNoise(n: number): number {
 function terrainAt(worldX: number, stageH: number, seed: number): number {
   const base = stageH * TERRAIN_BASE_PCT;
   const y = base
-    + Math.sin(worldX * 0.11 + seed) * stageH * 0.035
-    + Math.sin(worldX * 0.041 + seed * 1.7) * stageH * 0.045;
+    + Math.sin(worldX * 0.018 + seed) * stageH * 0.012
+    + Math.sin(worldX * 0.007 + seed * 1.7) * stageH * 0.018;
   return clamp(y, stageH * TERRAIN_MIN_PCT, stageH * TERRAIN_MAX_PCT);
 }
 
 function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
   const raw: number[] = [];
   for (let i = 0; i < count; i++) raw.push(terrainAt(startWorldX + i, stageH, seed));
-  const out = [...raw];
-  for (let i = 1; i < count - 1; i++) {
-    out[i] = (raw[i - 1] + raw[i] * 3 + raw[i + 1]) / 5;
+  let out = [...raw];
+  for (let pass = 0; pass < 3; pass++) {
+    const next = [...out];
+    for (let i = 1; i < count - 1; i++) {
+      next[i] = (out[i - 1] + out[i] * 4 + out[i + 1]) / 6;
+    }
+    out = next;
   }
   return out;
 }
@@ -297,16 +301,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     }
     a.spriteFrame = frameIdx;
 
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(SPRITE_DISPLAY_W * dpr);
+    const targetH = Math.round(SPRITE_DISPLAY_H * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!img || !spriteImageReadyRef.current) return;
     const sx = (frameIdx % SPRITE_COLS) * SPRITE_FRAME_W;
     const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_FRAME_H;
-    const dpr = window.devicePixelRatio || 1;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
       img,
       sx, sy, SPRITE_FRAME_W, SPRITE_FRAME_H,
-      0, 0, SPRITE_DISPLAY_W * dpr, SPRITE_DISPLAY_H * dpr,
+      0, 0, canvas.width, canvas.height,
     );
   }, []);
 
@@ -910,10 +920,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const i = a.terrainPoints.length;
         const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
         const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
-        const priceTilt = clamp(step, -1.2, 1.2) * -9;
-        const desired = lerp(terrainRaw, prev + priceTilt, 0.3);
+        const priceTilt = clamp(step, -1.2, 1.2) * -4;
+        const desired = lerp(terrainRaw, prev + priceTilt, 0.18);
         const terrainNext = clamp(
-          lerp(prev, desired, 0.16),
+          lerp(prev, desired, 0.08),
           (a.stageH || 700) * TERRAIN_MIN_PCT,
           (a.stageH || 700) * TERRAIN_MAX_PCT,
         );
@@ -1397,8 +1407,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         </svg>
         <canvas
           ref={spriteCanvasRef}
-          width={SPRITE_DISPLAY_W * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
-          height={SPRITE_DISPLAY_H * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
           style={{
             position: "absolute",
             left: 0,
