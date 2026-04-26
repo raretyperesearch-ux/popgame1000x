@@ -268,9 +268,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const fig = figRef.current;
       if (!fig) return;
       const a = anim.current;
+      // skyAlt-driven dramatic camera: shrink the sprite and push it up the screen as we climb the atmosphere.
+      // Reverses naturally when PnL drops because skyAlt lerps both directions.
+      const lift = a.skyAlt * a.stageH * 0.25;
+      const figScale = lerp(1, 0.4, a.skyAlt);
       const tx = (x - SPRITE_DISPLAY_W / 2).toFixed(1);
-      const ty = (SPRITE_FOOT_GAP - alt - a.curBobY).toFixed(1);
-      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
+      const ty = (SPRITE_FOOT_GAP - alt - a.curBobY - lift).toFixed(1);
+      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg) scale(${figScale.toFixed(3)})`;
     },
     [],
   );
@@ -374,14 +378,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (img && groundImageReadyRef.current) {
       const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
-        const sampleX = x + GRASS_SLICE_W * 0.5;
+        const leftY = groundYAt(x);
+        const rightY = groundYAt(x + GRASS_SLICE_W);
+        const skewY = (rightY - leftY) / GRASS_SLICE_W;
         const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
         const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * GRASS_SLICE_W / GRASS_TILE_W)));
+        ctx.save();
+        // skew each slice so its top tilts to match the slope; adjacent slices meet at the exact same y
+        ctx.transform(1, skewY, 0, 1, x, leftY - GRASS_SURFACE_Y);
         ctx.drawImage(
           img,
           sourceX, 0, sourceW, GRASS_SRC_H,
-          x, groundYAt(sampleX) - GRASS_SURFACE_Y, GRASS_SLICE_W + 1, GRASS_TILE_H,
+          0, 0, GRASS_SLICE_W + 1, GRASS_TILE_H,
         );
+        ctx.restore();
       }
       return;
     }
@@ -1332,7 +1342,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        setSpriteState("air", time);
+        const livePnlPct = (a.price - a.entry) / a.entry * a.positionLev;
+        // panicked-fall sprite when we're deep in the red, otherwise the airborne pose
+        setSpriteState(livePnlPct < -0.3 ? "fail" : "air", time);
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
