@@ -1,6 +1,6 @@
 "use client";
 
-type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 interface ControlsProps {
   leverage: number;
