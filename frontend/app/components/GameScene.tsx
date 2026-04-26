@@ -16,8 +16,9 @@ const GRAVITY_P = 0.004; // price-space gravity per frame (60fps base)
 const DRAG = 0.96;
 const THRUST_MULT = 3.5; // thrust multiplier for smoothed price delta
 const VY_CLAMP_P = 0.6; // max velocity in price-space
-const FIG_BODY_X = 18;
-const FIGURE_FOOT_OFFSET = 10;
+const FIG_SCALE = 0.5;
+const FIG_BODY_X = 18 * FIG_SCALE;
+const FIGURE_FOOT_OFFSET = 10 * FIG_SCALE;
 const FIG_X_PCT = 0.35; // figure at 35% from left
 const CHART_TOP_PCT = 0.12; // chart area top
 const CHART_BOT_PCT = 0.88; // chart area bottom
@@ -35,7 +36,7 @@ const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
-const BODY_HEIGHT_PX = 22;
+const BODY_HEIGHT_PX = 22 * FIG_SCALE;
 const GAME_SPEED = 0.45;
 const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
@@ -406,8 +407,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       if (!fig) return;
       const a = anim.current;
       const tx = (x - FIG_BODY_X).toFixed(1);
-      const ty = (FIGURE_FOOT_OFFSET - alt + a.curBobY).toFixed(1);
-      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
+      const ty = (FIGURE_FOOT_OFFSET - alt + a.curBobY * FIG_SCALE).toFixed(1);
+      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${FIG_SCALE}) rotate(${rot.toFixed(1)}deg)`;
+      fig.style.transformOrigin = "bottom center";
     },
     [],
   );
