@@ -721,12 +721,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.lineWidth = 10;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      ctx.beginPath();
-      for (let i = 0; i < pts.length; i++) {
-        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
-        else ctx.lineTo(pts[i].x, pts[i].y);
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
       }
-      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      /* trend glow by segment direction */
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
 
       /* trend glow by segment direction */
