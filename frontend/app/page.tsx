@@ -8,7 +8,7 @@ import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
 
-type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
   const [balance, setBalance] = useState(100);

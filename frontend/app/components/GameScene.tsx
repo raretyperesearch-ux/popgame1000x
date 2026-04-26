@@ -36,10 +36,15 @@ const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 22;
-const CAMERA_LERP = 0.2;
+const GAME_SPEED = 0.45;
+const CAMERA_LERP = 0.045;
+const BODY_LERP = 0.12;
+const ROTATION_LERP = 0.08;
+const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
+const DEBUG_TERRAIN = false;
 
-type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 /* ============ FIGURE POSE HELPERS ============ */
 const HIP = { x: 18, y: 28 };
@@ -336,6 +341,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     mountainCache: null as HTMLCanvasElement | null,
     mountainCacheKey: "",
     runStartTime: 0, // timestamp when RUNNING began
+    prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
     prevStepHalf: 0, // tracks half-cycle for dust spawn
     dustParticles: [] as Array<{
@@ -762,6 +768,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       ctx.globalAlpha = 1;
 
+      /* trend glow by segment direction */
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < pts.length; i++) {
+        const up = pts[i].y <= pts[i - 1].y;
+        ctx.globalAlpha = 0.13;
+        ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
       /* main chart line (hand-drawn double-pass) */
       for (let pass = 0; pass < 2; pass++) {
         ctx.globalAlpha = pass === 0 ? 0.85 : 0.3;
@@ -791,6 +812,27 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+
+      if (DEBUG_TERRAIN) {
+        ctx.strokeStyle = "rgba(255,230,80,0.8)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+          else ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.stroke();
+        for (let i = 6; i < pts.length; i += 8) {
+          const nx = -(pts[i].y - pts[i - 1].y);
+          const ny = pts[i].x - pts[i - 1].x;
+          const len = Math.max(1e-6, Math.hypot(nx, ny));
+          ctx.strokeStyle = "rgba(255,255,120,0.45)";
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          ctx.lineTo(pts[i].x + (nx / len) * 8, pts[i].y + (ny / len) * 8);
+          ctx.stroke();
+        }
+      }
 
       /* entry price line */
       if (isLive && entryPrice !== null) {
@@ -900,6 +942,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.stepPhase = 0;
     a.runFrame = 0;
     a.runStartTime = 0;
+    a.prepareStartTime = 0;
     a.jumpStartTime = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
@@ -956,6 +999,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.stepPhase = 0;
       a.prevStepHalf = 0;
       a.runStartTime = 0; // set on first tick
+      a.prepareStartTime = 0;
       a.jumpStartTime = 0;
       a.dustParticles.length = 0;
       a.loco.grounded = true;
@@ -979,7 +1023,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     let animId = 0;
 
     const tick = (time: number) => {
-      const dt = lastTime ? Math.min(time - lastTime, 50) : 16.67;
+      const dt = lastTime ? Math.min(time - lastTime, 33.33) : 16.67;
       lastTime = time;
       const dtNorm = dt / 16.67;
       const a = anim.current;
@@ -990,9 +1034,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* chart scroll speed based on state */
       let speed = CHART_SPEED_IDLE;
-      if (a.state === "RUNNING" || a.state === "JUMPING") speed = CHART_SPEED_RUN;
+      if (a.state === "RUNNING" || a.state === "PREPARE" || a.state === "JUMPING") speed = CHART_SPEED_RUN;
       else if (a.state === "LIVE") speed = CHART_SPEED_LIVE;
       else if (a.state === "STOPPED") speed = CHART_SPEED_IDLE;
+      speed *= GAME_SPEED;
 
       /* advance chart scroll */
       a.scrollFrac += speed * dtNorm;
@@ -1111,11 +1156,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         loco.bodyY = ridgeY - BODY_HEIGHT_PX;
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
         const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
-        a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.15 * dtNorm);
+        a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
         applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.35 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, BODY_LERP * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1126,13 +1171,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const elapsed = time - a.runStartTime;
 
         if (elapsed > RUN_DURATION) {
-          /* transition to JUMPING */
-          a.state = "JUMPING";
-          setGameState("JUMPING");
-          a.jumpStartTime = time;
-          a.curBobY = 0;
-          applyPose("jetpack", 0);
-          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          a.state = "PREPARE";
+          setGameState("PREPARE");
+          a.prepareStartTime = time;
         } else {
           const loco = a.loco;
           loco.grounded = true;
@@ -1194,15 +1235,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           loco.bodyY = ridgeY - BODY_HEIGHT_PX;
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
           const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
-          a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.2 * dtNorm);
+          a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
           const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
           const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
           applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.35 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
+
+      } else if (a.state === "PREPARE") {
+        const prepElapsed = time - (a.prepareStartTime || time);
+        const t = clamp(prepElapsed / 150, 0, 1);
+        a.curBobY = Math.sin(t * Math.PI) * 4.5;
+        applyRunPose(0.2, { x: 16, y: 50 + t * 2 }, { x: 20, y: 50 + t * 2 }, 1 + t * 2);
+        setFlame(true, 0.35 + t * 0.25);
+        setFig(figScreenX, a.smoothAlt - t * 2, a.smoothRot);
+        if (prepElapsed >= 150) {
+          a.state = "JUMPING";
+          setGameState("JUMPING");
+          a.jumpStartTime = time;
+          a.curBobY = 0;
+          applyPose("jetpack", 0);
+        }
 
       } else if (a.state === "JUMPING") {
         /* liftoff from chart into air */
@@ -1238,7 +1294,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const baseAlt = a.stageH - chartY;
           a.smoothAlt = baseAlt + 40 * liftArc;
           a.curBobY = 0;
-          a.smoothRot = lerp(a.smoothRot, -10 * liftArc, 0.15 * dtNorm);
+          a.smoothRot = lerp(a.smoothRot, -10 * liftArc, ROTATION_LERP * dtNorm);
           applyPose("jetpack", a.frame);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
           a.figPrice = priceAtFig;
@@ -1251,16 +1307,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
-        a.smoothDelta = lerp(a.smoothDelta, priceDelta, 0.12 * dtNorm);
+        a.smoothDelta = lerp(a.smoothDelta, priceDelta, VELOCITY_LERP * dtNorm);
 
         /* physics */
         const thrust = clamp(a.smoothDelta * THRUST_MULT, -0.08, 0.12);
         if (a.smoothDelta > 0.001) {
-          a.figPriceVel += thrust * dtNorm;
+          a.figPriceVel += thrust * 0.6 * dtNorm;
         } else if (Math.abs(a.smoothDelta) <= 0.0015) {
           a.figPriceVel += (-GRAVITY_P * 0.25) * dtNorm;
         } else {
-          a.figPriceVel += (thrust * 0.35 - GRAVITY_P * 1.2) * dtNorm;
+          a.figPriceVel += (thrust * 0.25 - GRAVITY_P * 1.15) * dtNorm;
         }
         a.figPriceVel -= GRAVITY_P * dtNorm;
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
@@ -1280,7 +1336,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.smoothFlameScale = lerp(a.smoothFlameScale, targetFlame, 0.15 * dtNorm);
           setFlame(true, a.smoothFlameScale);
           const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, 0.1 * dtNorm);
+          a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * dtNorm);
           applyPose("jetpack", a.frame);
           if (a.dustParticles.length < DUST_MAX) {
             a.dustParticles.push({
@@ -1296,12 +1352,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setFlame(false);
           a.smoothFlameScale = lerp(a.smoothFlameScale, 0, 0.1 * dtNorm);
           const targetRot = clamp(a.figPriceVel * 45, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, 0.05 * dtNorm);
+          a.smoothRot = lerp(a.smoothRot, targetRot, (ROTATION_LERP * 0.7) * dtNorm);
           applyPose("falling", a.frame);
         } else {
           setFlame(false);
           a.smoothFlameScale = lerp(a.smoothFlameScale, 0, 0.1 * dtNorm);
-          a.smoothRot = lerp(a.smoothRot, 0, 0.08 * dtNorm);
+          a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
           applyPose("jetpack", a.frame);
         }
 
@@ -1309,7 +1365,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (priceToY) {
           const figY = priceToY(a.figPrice);
           const alt = a.stageH - figY;
-          a.smoothAlt = lerp(a.smoothAlt, alt, 0.22 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, alt, BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
           const groundY = getTerrainY(figWorldX);
           if (figY >= groundY - 4 && a.figPriceVel < 0) {
