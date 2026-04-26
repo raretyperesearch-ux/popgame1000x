@@ -42,7 +42,7 @@ const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
-const DEBUG_FEET = false;
+const DEBUG_FEET = true;
 const DEBUG_TERRAIN = false;
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
@@ -1148,6 +1148,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           drawDot(lx, ly, "#ffd94d", 2.4);
           drawDot(rx, ry, "#ffd94d", 2.4);
           drawDot(figScreenX, a.stageH - a.smoothAlt, "#ffffff", 2.2);
+          /* green dot = raw getTerrainY at figWorldX */
+          drawDot(figScreenX, getTerrainY(figWorldX), "#00ff00", 3.5);
         }
       }
 
