@@ -408,8 +408,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const a = anim.current;
       const tx = (x - FIG_BODY_X).toFixed(1);
       const ty = (FIGURE_FOOT_OFFSET - alt + a.curBobY * FIG_SCALE).toFixed(1);
-      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${FIG_SCALE}) rotate(${rot.toFixed(1)}deg)`;
-      fig.style.transformOrigin = "bottom center";
+      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
     },
     [],
   );
@@ -1185,17 +1184,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           loco.plantedFoot = supportLeft ? "right" : "left";
           loco.stepPhase = 0;
         }
-        const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
-        const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
-        const ridgeY = Math.min(loco.leftFoot.y, loco.rightFoot.y);
+        const ridgeY = getTerrainY(figWorldX);
         loco.bodyY = ridgeY - BODY_HEIGHT_PX;
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
-        const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
+        const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
+        const midX = figWorldX;
+        const midY = ridgeY;
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
         applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-        { const targetAlt = a.stageH - ridgeY; const gap = Math.abs(targetAlt - a.smoothAlt); const adaptiveLerp = Math.min(1, BODY_LERP + gap * 0.005); a.smoothAlt = lerp(a.smoothAlt, targetAlt, adaptiveLerp * dtNorm); }
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1264,17 +1263,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
               }
             }
           }
-          const midX = (loco.leftFoot.x + loco.rightFoot.x) * 0.5;
-          const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
-          const ridgeY = Math.min(loco.leftFoot.y, loco.rightFoot.y);
+          const ridgeY = getTerrainY(figWorldX);
           loco.bodyY = ridgeY - BODY_HEIGHT_PX;
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
-          const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
+          const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-          const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
-          const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
+          const runMidX = figWorldX;
+          const runMidY = ridgeY;
+          const leftLocal = { x: 18 + (loco.leftFoot.x - runMidX) * pointSpacing, y: 48 + (loco.leftFoot.y - runMidY) };
+          const rightLocal = { x: 18 + (loco.rightFoot.x - runMidX) * pointSpacing, y: 48 + (loco.rightFoot.y - runMidY) };
           applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-          { const targetAlt = a.stageH - ridgeY; const gap = Math.abs(targetAlt - a.smoothAlt); const adaptiveLerp = Math.min(1, BODY_LERP + gap * 0.005); a.smoothAlt = lerp(a.smoothAlt, targetAlt, adaptiveLerp * dtNorm); }
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
@@ -1514,8 +1513,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         <svg
           className="parachute"
           ref={parachuteRef}
-          width="80"
-          height="44"
+          width={80 * FIG_SCALE}
+          height={44 * FIG_SCALE}
           viewBox="0 0 80 44"
         >
           <path
@@ -1536,8 +1535,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           <path d="M 72 29 Q 60 36 46 44" stroke="#f4ecd8" strokeWidth="0.6" fill="none" opacity="0.75" strokeLinecap="round" />
         </svg>
         <svg
-          width="36"
-          height="58"
+          width={36 * FIG_SCALE}
+          height={58 * FIG_SCALE}
           viewBox="0 0 36 58"
           className="fig-glow"
         >
