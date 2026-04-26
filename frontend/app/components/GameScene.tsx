@@ -37,6 +37,7 @@ const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 22;
 const CAMERA_LERP = 0.2;
+const DEBUG_FEET = false;
 
 type GameState = "IDLE" | "RUNNING" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -184,6 +185,18 @@ function generatePriceSeries(count: number, start: number): number[] {
   return prices;
 }
 
+function generateTerrainSeries(count: number, startY: number): number[] {
+  const ys = [startY];
+  let vel = 0;
+  for (let i = 1; i < count; i++) {
+    vel = vel * 0.92 + (Math.random() - 0.5) * 0.75;
+    const wave = Math.sin(i * 0.12) * 0.9 + Math.sin(i * 0.043) * 2.2;
+    const next = ys[i - 1] + vel + wave * 0.12;
+    ys.push(clamp(next, 110, 430));
+  }
+  return ys;
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -268,6 +281,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     prevPrice: 3500,
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
+    terrainPoints: generateTerrainSeries(TOTAL_POINTS, 320),
+    terrainVel: 0,
     scrollFrac: 0,
     stageW: 0,
     stageH: 0,
@@ -313,6 +328,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       stepLength: 2.8,
       stepHeight: 7,
       squash: 0,
+      leftTargetX: 0,
+      rightTargetX: 0,
     },
   });
 
@@ -359,34 +376,31 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     [],
   );
 
-  const getPriceAtWorldX = useCallback((worldX: number) => {
+  const getTerrainY = useCallback((worldX: number) => {
     const a = anim.current;
     const base = Math.floor(worldX);
     const frac = worldX - base;
-    const i0 = clamp(base, 0, a.prices.length - 1);
-    const i1 = clamp(base + 1, 0, a.prices.length - 1);
-    return lerp(a.prices[i0] ?? a.price, a.prices[i1] ?? a.price, frac);
+    const i0 = clamp(base, 0, a.terrainPoints.length - 1);
+    const i1 = clamp(base + 1, 0, a.terrainPoints.length - 1);
+    return lerp(a.terrainPoints[i0] ?? a.stageH * 0.6, a.terrainPoints[i1] ?? a.stageH * 0.6, frac);
   }, []);
 
-  const getChartY = useCallback((worldX: number) => {
+  const getTerrainSlope = useCallback((worldX: number) => {
     const a = anim.current;
-    const p = getPriceAtWorldX(worldX);
-    const chartTop = a.stageH * CHART_TOP_PCT;
-    const chartBot = a.stageH * CHART_BOT_PCT;
-    const range = Math.max(1e-6, a.chartMaxP - a.chartMinP);
-    const n = (p - a.chartMinP) / range;
-    const terrainN = terrainifyNorm(n);
-    return chartBot - terrainN * (chartBot - chartTop);
-  }, [getPriceAtWorldX]);
-
-  const getChartSlope = useCallback((worldX: number) => {
-    const a = anim.current;
-    const dx = 0.45;
-    const y0 = getChartY(worldX - dx);
-    const y1 = getChartY(worldX + dx);
+    const dx = 0.6;
+    const y0 = getTerrainY(worldX - dx);
+    const y1 = getTerrainY(worldX + dx);
     const pxDx = dx * Math.max(1, a.chartPointSpacing);
     return (y1 - y0) / Math.max(1, pxDx);
-  }, [getChartY]);
+  }, [getTerrainY]);
+
+  const getTerrainNormal = useCallback((worldX: number) => {
+    const slope = getTerrainSlope(worldX);
+    const nx = -slope;
+    const ny = 1;
+    const len = Math.max(1e-6, Math.hypot(nx, ny));
+    return { x: nx / len, y: ny / len };
+  }, [getTerrainSlope]);
 
   const applyRunPose = useCallback(
     (phase01: number, leftFoot: { x: number; y: number }, rightFoot: { x: number; y: number }, squash = 0) => {
@@ -520,6 +534,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.chartStartIdx = startIdx;
       a.chartVisibleCount = numVisible;
       const visiblePrices = a.prices.slice(startIdx);
+      const visibleTerrain = a.terrainPoints.slice(startIdx, startIdx + numVisible);
 
       /* compute auto-scale range */
       let rawMin = Infinity,
@@ -572,9 +587,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* build chart screen points */
       const pts: { x: number; y: number }[] = [];
-      for (let i = 0; i < visiblePrices.length; i++) {
+      for (let i = 0; i < visibleTerrain.length; i++) {
         const x = (i - a.scrollFrac) * pointSpacing;
-        const y = priceToY(visiblePrices[i]);
+        const y = visibleTerrain[i] ?? h * 0.65;
         pts.push({ x, y });
       }
       a.chartPointSpacing = pointSpacing;
@@ -635,7 +650,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       for (let i = 1; i < pts.length; i++) {
-        const up = visiblePrices[i] >= visiblePrices[i - 1];
+        const up = pts[i].y <= pts[i - 1].y;
         ctx.globalAlpha = 0.13;
         ctx.strokeStyle = up ? "#5dd39e" : "#ff5f56";
         ctx.beginPath();
@@ -885,7 +900,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const last = a.prices[a.prices.length - 1];
         const step = (a.renderPrice - last) * 0.26 + (Math.random() - 0.48) * PRICE_VOL * 0.75;
         a.prices.push(last + step);
+        const terrainLast = a.terrainPoints[a.terrainPoints.length - 1] ?? a.stageH * 0.65;
+        a.terrainVel = a.terrainVel * 0.9 + (Math.random() - 0.5) * 0.35;
+        const i = a.terrainPoints.length;
+        const wave = Math.sin(i * 0.11) * 1.8 + Math.sin(i * 0.037) * 2.8;
+        const terrainNext = clamp(terrainLast + a.terrainVel + wave * 0.18, a.stageH * 0.24, a.stageH * 0.86);
+        a.terrainPoints.push(terrainNext);
         if (a.prices.length > TOTAL_POINTS * 1.5) a.prices.shift();
+        if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
       }
 
       /* update price display (throttled) */
@@ -934,6 +956,27 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (d.life <= 0) a.dustParticles.splice(i, 1);
       }
 
+      if (DEBUG_FEET) {
+        const ctx = canvasRef.current?.getContext("2d");
+        if (ctx) {
+          const lx = worldToScreenX(a.loco.leftFoot.x);
+          const rx = worldToScreenX(a.loco.rightFoot.x);
+          const ly = getTerrainY(a.loco.leftFoot.x);
+          const ry = getTerrainY(a.loco.rightFoot.x);
+          const drawDot = (x: number, y: number, c: string, r = 3) => {
+            ctx.fillStyle = c;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+          };
+          drawDot(worldToScreenX(a.loco.leftTargetX), getTerrainY(a.loco.leftTargetX), "#ff4444", 2.6);
+          drawDot(worldToScreenX(a.loco.rightTargetX), getTerrainY(a.loco.rightTargetX), "#4499ff", 2.6);
+          drawDot(lx, ly, "#ffd94d", 2.4);
+          drawDot(rx, ry, "#ffd94d", 2.4);
+          drawDot(figScreenX, a.stageH - a.smoothAlt, "#ffffff", 2.2);
+        }
+      }
+
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
         const loco = a.loco;
@@ -946,16 +989,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const swing = supportLeft ? loco.rightFoot : loco.leftFoot;
         if (!planted.x) {
           planted.x = figWorldX - loco.stepLength * 0.5;
-          planted.y = getChartY(planted.x);
+          planted.y = getTerrainY(planted.x);
         }
-        planted.y = getChartY(planted.x);
+        planted.y = getTerrainY(planted.x);
         const stepT = loco.stepPhase;
         const swingTargetX = planted.x + loco.stepLength;
         swing.x = lerp(swing.x || planted.x, planted.x + loco.stepLength * stepT, 0.55 * dtNorm);
-        swing.y = lerp(swing.y || planted.y, getChartY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight, 0.55 * dtNorm);
+        swing.y = lerp(swing.y || planted.y, getTerrainY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight, 0.55 * dtNorm);
         if (stepT >= 0.99) {
           swing.x = swingTargetX;
-          swing.y = getChartY(swing.x);
+          swing.y = getTerrainY(swing.x);
           swing.planted = true;
           planted.planted = false;
           loco.plantedFoot = supportLeft ? "right" : "left";
@@ -965,7 +1008,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
         loco.bodyY = midY - BODY_HEIGHT_PX;
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
-        const slopeDeg = clamp(Math.atan(getChartSlope(midX)) * (180 / Math.PI), -15, 15);
+        const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.15 * dtNorm);
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
@@ -992,29 +1035,39 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const loco = a.loco;
           loco.grounded = true;
           loco.bodyX = figWorldX;
-          const slope = getChartSlope(loco.bodyX);
+          const slope = getTerrainSlope(loco.bodyX);
           const slopeFactor = clamp(1 - slope * 3.2, 0.7, 1.3);
           const stepHz = STEP_FREQ * 0.28 * slopeFactor;
+          const speedMag = Math.abs(stepHz * loco.stepLength);
+          const roughness = Math.abs(getTerrainSlope(loco.bodyX - 1.5) - getTerrainSlope(loco.bodyX + 1.5)) * 80;
+          loco.stepLength = clamp(speedMag * 12, 18, 42);
+          loco.stepHeight = 12 + roughness * 0.4;
           loco.stepPhase = (loco.stepPhase + stepHz * (dt / 1000)) % 1;
           const supportLeft = loco.plantedFoot === "left";
           const planted = supportLeft ? loco.leftFoot : loco.rightFoot;
           const swing = supportLeft ? loco.rightFoot : loco.leftFoot;
           if (!planted.x) {
             planted.x = figWorldX - loco.stepLength * 0.5;
-            planted.y = getChartY(planted.x);
+            planted.y = getTerrainY(planted.x);
           }
-          planted.y = getChartY(planted.x);
+          planted.y = getTerrainY(planted.x);
           const stepT = loco.stepPhase;
-          const swingTargetX = planted.x + loco.stepLength * slopeFactor;
+          let swingTargetX = loco.bodyX + loco.stepLength * slopeFactor;
+          if (Math.abs(getTerrainSlope(swingTargetX)) > 0.95) {
+            swingTargetX = planted.x + loco.stepLength * 0.6 * slopeFactor;
+          }
+          swingTargetX = clamp(swingTargetX, planted.x - 8, planted.x + 4.2);
+          if (supportLeft) loco.rightTargetX = swingTargetX;
+          else loco.leftTargetX = swingTargetX;
           swing.x = lerp(swing.x || planted.x, planted.x + (swingTargetX - planted.x) * stepT, 0.62 * dtNorm);
           swing.y = lerp(
             swing.y || planted.y,
-            getChartY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight,
+            getTerrainY(swingTargetX) - Math.sin(stepT * Math.PI) * loco.stepHeight,
             0.62 * dtNorm,
           );
           if (stepT >= 0.99) {
             swing.x = swingTargetX;
-            swing.y = getChartY(swing.x);
+            swing.y = getTerrainY(swing.x);
             swing.planted = true;
             planted.planted = false;
             loco.plantedFoot = supportLeft ? "right" : "left";
@@ -1037,7 +1090,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const midY = (loco.leftFoot.y + loco.rightFoot.y) * 0.5;
           loco.bodyY = midY - BODY_HEIGHT_PX;
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
-          const slopeDeg = clamp(Math.atan(getChartSlope(midX)) * (180 / Math.PI), -15, 15);
+          const slopeDeg = clamp(Math.atan(getTerrainSlope(midX)) * (180 / Math.PI), -14, 14);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, 0.2 * dtNorm);
           const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
           const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
@@ -1055,10 +1108,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const loco = a.loco;
         if (loco.grounded) {
           loco.grounded = false;
-          const jumpSlope = getChartSlope(loco.bodyX || figWorldX);
+          const n = getTerrainNormal(loco.bodyX || figWorldX);
           loco.velocityX = 0.55;
-          loco.velocityY = -0.22 - jumpSlope * 0.35;
-          a.figPriceVel = 0.06 + jumpSlope * -0.04;
+          loco.velocityY = -0.22 - n.x * 0.25;
+          a.figPriceVel = 0.06 + n.y * 0.02;
         }
 
         if (elapsed > JUMP_DURATION) {
@@ -1078,7 +1131,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           /* rising arc from chart line */
           const liftT = elapsed / JUMP_DURATION;
           const liftArc = Math.sin(liftT * Math.PI * 0.5);
-          const chartY = getChartY(figWorldX);
+          const chartY = getTerrainY(figWorldX);
           const baseAlt = a.stageH - chartY;
           a.smoothAlt = baseAlt + 40 * liftArc;
           a.curBobY = 0;
@@ -1155,13 +1208,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, 0.22 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
-          const groundY = getChartY(figWorldX);
+          const groundY = getTerrainY(figWorldX);
           if (figY >= groundY - 4 && a.figPriceVel < 0) {
             loco.grounded = true;
             loco.bodyX = figWorldX;
             loco.bodyY = groundY - BODY_HEIGHT_PX;
-            loco.leftFoot = { x: figWorldX - 1.2, y: getChartY(figWorldX - 1.2), planted: true };
-            loco.rightFoot = { x: figWorldX + 1.2, y: getChartY(figWorldX + 1.2), planted: true };
+            loco.leftFoot = { x: figWorldX - 1.2, y: getTerrainY(figWorldX - 1.2), planted: true };
+            loco.rightFoot = { x: figWorldX + 1.2, y: getTerrainY(figWorldX + 1.2), planted: true };
             loco.plantedFoot = "left";
             loco.squash = 2.5;
             a.state = "RUNNING";
@@ -1184,14 +1237,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const alt = a.stageH - figY;
           a.smoothRot = lerp(a.smoothRot, 0, 0.05 * dtNorm);
           setFig(figScreenX, alt, a.smoothRot);
-          const groundY = getChartY(figWorldX);
+          const groundY = getTerrainY(figWorldX);
           if (figY >= groundY - 3) {
             const loco = a.loco;
             loco.grounded = true;
             loco.bodyX = figWorldX;
             loco.bodyY = groundY - BODY_HEIGHT_PX;
-            loco.leftFoot = { x: figWorldX - 1.1, y: getChartY(figWorldX - 1.1), planted: true };
-            loco.rightFoot = { x: figWorldX + 1.1, y: getChartY(figWorldX + 1.1), planted: true };
+            loco.leftFoot = { x: figWorldX - 1.1, y: getTerrainY(figWorldX - 1.1), planted: true };
+            loco.rightFoot = { x: figWorldX + 1.1, y: getTerrainY(figWorldX + 1.1), planted: true };
             loco.squash = lerp(loco.squash, 2.2, 0.5);
             applyRunPose(0, { x: 16, y: 49 }, { x: 20, y: 49 }, loco.squash);
           } else {
@@ -1217,7 +1270,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [drawScene, applyPose, applyRunPose, setFig, setFlame, onPnlChange, splat, getChartY, getChartSlope, setGameState]);
+  }, [drawScene, applyPose, applyRunPose, setFig, setFlame, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
 
   /* ============ PRICE STREAM ============ */
   useEffect(() => {
