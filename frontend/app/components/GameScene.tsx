@@ -16,9 +16,6 @@ const GRAVITY_P = 0.004; // price-space gravity per frame (60fps base)
 const DRAG = 0.96;
 const THRUST_MULT = 3.5; // thrust multiplier for smoothed price delta
 const VY_CLAMP_P = 0.6; // max velocity in price-space
-const FIG_SCALE = 0.5;
-const FIG_BODY_X = 18 * FIG_SCALE;
-const FIGURE_FOOT_OFFSET = 10 * FIG_SCALE;
 const FIG_X_PCT = 0.35; // figure at 35% from left
 const CHART_TOP_PCT = 0.12; // chart area top
 const CHART_BOT_PCT = 0.88; // chart area bottom
@@ -36,8 +33,22 @@ const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
-const BODY_HEIGHT_PX = 22 * FIG_SCALE;
+const BODY_HEIGHT_PX = 11;
 const GAME_SPEED = 0.45;
+const SPRITE_NATIVE = 320; // source frame size in spritesheet
+const SPRITE_DISPLAY = 80; // rendered sprite size in px
+const SPRITE_COLS = 5;
+const RUN_FRAME_MS = 100; // 10fps run cycle
+const RUN_FRAMES = [0, 1, 2, 3, 4];
+type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "land" | "fail";
+const SPRITE_FRAME: Record<Exclude<SpriteState, "run">, number> = {
+  idle: 5,
+  crouch: 6,
+  jump: 7,
+  air: 8,
+  land: 6,
+  fail: 9,
+};
 const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
@@ -46,137 +57,6 @@ const DEBUG_FEET = true;
 const DEBUG_TERRAIN = false;
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
-
-/* ============ FIGURE POSE HELPERS ============ */
-const HIP = { x: 18, y: 28 };
-const SHO = { x: 18, y: 15 };
-const UP_LEG = 10,
-  LO_LEG = 10,
-  UP_ARM = 7,
-  LO_ARM = 7;
-
-function limbPos(
-  origin: { x: number; y: number },
-  angle: number,
-  len: number,
-) {
-  return {
-    x: origin.x + Math.sin(angle) * len,
-    y: origin.y + Math.cos(angle) * len,
-  };
-}
-
-interface LimbAttrs {
-  x1: string;
-  y1: string;
-  x2: string;
-  y2: string;
-}
-
-function legAttrs(
-  hipAngle: number,
-  kneeBend: number,
-): { up: LimbAttrs; lo: LimbAttrs; foot: { cx: string; cy: string } } {
-  const knee = limbPos(HIP, hipAngle, UP_LEG);
-  const loAngle = hipAngle - kneeBend;
-  const foot = limbPos(knee, loAngle, LO_LEG);
-  return {
-    up: {
-      x1: HIP.x.toFixed(1),
-      y1: HIP.y.toFixed(1),
-      x2: knee.x.toFixed(1),
-      y2: knee.y.toFixed(1),
-    },
-    lo: {
-      x1: knee.x.toFixed(1),
-      y1: knee.y.toFixed(1),
-      x2: foot.x.toFixed(1),
-      y2: foot.y.toFixed(1),
-    },
-    foot: { cx: foot.x.toFixed(1), cy: (foot.y + 0.5).toFixed(1) },
-  };
-}
-
-function armAttrs(
-  shoulderAngle: number,
-  elbowBend: number,
-): { up: LimbAttrs; lo: LimbAttrs; hand: { cx: string; cy: string } } {
-  const elbow = limbPos(SHO, shoulderAngle, UP_ARM);
-  const loAngle = shoulderAngle - elbowBend;
-  const hand = limbPos(elbow, loAngle, LO_ARM);
-  return {
-    up: {
-      x1: SHO.x.toFixed(1),
-      y1: SHO.y.toFixed(1),
-      x2: elbow.x.toFixed(1),
-      y2: elbow.y.toFixed(1),
-    },
-    lo: {
-      x1: elbow.x.toFixed(1),
-      y1: elbow.y.toFixed(1),
-      x2: hand.x.toFixed(1),
-      y2: hand.y.toFixed(1),
-    },
-    hand: { cx: hand.x.toFixed(1), cy: hand.y.toFixed(1) },
-  };
-}
-
-function getPose(name: string, frame: number) {
-  let lL, lR, aL, aR;
-  switch (name) {
-    case "standing":
-      lL = legAttrs(-0.18, 0);
-      lR = legAttrs(0.18, 0);
-      aL = armAttrs(-0.4, 0.2);
-      aR = armAttrs(0.4, 0.2);
-      break;
-    case "run": {
-      const phase = frame * 0.5;
-      const phaseL = phase,
-        phaseR = phase + Math.PI;
-      lL = legAttrs(
-        Math.sin(phaseL) * 0.85,
-        Math.max(0.2, 0.4 - Math.sin(phaseL) * 0.9),
-      );
-      lR = legAttrs(
-        Math.sin(phaseR) * 0.85,
-        Math.max(0.2, 0.4 - Math.sin(phaseR) * 0.9),
-      );
-      aL = armAttrs(Math.sin(phaseR) * 0.7 - 0.1, 1.2);
-      aR = armAttrs(Math.sin(phaseL) * 0.7 + 0.1, 1.2);
-      break;
-    }
-    case "jetpack": {
-      const wob = Math.sin(frame * 0.3) * 0.08;
-      lL = legAttrs(-0.15 + wob, 0.2);
-      lR = legAttrs(0.15 - wob, 0.2);
-      aL = armAttrs(-1.4 + wob, 0.3);
-      aR = armAttrs(1.4 - wob, 0.3);
-      break;
-    }
-    case "falling": {
-      const flailA = Math.sin(frame * 0.35) * 0.7;
-      const flailB = Math.cos(frame * 0.4) * 0.7;
-      lL = legAttrs(-0.6 + flailA, 0.6);
-      lR = legAttrs(0.6 + flailB, 0.6);
-      aL = armAttrs(-1.8 + flailB, 0.9);
-      aR = armAttrs(1.8 - flailA, 0.9);
-      break;
-    }
-    case "parachute":
-      lL = legAttrs(-0.2, 0.1);
-      lR = legAttrs(0.2, 0.1);
-      aL = armAttrs(-2.4, 0.3);
-      aR = armAttrs(2.4, 0.3);
-      break;
-    default:
-      lL = legAttrs(-0.18, 0);
-      lR = legAttrs(0.18, 0);
-      aL = armAttrs(-0.4, 0.2);
-      aR = armAttrs(0.4, 0.2);
-  }
-  return { lL, lR, aL, aR };
-}
 
 /* ============ UTILITY ============ */
 function lerp(a: number, b: number, t: number): number {
@@ -232,23 +112,6 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function solveKnee(
-  hip: { x: number; y: number },
-  foot: { x: number; y: number },
-  bendDir: 1 | -1,
-) {
-  const dx = foot.x - hip.x;
-  const dy = foot.y - hip.y;
-  const dist = Math.max(0.001, Math.hypot(dx, dy));
-  const d = Math.min(dist, UP_LEG + LO_LEG - 0.001);
-  const midX = hip.x + (dx * 0.5);
-  const midY = hip.y + (dy * 0.5);
-  const h = Math.sqrt(Math.max(0, UP_LEG * UP_LEG - (d * d) / 4));
-  const nx = (-dy / dist) * bendDir;
-  const ny = (dx / dist) * bendDir;
-  return { x: midX + nx * h, y: midY + ny * h };
-}
-
 function terrainifyNorm(t: number): number {
   const c = clamp(t, 0, 1);
   const ridge = Math.sin(c * Math.PI) * 0.045;
@@ -287,23 +150,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const figRef = useRef<HTMLDivElement>(null);
-  const flameRef = useRef<SVGGElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const parachuteRef = useRef<SVGSVGElement>(null);
-
-  /* limb refs for direct DOM mutation */
-  const upArmLRef = useRef<SVGLineElement>(null);
-  const loArmLRef = useRef<SVGLineElement>(null);
-  const upArmRRef = useRef<SVGLineElement>(null);
-  const loArmRRef = useRef<SVGLineElement>(null);
-  const upLegLRef = useRef<SVGLineElement>(null);
-  const loLegLRef = useRef<SVGLineElement>(null);
-  const upLegRRef = useRef<SVGLineElement>(null);
-  const loLegRRef = useRef<SVGLineElement>(null);
-  const handLRef = useRef<SVGCircleElement>(null);
-  const handRRef = useRef<SVGCircleElement>(null);
-  const footLRef = useRef<SVGCircleElement>(null);
-  const footRRef = useRef<SVGCircleElement>(null);
+  const spriteCanvasRef = useRef<HTMLCanvasElement>(null);
+  const spriteImageRef = useRef<HTMLImageElement | null>(null);
+  const spriteImageReadyRef = useRef(false);
 
   /* mutable animation state */
   const anim = useRef({
@@ -345,6 +196,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
     prevStepHalf: 0, // tracks half-cycle for dust spawn
+    spriteState: "idle" as SpriteState,
+    spriteRunStart: 0, // timestamp when run animation started
+    spriteFrame: 5, // current sprite frame index
     dustParticles: [] as Array<{
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
@@ -406,12 +260,54 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const fig = figRef.current;
       if (!fig) return;
       const a = anim.current;
-      const tx = (x - FIG_BODY_X).toFixed(1);
-      const ty = (FIGURE_FOOT_OFFSET - alt + a.curBobY * FIG_SCALE).toFixed(1);
+      const tx = (x - SPRITE_DISPLAY / 2).toFixed(1);
+      const ty = (-(alt + a.curBobY)).toFixed(1);
       fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
     },
     [],
   );
+
+  /* ============ SPRITE RENDERING ============ */
+  const setSpriteState = useCallback(
+    (state: SpriteState, time?: number) => {
+      const a = anim.current;
+      if (a.spriteState !== state) {
+        a.spriteState = state;
+        if (state === "run") a.spriteRunStart = time ?? performance.now();
+      }
+    },
+    [],
+  );
+
+  const drawSprite = useCallback((time: number) => {
+    const canvas = spriteCanvasRef.current;
+    const img = spriteImageRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const a = anim.current;
+
+    let frameIdx: number;
+    if (a.spriteState === "run") {
+      const elapsed = time - (a.spriteRunStart || time);
+      frameIdx = RUN_FRAMES[Math.floor(elapsed / RUN_FRAME_MS) % RUN_FRAMES.length];
+    } else {
+      frameIdx = SPRITE_FRAME[a.spriteState];
+    }
+    a.spriteFrame = frameIdx;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!img || !spriteImageReadyRef.current) return;
+    const sx = (frameIdx % SPRITE_COLS) * SPRITE_NATIVE;
+    const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_NATIVE;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(
+      img,
+      sx, sy, SPRITE_NATIVE, SPRITE_NATIVE,
+      0, 0, SPRITE_DISPLAY * dpr, SPRITE_DISPLAY * dpr,
+    );
+  }, []);
 
   const getTerrainY = useCallback((worldX: number) => {
     const a = anim.current;
@@ -438,97 +334,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const len = Math.max(1e-6, Math.hypot(nx, ny));
     return { x: nx / len, y: ny / len };
   }, [getTerrainSlope]);
-
-  const applyRunPose = useCallback(
-    (phase01: number, leftFoot: { x: number; y: number }, rightFoot: { x: number; y: number }, squash = 0) => {
-      const setL = (el: SVGLineElement | null, p0: { x: number; y: number }, p1: { x: number; y: number }) => {
-        if (!el) return;
-        el.setAttribute("x1", p0.x.toFixed(1));
-        el.setAttribute("y1", p0.y.toFixed(1));
-        el.setAttribute("x2", p1.x.toFixed(1));
-        el.setAttribute("y2", p1.y.toFixed(1));
-      };
-      const hip = { x: HIP.x, y: HIP.y + squash * 1.6 };
-      const lKnee = solveKnee(hip, leftFoot, -1);
-      const rKnee = solveKnee(hip, rightFoot, 1);
-      setL(upLegLRef.current, hip, lKnee);
-      setL(loLegLRef.current, lKnee, leftFoot);
-      setL(upLegRRef.current, hip, rKnee);
-      setL(loLegRRef.current, rKnee, rightFoot);
-      if (footLRef.current) {
-        footLRef.current.setAttribute("cx", leftFoot.x.toFixed(1));
-        footLRef.current.setAttribute("cy", (leftFoot.y + 0.4).toFixed(1));
-      }
-      if (footRRef.current) {
-        footRRef.current.setAttribute("cx", rightFoot.x.toFixed(1));
-        footRRef.current.setAttribute("cy", (rightFoot.y + 0.4).toFixed(1));
-      }
-
-      const swing = Math.sin(phase01 * Math.PI * 2) * 0.75;
-      const aL = armAttrs(-0.25 - swing, 1.1);
-      const aR = armAttrs(0.25 + swing, 1.1);
-      setL(upArmLRef.current, { x: +aL.up.x1, y: +aL.up.y1 }, { x: +aL.up.x2, y: +aL.up.y2 });
-      setL(loArmLRef.current, { x: +aL.lo.x1, y: +aL.lo.y1 }, { x: +aL.lo.x2, y: +aL.lo.y2 });
-      setL(upArmRRef.current, { x: +aR.up.x1, y: +aR.up.y1 }, { x: +aR.up.x2, y: +aR.up.y2 });
-      setL(loArmRRef.current, { x: +aR.lo.x1, y: +aR.lo.y1 }, { x: +aR.lo.x2, y: +aR.lo.y2 });
-      if (handLRef.current) {
-        handLRef.current.setAttribute("cx", aL.hand.cx);
-        handLRef.current.setAttribute("cy", aL.hand.cy);
-      }
-      if (handRRef.current) {
-        handRRef.current.setAttribute("cx", aR.hand.cx);
-        handRRef.current.setAttribute("cy", aR.hand.cy);
-      }
-    },
-    [],
-  );
-
-  const applyPose = useCallback((poseName: string, frame: number) => {
-    const p = getPose(poseName, frame);
-    const setL = (el: SVGLineElement | null, a: LimbAttrs) => {
-      if (!el) return;
-      el.setAttribute("x1", a.x1);
-      el.setAttribute("y1", a.y1);
-      el.setAttribute("x2", a.x2);
-      el.setAttribute("y2", a.y2);
-    };
-    setL(upLegLRef.current, p.lL.up);
-    setL(loLegLRef.current, p.lL.lo);
-    setL(upLegRRef.current, p.lR.up);
-    setL(loLegRRef.current, p.lR.lo);
-    setL(upArmLRef.current, p.aL.up);
-    setL(loArmLRef.current, p.aL.lo);
-    setL(upArmRRef.current, p.aR.up);
-    setL(loArmRRef.current, p.aR.lo);
-    if (handLRef.current) {
-      handLRef.current.setAttribute("cx", p.aL.hand.cx);
-      handLRef.current.setAttribute("cy", p.aL.hand.cy);
-    }
-    if (handRRef.current) {
-      handRRef.current.setAttribute("cx", p.aR.hand.cx);
-      handRRef.current.setAttribute("cy", p.aR.hand.cy);
-    }
-    if (footLRef.current) {
-      footLRef.current.setAttribute("cx", p.lL.foot.cx);
-      footLRef.current.setAttribute("cy", p.lL.foot.cy);
-    }
-    if (footRRef.current) {
-      footRRef.current.setAttribute("cx", p.lR.foot.cx);
-      footRRef.current.setAttribute("cy", p.lR.foot.cy);
-    }
-  }, []);
-
-  const setFlame = useCallback((on: boolean, scale?: number) => {
-    const g = flameRef.current;
-    if (!g) return;
-    if (on) {
-      g.setAttribute("opacity", "1");
-      g.style.transform = `scaleY(${(scale || 1).toFixed(2)})`;
-    } else {
-      g.setAttribute("opacity", "0");
-      g.style.transform = "scaleY(1)";
-    }
-  }, []);
 
   /* ============ CHART DRAWING ============ */
   const drawScene = useCallback(
@@ -957,10 +762,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
     a.state = "IDLE";
     setGameState("IDLE");
-    setFlame(false);
     if (parachuteRef.current)
       parachuteRef.current.classList.remove("deployed");
-    applyPose("standing", 0);
+    setSpriteState("idle");
     onPnlChange(null);
     setLevTagShow(false);
     setLevTagText("\u2014");
@@ -978,7 +782,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.loco.stepPhase = 0;
     a.loco.plantedFoot = "left";
     a.loco.squash = 0;
-  }, [setGameState, setFlame, applyPose, onPnlChange]);
+  }, [setGameState, setSpriteState, onPnlChange]);
 
   /* ============ SPLAT (liquidation) ============ */
   const splat = useCallback(() => {
@@ -986,12 +790,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (a.state === "DEAD") return;
     a.state = "DEAD";
     setGameState("DEAD");
-    setFlame(false);
-    applyPose("falling", a.frame);
+    setSpriteState("fail");
     showBanner("loss", "\u2212$" + a.positionWager.toFixed(2));
     onHistoryPush({ amt: -a.positionWager, win: false });
     setTimeout(reset, 1900);
-  }, [setGameState, setFlame, applyPose, showBanner, onHistoryPush, reset]);
+  }, [setGameState, setSpriteState, showBanner, onHistoryPush, reset]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -999,13 +802,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (a.state !== "LIVE") return;
     a.state = "STOPPED";
     setGameState("STOPPED");
-    setFlame(false);
     if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
     const move = (a.price - a.entry) / a.entry;
     const pnlPct = move * a.positionLev;
     const pnlDollars = pnlPct * a.positionWager;
     setBalance((prev: number) => prev + a.positionWager + pnlDollars);
-    applyPose("parachute", 0);
+    setSpriteState("land");
     const sign = pnlDollars >= 0 ? "+" : "\u2212";
     showBanner(
       pnlDollars >= 0 ? "win" : "loss",
@@ -1013,7 +815,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     );
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
     setTimeout(reset, 2000);
-  }, [setGameState, setFlame, setBalance, applyPose, showBanner, onHistoryPush, reset]);
+  }, [setGameState, setBalance, setSpriteState, showBanner, onHistoryPush, reset]);
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
@@ -1161,6 +963,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
+        setSpriteState("idle", time);
         const loco = a.loco;
         const stepHz = 1.8;
         loco.bodyX = figWorldX;
@@ -1191,11 +994,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
         const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-        const midX = figWorldX;
-        const midY = ridgeY;
-        const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
-        const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
-        applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
         a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
@@ -1205,6 +1003,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         /* set runStartTime on first frame */
         if (a.runStartTime === 0) a.runStartTime = time;
         const elapsed = time - a.runStartTime;
+        setSpriteState("run", time);
 
         if (elapsed > RUN_DURATION) {
           a.state = "PREPARE";
@@ -1270,11 +1069,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
           const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-          const runMidX = figWorldX;
-          const runMidY = ridgeY;
-          const leftLocal = { x: 18 + (loco.leftFoot.x - runMidX) * pointSpacing, y: 48 + (loco.leftFoot.y - runMidY) };
-          const rightLocal = { x: 18 + (loco.rightFoot.x - runMidX) * pointSpacing, y: 48 + (loco.rightFoot.y - runMidY) };
-          applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
           a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
@@ -1285,15 +1079,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const prepElapsed = time - (a.prepareStartTime || time);
         const t = clamp(prepElapsed / 150, 0, 1);
         a.curBobY = Math.sin(t * Math.PI) * 4.5;
-        applyRunPose(0.2, { x: 16, y: 50 + t * 2 }, { x: 20, y: 50 + t * 2 }, 1 + t * 2);
-        setFlame(true, 0.35 + t * 0.25);
+        setSpriteState("crouch", time);
         setFig(figScreenX, a.smoothAlt - t * 2, a.smoothRot);
         if (prepElapsed >= 150) {
           a.state = "JUMPING";
           setGameState("JUMPING");
           a.jumpStartTime = time;
           a.curBobY = 0;
-          applyPose("jetpack", 0);
         }
 
       } else if (a.state === "JUMPING") {
@@ -1301,6 +1093,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.jumpStartTime === 0) a.jumpStartTime = time;
         const elapsed = time - a.jumpStartTime;
         const loco = a.loco;
+        setSpriteState("jump", time);
         if (loco.grounded) {
           loco.grounded = false;
           const n = getTerrainNormal(loco.bodyX || figWorldX);
@@ -1331,7 +1124,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.smoothAlt = baseAlt + 40 * liftArc;
           a.curBobY = 0;
           a.smoothRot = lerp(a.smoothRot, -10 * liftArc, ROTATION_LERP * dtNorm);
-          applyPose("jetpack", a.frame);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
           a.figPrice = priceAtFig;
           a.frame++;
@@ -1340,6 +1132,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
+        setSpriteState("air", time);
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
@@ -1365,15 +1158,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const pnlDollars = pnlPct * a.positionWager;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
-        /* pose + flame */
+        /* rotation + thrust dust */
         if (a.smoothDelta > 0.001) {
-          const targetFlame = 1 + Math.min(2, a.smoothDelta * 80) * 0.6 +
-            Math.sin(a.frame * 0.6) * 0.15;
-          a.smoothFlameScale = lerp(a.smoothFlameScale, targetFlame, 0.15 * dtNorm);
-          setFlame(true, a.smoothFlameScale);
           const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
           a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * dtNorm);
-          applyPose("jetpack", a.frame);
           if (a.dustParticles.length < DUST_MAX) {
             a.dustParticles.push({
               x: figScreenX - 6 + Math.random() * 5,
@@ -1385,16 +1173,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             });
           }
         } else if (a.smoothDelta < -0.001) {
-          setFlame(false);
-          a.smoothFlameScale = lerp(a.smoothFlameScale, 0, 0.1 * dtNorm);
           const targetRot = clamp(a.figPriceVel * 45, -15, 15);
           a.smoothRot = lerp(a.smoothRot, targetRot, (ROTATION_LERP * 0.7) * dtNorm);
-          applyPose("falling", a.frame);
         } else {
-          setFlame(false);
-          a.smoothFlameScale = lerp(a.smoothFlameScale, 0, 0.1 * dtNorm);
           a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
-          applyPose("jetpack", a.frame);
         }
 
         /* position figure */
@@ -1415,7 +1197,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             a.state = "RUNNING";
             setGameState("RUNNING");
             a.runStartTime = time - RUN_DURATION * 0.72;
-            setFlame(false);
           }
         }
 
@@ -1441,14 +1222,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             loco.leftFoot = { x: figWorldX - 1.1, y: getTerrainY(figWorldX - 1.1), planted: true };
             loco.rightFoot = { x: figWorldX + 1.1, y: getTerrainY(figWorldX + 1.1), planted: true };
             loco.squash = lerp(loco.squash, 2.2, 0.5);
-            applyRunPose(0, { x: 16, y: 49 }, { x: 20, y: 49 }, loco.squash);
+            setSpriteState("land", time);
           } else {
-            applyPose("parachute", 0);
+            setSpriteState("air", time);
           }
         }
 
       } else if (a.state === "DEAD") {
         /* figure falls off screen */
+        setSpriteState("fail", time);
         a.figPrice -= 0.5 * dtNorm;
         if (priceToY) {
           const figY = priceToY(a.figPrice);
@@ -1458,6 +1240,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.frame++;
       }
 
+      drawSprite(time);
+
       a.prevPrice = a.price;
       a.frame++;
       animId = requestAnimationFrame(tick);
@@ -1465,7 +1249,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [drawScene, applyPose, applyRunPose, setFig, setFlame, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
+  }, [drawScene, drawSprite, setSpriteState, setFig, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
 
   /* ============ PRICE STREAM ============ */
   useEffect(() => {
@@ -1478,11 +1262,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   /* ============ INIT + RESIZE ============ */
   useEffect(() => {
     resizeCanvas();
-    applyPose("standing", 0);
+    setSpriteState("idle");
     const handleResize = () => resizeCanvas();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [resizeCanvas, applyPose]);
+  }, [resizeCanvas, setSpriteState]);
+
+  /* ============ SPRITE IMAGE LOAD ============ */
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      spriteImageReadyRef.current = true;
+    };
+    img.src = "/spritesheet.png";
+    spriteImageRef.current = img;
+    return () => {
+      spriteImageRef.current = null;
+      spriteImageReadyRef.current = false;
+    };
+  }, []);
 
   /* sync external state */
   useEffect(() => {
@@ -1511,13 +1309,24 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       {pnlReadout}
 
       {/* FIGURE */}
-      <div className="figure-wrap" ref={figRef} style={{ zIndex: 3, opacity: 1 }}>
+      <div
+        className="figure-wrap"
+        ref={figRef}
+        style={{
+          zIndex: 3,
+          opacity: 1,
+          width: SPRITE_DISPLAY,
+          height: SPRITE_DISPLAY,
+          transformOrigin: "50% 100%",
+        }}
+      >
         <svg
           className="parachute"
           ref={parachuteRef}
-          width={80 * FIG_SCALE}
-          height={44 * FIG_SCALE}
+          width={80}
+          height={44}
           viewBox="0 0 80 44"
+          style={{ bottom: SPRITE_DISPLAY * 0.7 }}
         >
           <path
             d="M 4 30 C 8 12, 22 8, 40 8 C 58 8, 72 12, 76 30 C 70 26, 62 29, 56 27 C 48 30, 40 27, 32 30 C 24 27, 14 29, 4 30 Z"
@@ -1536,59 +1345,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           <path d="M 58 29 Q 50 36 43 44" stroke="#f4ecd8" strokeWidth="0.6" fill="none" opacity="0.75" strokeLinecap="round" />
           <path d="M 72 29 Q 60 36 46 44" stroke="#f4ecd8" strokeWidth="0.6" fill="none" opacity="0.75" strokeLinecap="round" />
         </svg>
-        <svg
-          width={36 * FIG_SCALE}
-          height={58 * FIG_SCALE}
-          viewBox="0 0 36 58"
-          className="fig-glow"
-        >
-          {/* jetpack (small box on back) */}
-          <g>
-            <rect x="8" y="16" width="6" height="10" rx="1.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="1.6" strokeLinejoin="round" />
-            <line x1="9.5" y1="19" x2="12.5" y2="19" stroke="#f4ecd8" strokeWidth="0.7" opacity="0.5" />
-            <line x1="9.5" y1="22" x2="12.5" y2="22" stroke="#f4ecd8" strokeWidth="0.7" opacity="0.4" />
-            <rect x="9" y="26" width="2" height="2.5" rx="0.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="0.8" />
-            <rect x="12" y="26" width="2" height="2.5" rx="0.5" fill="#1a1a2e" stroke="#f4ecd8" strokeWidth="0.8" />
-          </g>
-          {/* blue electric flames */}
-          <g
-            ref={flameRef}
-            opacity="0"
-            style={{
-              transformOrigin: "11px 28px",
-              transformBox: "fill-box" as const,
-            }}
-          >
-            {/* outer blue glow */}
-            <path d="M 9.5 28.5 C 8 33, 6.5 38, 8.5 44 C 9.5 40, 10 42, 10 39 C 10.5 42, 11 39, 11.2 41 C 11.8 36, 11.2 32, 10.5 28.5 Z" fill="#4dc9f6" stroke="#4dc9f6" strokeWidth="0.5" opacity="0.75" />
-            <path d="M 12.5 28.5 C 11 33, 9.5 38, 11.5 44 C 12.5 40, 13 42, 13 39 C 13.5 42, 14 39, 14.2 41 C 14.8 36, 14.2 32, 13.5 28.5 Z" fill="#4dc9f6" stroke="#4dc9f6" strokeWidth="0.5" opacity="0.75" />
-            {/* inner white-blue core */}
-            <path d="M 9.8 29 C 9 32, 8 35, 9 38 C 9.5 36, 10 37, 10 35.5 C 10.3 37, 10.8 35, 10.8 36 C 11 34, 10.8 31, 10.2 29 Z" fill="#b8ecff" stroke="none" opacity="0.9" />
-            <path d="M 12.8 29 C 12 32, 11 35, 12 38 C 12.5 36, 13 37, 13 35.5 C 13.3 37, 13.8 35, 13.8 36 C 14 34, 13.8 31, 13.2 29 Z" fill="#b8ecff" stroke="none" opacity="0.9" />
-            {/* electric crackle lines */}
-            <path d="M 10 33 L 8.5 36 L 10 35 L 8 39" stroke="#e0f4ff" strokeWidth="0.6" fill="none" opacity="0.7" strokeLinecap="round" />
-            <path d="M 13 33 L 14.5 36 L 13 35 L 15 39" stroke="#e0f4ff" strokeWidth="0.6" fill="none" opacity="0.7" strokeLinecap="round" />
-          </g>
-          {/* round head */}
-          <circle cx="18" cy="7" r="5.5" fill="#0a0a14" stroke="#f4ecd8" strokeWidth="2" />
-          {/* body */}
-          <line className="figure-line" x1="18" y1="12" x2="18" y2="28" strokeWidth="2.2" />
-          {/* arms */}
-          <line className="figure-line" ref={upArmLRef} x1="18" y1="15" x2="14" y2="22" strokeWidth="2" />
-          <line className="figure-line" ref={loArmLRef} x1="14" y1="22" x2="11" y2="28" strokeWidth="2" />
-          <line className="figure-line" ref={upArmRRef} x1="18" y1="15" x2="22" y2="22" strokeWidth="2" />
-          <line className="figure-line" ref={loArmRRef} x1="22" y1="22" x2="25" y2="28" strokeWidth="2" />
-          <circle className="hand-foot" ref={handLRef} cx="11" cy="28" r="1.6" />
-          <circle className="hand-foot" ref={handRRef} cx="25" cy="28" r="1.6" />
-          {/* legs */}
-          <line className="figure-line" ref={upLegLRef} x1="18" y1="28" x2="14" y2="38" strokeWidth="2" />
-          <line className="figure-line" ref={loLegLRef} x1="14" y1="38" x2="11" y2="48" strokeWidth="2" />
-          <line className="figure-line" ref={upLegRRef} x1="18" y1="28" x2="22" y2="38" strokeWidth="2" />
-          <line className="figure-line" ref={loLegRRef} x1="22" y1="38" x2="25" y2="48" strokeWidth="2" />
-          {/* feet (simple circles, not ovals) */}
-          <circle className="hand-foot" ref={footLRef} cx="11" cy="49" r="1.8" />
-          <circle className="hand-foot" ref={footRRef} cx="25" cy="49" r="1.8" />
-        </svg>
+        <canvas
+          ref={spriteCanvasRef}
+          width={SPRITE_DISPLAY * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
+          height={SPRITE_DISPLAY * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
+          style={{
+            position: "absolute",
+            left: 0,
+            bottom: 0,
+            width: SPRITE_DISPLAY,
+            height: SPRITE_DISPLAY,
+            imageRendering: "auto",
+            pointerEvents: "none",
+          }}
+        />
       </div>
       <div className="banner" ref={bannerRef} />
     </div>
