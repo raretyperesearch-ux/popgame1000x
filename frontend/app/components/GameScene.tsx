@@ -906,7 +906,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
         const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
         applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - loco.bodyY, 0.35 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -978,7 +978,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const leftLocal = { x: 18 + (loco.leftFoot.x - midX) * pointSpacing, y: 48 + (loco.leftFoot.y - midY) };
           const rightLocal = { x: 18 + (loco.rightFoot.x - midX) * pointSpacing, y: 48 + (loco.rightFoot.y - midY) };
           applyRunPose(stepT, leftLocal, rightLocal, loco.squash);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - loco.bodyY, 0.35 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - midY, 0.35 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
