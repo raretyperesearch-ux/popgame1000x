@@ -407,10 +407,10 @@ body::before {
 
 /* ============ CONTROLS ============ */
 .controls {
-  padding: 7px 12px 8px;
+  padding: 4px 12px 5px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   flex-shrink: 0;
   position: relative;
   isolation: isolate;
@@ -422,7 +422,7 @@ body::before {
 .controls::before {
   content: "";
   position: absolute;
-  inset: 5px 10px 7px;
+  inset: 3px 10px 4px;
   z-index: -1;
   border: 1px solid rgba(244,236,216,0.08);
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.55);
@@ -436,9 +436,9 @@ body::before {
 .slider-label {
   font-family: 'Caveat', cursive;
   font-weight: 500;
-  font-size: 18px;
+  font-size: 17px;
   color: var(--muted);
-  min-width: 78px;
+  min-width: 62px;
   transform: rotate(-0.8deg);
 }
 .hand-slider {
@@ -501,20 +501,20 @@ body::before {
 .slider-value {
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   color: var(--ink);
-  min-width: 48px;
+  min-width: 44px;
   text-align: right;
   transform: rotate(-1deg);
 }
 .wager-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 5px;
 }
 .chip {
-  min-height: 34px;
-  padding: 3px 0 4px;
+  min-height: 26px;
+  padding: 1px 0 2px;
   background:
     linear-gradient(180deg, rgba(244,236,216,0.055), rgba(0,0,0,0.04)),
     #0d0d12;
@@ -557,8 +557,8 @@ body::before {
   pointer-events: none;
 }
 .action {
-  min-height: 38px;
-  padding: 4px 14px;
+  min-height: 30px;
+  padding: 2px 14px;
   background:
     linear-gradient(180deg, rgba(255,153,51,0.18), rgba(255,153,51,0.05)),
     linear-gradient(90deg, rgba(93,211,158,0.16), rgba(255,217,102,0.12)),
@@ -586,13 +586,13 @@ body::before {
 .action::after {
   content: "";
   position: absolute;
-  inset: 6px 10px;
+  inset: 4px 10px;
   border: 1px dashed rgba(244,236,216,0.18);
   pointer-events: none;
 }
 .action-sprite {
-  width: 32px;
-  height: 36px;
+  width: 28px;
+  height: 30px;
   grid-column: 3;
   justify-self: end;
   background-image: url(/spritesheet.png);
@@ -1175,10 +1175,10 @@ body::before {
   .help-btn, .mute-btn, .avatar-btn { width: 22px; height: 22px; font-size: 14px; }
   .history-row { padding: 4px 14px; min-height: 24px; font-size: 14px; }
   .history-row .label { font-size: 7px; }
-  .controls { padding: 6px 10px 8px; gap: 5px; }
-  .slider-value { font-size: 16px; min-width: 44px; }
-  .chip { padding: 5px 0; font-size: 17px; }
-  .action { padding: 7px 0; font-size: 22px; }
+  .controls { padding: 4px 10px 5px; gap: 3px; }
+  .slider-value { font-size: 16px; min-width: 42px; }
+  .chip { padding: 1px 0 2px; min-height: 24px; font-size: 17px; }
+  .action { padding: 2px 0; min-height: 28px; font-size: 22px; }
   .hand-slider { height: 20px; }
   .hand-slider::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -9px; }
   .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
