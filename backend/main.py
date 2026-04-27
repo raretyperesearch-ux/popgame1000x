@@ -18,9 +18,14 @@ from routes import trade, price, balance
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Run init_trader once on startup, before serving requests."""
+    """Run init_trader and start the Avantis price feed once on startup;
+    cancel the feed task on shutdown."""
     await trade.init_trader()
-    yield
+    await price.start_feed_client()
+    try:
+        yield
+    finally:
+        await price.stop_feed_client()
 
 
 app = FastAPI(
