@@ -46,7 +46,7 @@ const DEFS: Record<SoundId, SoundDef> = {
   "ui-click":     { file: "click.ogg",       volume: 0.35 },
   "coin-clink":   { file: "coin.ogg",        volume: 0.45 },
   "deploy-chute": { file: "chute.ogg",       volume: 0.5 },
-  "bg-music":     { file: "bg-music.ogg",    volume: 0.22, loop: true },
+  "bg-music":     { file: "bg-music.mp3",    volume: 0.22, loop: true },
 };
 
 const STORAGE_KEY = "popgame-muted";
