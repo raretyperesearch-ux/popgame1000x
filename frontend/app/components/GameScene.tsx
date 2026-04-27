@@ -400,19 +400,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     if (img && groundImageReadyRef.current) {
       const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
+      // Each slice overdraws SLICE_OVERLAP px past its right edge so slices
+      // mutually cover each other. Without this, sharp slope changes between
+      // adjacent slices leave visible vertical slivers because the skewed
+      // parallelograms only kiss at one point per edge.
+      const SLICE_OVERLAP = 4;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
         const leftY = groundYAt(x);
         const rightY = groundYAt(x + GRASS_SLICE_W);
         const skewY = (rightY - leftY) / GRASS_SLICE_W;
         const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
-        const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * GRASS_SLICE_W / GRASS_TILE_W)));
+        const drawW = GRASS_SLICE_W + SLICE_OVERLAP;
+        const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * drawW / GRASS_TILE_W)));
         ctx.save();
         // skew each slice so its top tilts to match the slope; adjacent slices meet at the exact same y
         ctx.transform(1, skewY, 0, 1, x, leftY - GRASS_SURFACE_Y);
         ctx.drawImage(
           img,
           sourceX, 0, sourceW, GRASS_SRC_H,
-          0, 0, GRASS_SLICE_W + 1, GRASS_TILE_H,
+          0, 0, drawW, GRASS_TILE_H,
         );
         ctx.restore();
       }
