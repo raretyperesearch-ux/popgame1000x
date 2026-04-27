@@ -80,8 +80,17 @@ export default function Controls({
         <div className="slider-value">${wager}</div>
       </div>
       <button className={actionClass} onClick={onAction}>
-        <span className="action-sprite" aria-hidden="true" />
+        <span className="action-mini-strip action-mini-strip--left" aria-hidden="true">
+          <span className="action-mini" />
+          <span className="action-mini" />
+          <span className="action-mini" />
+        </span>
         <span className="action-label">{actionLabel}</span>
+        <span className="action-mini-strip action-mini-strip--right" aria-hidden="true">
+          <span className="action-mini" />
+          <span className="action-mini" />
+          <span className="action-mini" />
+        </span>
       </button>
     </div>
   );

@@ -782,7 +782,7 @@ body::before {
   transition: background 0.12s, box-shadow 0.12s, color 0.12s, transform 0.1s, border-color 0.12s;
   transform: rotate(-0.8deg);
   display: grid;
-  grid-template-columns: 38px 1fr 38px;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   position: relative;
   overflow: hidden;
@@ -816,20 +816,6 @@ body::before {
       0 8px 22px rgba(0,0,0,0.28);
   }
 }
-.action::before {
-  /* CSS-triangle launch chevron, balances the runner sprite at col 3 */
-  content: "";
-  grid-column: 1;
-  justify-self: center;
-  width: 0;
-  height: 0;
-  border-left: 12px solid var(--flame-inner);
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
-  filter:
-    drop-shadow(0 0 6px rgba(255,217,102,0.65))
-    drop-shadow(0 0 10px rgba(77,208,225,0.4));
-}
 .action::after {
   content: "";
   position: absolute;
@@ -838,19 +824,44 @@ body::before {
   border-radius: 2px;
   pointer-events: none;
 }
-.action-sprite {
-  width: 28px;
-  height: 30px;
-  grid-column: 3;
-  justify-self: end;
+/* Strips of mini running sprites flanking the JUMP label.
+   Each .action-mini cycles through the 5 running frames in row 0 of
+   spritesheet.png via the steps(5) animation. Staggered delays per
+   strip so the sprites read as a running pack instead of marching in
+   unison. */
+.action-mini-strip {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 6px;
+  height: 28px;
+  z-index: 1; /* sit above the dashed inner border */
+}
+.action-mini-strip--left { grid-column: 1; justify-self: start; }
+.action-mini-strip--right { grid-column: 3; justify-self: end; }
+.action-mini {
+  width: 22px;
+  height: 24px;
   background-image: url(/spritesheet.png);
   background-repeat: no-repeat;
   background-size: 162px 144px;
-  background-position: -97px -36px;
+  background-position: 0 -2px;
   image-rendering: pixelated;
   filter:
-    drop-shadow(0 3px 0 rgba(0,0,0,0.55))
-    drop-shadow(0 0 6px rgba(77,208,225,0.45));
+    drop-shadow(0 2px 0 rgba(0,0,0,0.55))
+    drop-shadow(0 0 5px rgba(77,208,225,0.45));
+  animation: actionMiniRun 0.45s steps(5) infinite;
+  flex-shrink: 0;
+}
+.action-mini-strip--left .action-mini:nth-child(1) { animation-delay: 0s; }
+.action-mini-strip--left .action-mini:nth-child(2) { animation-delay: -0.09s; }
+.action-mini-strip--left .action-mini:nth-child(3) { animation-delay: -0.18s; }
+.action-mini-strip--right .action-mini:nth-child(1) { animation-delay: -0.05s; }
+.action-mini-strip--right .action-mini:nth-child(2) { animation-delay: -0.14s; }
+.action-mini-strip--right .action-mini:nth-child(3) { animation-delay: -0.23s; }
+@keyframes actionMiniRun {
+  from { background-position: 0 -2px; }
+  to   { background-position: -162px -2px; }
 }
 .action-label {
   grid-column: 2;
@@ -880,18 +891,17 @@ body::before {
     0 2px 0 rgba(0,0,0,0.6);
   animation: pulseStop 0.8s ease-in-out infinite;
 }
-.action.stop::before {
-  border-left-color: var(--red);
-  filter: drop-shadow(0 0 6px rgba(255,95,86,0.7));
-}
 .action.stop::after {
   border-color: rgba(255,95,86,0.28);
 }
-.action.stop .action-sprite {
-  background-position: -32px -108px;
+.action.stop .action-mini {
+  /* Freeze the runners in a falling/recovery pose when stopping —
+     row 1, frame 1 in scaled coords (32, 36). */
+  animation: none;
+  background-position: -32px -36px;
   filter:
-    drop-shadow(0 3px 0 rgba(0,0,0,0.55))
-    drop-shadow(0 0 6px rgba(255,95,86,0.5));
+    drop-shadow(0 2px 0 rgba(0,0,0,0.55))
+    drop-shadow(0 0 5px rgba(255,95,86,0.55));
 }
 @keyframes pulseStop {
   0%, 100% { opacity: 1; }
@@ -906,16 +916,13 @@ body::before {
   animation: none;
   pointer-events: none;
 }
-.action.disabled::before {
-  border-left-color: #333;
-  filter: none;
-}
 .action.disabled::after {
   border-color: rgba(244,236,216,0.06);
 }
-.action.disabled .action-sprite {
-  opacity: 0.35;
-  filter: none;
+.action.disabled .action-mini {
+  animation: none;
+  filter: grayscale(1);
+  opacity: 0.3;
 }
 .splash-particle {
   position: absolute;
