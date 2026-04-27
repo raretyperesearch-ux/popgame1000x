@@ -16,6 +16,7 @@ import { Howl, Howler } from "howler";
 export type SoundId =
   | "lever-pull"
   | "liftoff"
+  | "footstep"
   | "engine-loop"
   | "engine-stop"
   | "win-fanfare"
@@ -35,6 +36,7 @@ interface SoundDef {
 const DEFS: Record<SoundId, SoundDef> = {
   "lever-pull":   { file: "lever.ogg",       volume: 0.55 },
   "liftoff":      { file: "liftoff.ogg",     volume: 0.7 },
+  "footstep":     { file: "footstep.ogg",    volume: 0.35 },
   "engine-loop":  { file: "engine.ogg",      volume: 0.35, loop: true },
   "engine-stop":  { file: "engine-stop.ogg", volume: 0.5 },
   "win-fanfare":  { file: "win.ogg",         volume: 0.75 },

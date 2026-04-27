@@ -1011,7 +1011,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "DEAD";
     setGameState("DEAD");
     setSpriteState("fail");
-    sounds.stopEngine();
     sounds.play("rekt-crash");
     onHistoryPush({ amt: -a.positionWager, win: false });
     // brief pause so the splat animation reads, then show modal
@@ -1034,7 +1033,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (a.state !== "LIVE") return;
     a.state = "STOPPED";
     setGameState("STOPPED");
-    sounds.stopEngine();
     sounds.play("deploy-chute");
     if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
     const move = (a.price - a.entry) / a.entry;
@@ -1323,6 +1321,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             planted.planted = false;
             loco.plantedFoot = supportLeft ? "right" : "left";
             loco.stepPhase = 0;
+            sounds.play("footstep");
             if (a.dustParticles.length < DUST_MAX) {
               const sx = worldToScreenX(swing.x);
               for (let k = 0; k < 3; k++) {
@@ -1389,7 +1388,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setLevTagShow(true);
           const fig = figRef.current;
           if (fig) fig.style.transition = "none";
-          sounds.startEngine();
         } else {
           /* rising arc from chart line */
           const liftT = elapsed / JUMP_DURATION;

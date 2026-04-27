@@ -68,12 +68,16 @@ body::before {
   width: 100%;
   max-width: 420px;
   height: 100vh;
-  max-height: 900px;
+  height: 100dvh;
+  max-height: 100dvh;
   background: var(--bg-cabinet);
   border: 2px solid #1a1a1e;
   display: flex;
   flex-direction: column;
   position: relative;
+}
+@media (min-height: 920px) {
+  .cabinet { max-height: 900px; }
 }
 
 /* ============ TOPBAR ============ */
@@ -380,15 +384,16 @@ body::before {
 
 /* ============ CONTROLS ============ */
 .controls {
-  padding: 12px 14px 16px;
+  padding: 8px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .slider-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .slider-label {
   font-family: 'Caveat', cursive;
@@ -402,7 +407,7 @@ body::before {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
-  height: 28px;
+  height: 22px;
   background: transparent;
   cursor: pointer;
   outline: none;
@@ -446,25 +451,25 @@ body::before {
 .slider-value {
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 22px;
+  font-size: 18px;
   color: var(--ink);
-  min-width: 56px;
+  min-width: 48px;
   text-align: right;
   transform: rotate(-1deg);
 }
 .wager-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 5px;
 }
 .chip {
-  padding: 8px 0;
+  padding: 6px 0;
   background: transparent;
   border: 1.5px dashed var(--border);
   color: var(--muted);
   font-family: 'Caveat', cursive;
   font-weight: 600;
-  font-size: 22px;
+  font-size: 18px;
   cursor: pointer;
   transition: all 0.12s;
   transform: rotate(0deg);
@@ -488,13 +493,13 @@ body::before {
   pointer-events: none;
 }
 .action {
-  padding: 16px 0;
+  padding: 10px 0;
   background: transparent;
   border: 2px dashed var(--ink);
   color: var(--ink);
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 32px;
+  font-size: 24px;
   letter-spacing: 2px;
   cursor: pointer;
   transition: all 0.1s;
@@ -1038,4 +1043,35 @@ body::before {
 }
 .mute-btn:hover {
   border-color: var(--ink);
+}
+
+/* ============ MOBILE COMPACTION ============ */
+/* iPhone SE (≤ 700 px tall viewport) and other tight screens — squeeze
+   the chrome around the stage so the playfield itself stays generous. */
+@media (max-height: 700px) {
+  .topbar { padding: 8px 14px 6px; }
+  .brand { font-size: 20px; }
+  .deposit-btn, .balance-pill { font-size: 16px; padding: 3px 10px; }
+  .help-btn, .mute-btn, .avatar-btn { width: 22px; height: 22px; font-size: 14px; }
+  .history-row { padding: 4px 14px; min-height: 24px; font-size: 14px; }
+  .history-row .label { font-size: 7px; }
+  .controls { padding: 6px 10px 8px; gap: 5px; }
+  .slider-value { font-size: 16px; min-width: 44px; }
+  .chip { padding: 5px 0; font-size: 17px; }
+  .action { padding: 7px 0; font-size: 22px; }
+  .hand-slider { height: 20px; }
+  .hand-slider::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -9px; }
+  .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
+  .pnl-readout { font-size: 28px; padding: 2px 12px; }
+  .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
+  .price-tick { top: 56px; font-size: 12px; }
+}
+@media (max-height: 600px) {
+  /* Even tighter — landscape phones, small webviews */
+  .controls { padding: 4px 10px 6px; gap: 4px; }
+  .chip { padding: 4px 0; font-size: 15px; }
+  .action { padding: 5px 0; font-size: 20px; letter-spacing: 1px; }
+  .slider-value { font-size: 14px; }
+  .hand-slider { height: 16px; }
+  .hand-slider::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -8px; }
 }
