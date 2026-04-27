@@ -49,6 +49,10 @@ const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
 const GRASS_SLICE_W = 16;
+const WATER_SHELF_TOP_PCT = 0.73;
+const WATER_SURFACE_SRC_PCT = 0.34;
+const WATER_SURFACE_DRAW_PCT = 0.42;
+const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
 const SPRITE_SCALE = 0.5;
@@ -404,7 +408,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     ctx.fill();
 
     if (img && groundImageReadyRef.current) {
-      const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
+      const scroll = (anim.current.groundScrollAcc * TERRAIN_SCROLL_PX) % GRASS_TILE_W;
       // Each slice overdraws SLICE_OVERLAP px past its right edge so slices
       // mutually cover each other. Without this, sharp slope changes between
       // adjacent slices leave visible vertical slivers because the skewed
@@ -862,8 +866,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      const waveTime = a.frame * 0.03;
-
       /* liquidation line + zone */
       if (isLive && liqPrice !== null) {
         const ly = priceToY(liqPrice);
@@ -911,16 +913,29 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* generated pixel-art water hazard fills the lower gap beneath the cliff */
       const waterImg = waterImageRef.current;
-      const shelfTop = h * 0.73;
+      const shelfTop = h * WATER_SHELF_TOP_PCT;
       const shelfH = h - shelfTop;
       if (waterImg && waterImageReadyRef.current) {
         const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
-        const drift = (waveTime * 24) % tileW;
+        const drift = (a.groundScrollAcc * TERRAIN_SCROLL_PX) % tileW;
+        const waveBob = Math.round(Math.sin(a.frame * 0.055) * 2);
+        const foamDrift = (drift * 1.18 + Math.round(Math.sin(a.frame * 0.035) * 10)) % tileW;
+        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT);
+        const surfaceH = Math.ceil(shelfH * WATER_SURFACE_DRAW_PCT);
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
         for (let x = -drift - tileW; x < w + tileW; x += tileW) {
-          ctx.drawImage(waterImg, x, shelfTop, tileW, shelfH);
+          ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
+        }
+        ctx.globalAlpha = groundAlpha * 0.78;
+        for (let x = -foamDrift - tileW; x < w + tileW; x += tileW) {
+          ctx.drawImage(
+            waterImg,
+            0, 0, WATER_SRC_W, surfaceSrcH,
+            Math.round(x), Math.round(shelfTop - waveBob),
+            Math.round(tileW), surfaceH,
+          );
         }
         const blend = ctx.createLinearGradient(0, shelfTop, 0, shelfTop + shelfH * 0.28);
         blend.addColorStop(0, "rgba(6,10,20,0.65)");
