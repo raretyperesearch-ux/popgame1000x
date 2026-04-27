@@ -45,38 +45,48 @@ _trader_address: Optional[str] = None
 
 
 async def init_trader():
+    """Initialize the Avantis trader client. On any failure, leaves
+    _trader_client = None so /trade/* will return 503 via _require_trader
+    until the env is fixed and init succeeds on a future restart."""
     global _trader_client, _eth_pair_index, _trader_address
 
-    if not _PRIVATE_KEY:
-        raise RuntimeError("PRIVATE_KEY env var is required")
-    if not _TREASURY_ADDRESS:
-        raise RuntimeError("TREASURY_ADDRESS env var is required")
+    try:
+        if not _PRIVATE_KEY:
+            raise RuntimeError("PRIVATE_KEY env var is required")
+        if not _TREASURY_ADDRESS:
+            raise RuntimeError("TREASURY_ADDRESS env var is required")
 
-    _trader_client = TraderClient(_PROVIDER_URL)
-    _trader_client.set_local_signer(_PRIVATE_KEY)
-    _trader_address = _trader_client.get_signer().get_ethereum_address()
+        _trader_client = TraderClient(_PROVIDER_URL)
+        _trader_client.set_local_signer(_PRIVATE_KEY)
+        _trader_address = _trader_client.get_signer().get_ethereum_address()
 
-    _eth_pair_index = await _trader_client.pairs_cache.get_pair_index(_PAIR)
+        _eth_pair_index = await _trader_client.pairs_cache.get_pair_index(_PAIR)
 
-    pairs = await _trader_client.pairs_cache.get_pairs_info()
-    eth = pairs[_PAIR]
+        pairs = await _trader_client.pairs_cache.get_pairs_info()
+        eth = pairs[_PAIR]
 
-    if not eth.values.is_usdc_aligned:
-        raise RuntimeError(f"{_PAIR} is not USDC-aligned")
-    if eth.leverages.min_leverage > 75:
-        raise RuntimeError(
-            f"{_PAIR} min leverage is {eth.leverages.min_leverage} — ZFP requires <=75"
-        )
-    if eth.leverages.max_leverage < 250:
+        if not eth.values.is_usdc_aligned:
+            raise RuntimeError(f"{_PAIR} is not USDC-aligned")
+        if eth.leverages.min_leverage > 75:
+            raise RuntimeError(
+                f"{_PAIR} min leverage is {eth.leverages.min_leverage} — ZFP requires <=75"
+            )
+        if eth.leverages.max_leverage < 250:
+            print(
+                f"⚠️  {_PAIR} max leverage is {eth.leverages.max_leverage}, our cap is 250"
+            )
+
         print(
-            f"⚠️  {_PAIR} max leverage is {eth.leverages.max_leverage}, our cap is 250"
+            f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "
+            f"trader={_trader_address} lev_range="
+            f"{eth.leverages.min_leverage}-{eth.leverages.max_leverage}"
         )
-
-    print(
-        f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "
-        f"trader={_trader_address} lev_range="
-        f"{eth.leverages.min_leverage}-{eth.leverages.max_leverage}"
-    )
+    except Exception:
+        # Reset partial state so _require_trader cleanly returns 503.
+        _trader_client = None
+        _eth_pair_index = None
+        _trader_address = None
+        raise
 
 
 def _require_trader() -> TraderClient:

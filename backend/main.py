@@ -18,10 +18,20 @@ from routes import trade, price, balance
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Run init_trader and start the Avantis price feed once on startup;
-    cancel the feed task on shutdown."""
-    await trade.init_trader()
+    """Boot the price feed unconditionally; trader init is best-effort.
+
+    Decoupled so the server stays up serving real ETH prices even when
+    the trader env is missing or the RPC is misbehaving. /trade/*
+    endpoints will return 503 via _require_trader until init succeeds on
+    a future restart with valid env."""
     await price.start_feed_client()
+    try:
+        await trade.init_trader()
+    except Exception as e:
+        print(
+            f"⚠️  Trader init failed — /trade/* will return 503 until env is "
+            f"fixed and the server is restarted: {e}"
+        )
     try:
         yield
     finally:
