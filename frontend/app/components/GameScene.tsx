@@ -40,12 +40,19 @@ const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
+const WATER_HAZARD_SRC = "/assets/water-hazard.png";
+const WATER_SRC_W = 2172;
+const WATER_SRC_H = 350;
 const GRASS_SRC_W = 1024;
 const GRASS_SRC_H = 256;
 const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
 const GRASS_SLICE_W = 16;
+const WATER_SHELF_TOP_PCT = 0.73;
+const WATER_SURFACE_SRC_PCT = 0.34;
+const WATER_SURFACE_DRAW_PCT = 0.42;
+const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
 const SPRITE_SCALE = 0.5;
@@ -167,6 +174,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const spriteImageReadyRef = useRef(false);
   const groundImageRef = useRef<HTMLImageElement | null>(null);
   const groundImageReadyRef = useRef(false);
+  const waterImageRef = useRef<HTMLImageElement | null>(null);
+  const waterImageReadyRef = useRef(false);
 
   /* mutable animation state */
   const anim = useRef({
@@ -399,7 +408,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     ctx.fill();
 
     if (img && groundImageReadyRef.current) {
-      const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
+      const scroll = (anim.current.groundScrollAcc * TERRAIN_SCROLL_PX) % GRASS_TILE_W;
       // Each slice overdraws SLICE_OVERLAP px past its right edge so slices
       // mutually cover each other. Without this, sharp slope changes between
       // adjacent slices leave visible vertical slivers because the skewed
@@ -857,48 +866,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      /* water zone with animated waves */
-      const waterTop = h * 0.82;
-      const waterGrad = ctx.createLinearGradient(0, waterTop, 0, h);
-      waterGrad.addColorStop(0, "rgba(77,208,225,0.02)");
-      waterGrad.addColorStop(0.3, "rgba(40,140,170,0.08)");
-      waterGrad.addColorStop(1, "rgba(20,60,90,0.18)");
-      ctx.fillStyle = waterGrad;
-      ctx.fillRect(0, waterTop, w, h - waterTop);
-
-      /* animated wave lines */
-      const waveTime = a.frame * 0.03;
-      for (let wl = 0; wl < 5; wl++) {
-        const wy = waterTop + 6 + wl * 12;
-        ctx.globalAlpha = 0.06 - wl * 0.008;
-        ctx.strokeStyle = "#4dd0e1";
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        for (let x = 0; x <= w; x += 6) {
-          const y = wy + Math.sin(x * 0.025 + waveTime + wl * 1.8) * 3;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* shark fins */
-      const sharkPositions = [0.2, 0.55, 0.85];
-      for (const sp of sharkPositions) {
-        const sx = ((sp * w + waveTime * 12) % (w + 40)) - 20;
-        const sy = waterTop + 10 + Math.sin(waveTime + sp * 10) * 3;
-        ctx.globalAlpha = 0.15;
-        ctx.fillStyle = "#1a3040";
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx - 5, sy + 10);
-        ctx.lineTo(sx + 5, sy + 10);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-
       /* liquidation line + zone */
       if (isLive && liqPrice !== null) {
         const ly = priceToY(liqPrice);
@@ -940,6 +907,40 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         drawGrassGround(ctx, w, h, pts);
+        ctx.restore();
+      }
+
+      /* generated pixel-art water hazard fills the lower gap beneath the cliff */
+      const waterImg = waterImageRef.current;
+      const shelfTop = h * WATER_SHELF_TOP_PCT;
+      const shelfH = h - shelfTop;
+      if (waterImg && waterImageReadyRef.current) {
+        const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
+        const drift = (a.groundScrollAcc * TERRAIN_SCROLL_PX) % tileW;
+        const waveBob = Math.round(Math.sin(a.frame * 0.055) * 2);
+        const foamDrift = (drift * 1.18 + Math.round(Math.sin(a.frame * 0.035) * 10)) % tileW;
+        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT);
+        const surfaceH = Math.ceil(shelfH * WATER_SURFACE_DRAW_PCT);
+        ctx.save();
+        ctx.globalAlpha = groundAlpha;
+        ctx.imageSmoothingEnabled = false;
+        for (let x = -drift - tileW; x < w + tileW; x += tileW) {
+          ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
+        }
+        ctx.globalAlpha = groundAlpha * 0.78;
+        for (let x = -foamDrift - tileW; x < w + tileW; x += tileW) {
+          ctx.drawImage(
+            waterImg,
+            0, 0, WATER_SRC_W, surfaceSrcH,
+            Math.round(x), Math.round(shelfTop - waveBob),
+            Math.round(tileW), surfaceH,
+          );
+        }
+        const blend = ctx.createLinearGradient(0, shelfTop, 0, shelfTop + shelfH * 0.28);
+        blend.addColorStop(0, "rgba(6,10,20,0.65)");
+        blend.addColorStop(1, "rgba(6,10,20,0)");
+        ctx.fillStyle = blend;
+        ctx.fillRect(0, shelfTop, w, shelfH * 0.28);
         ctx.restore();
       }
 
@@ -1563,6 +1564,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     return () => {
       groundImageRef.current = null;
       groundImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      waterImageReadyRef.current = true;
+    };
+    img.src = WATER_HAZARD_SRC;
+    waterImageRef.current = img;
+    return () => {
+      waterImageRef.current = null;
+      waterImageReadyRef.current = false;
     };
   }, []);
 

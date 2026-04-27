@@ -79,7 +79,8 @@ export default function Controls({
         <div className="slider-value">${wager}</div>
       </div>
       <button className={actionClass} onClick={onAction}>
-        {actionLabel}
+        <span className="action-sprite" aria-hidden="true" />
+        <span className="action-label">{actionLabel}</span>
       </button>
     </div>
   );
