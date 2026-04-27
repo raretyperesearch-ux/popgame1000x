@@ -941,6 +941,45 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.restore();
       }
 
+      /* price flag pinned to the right edge — slides up/down with price.
+         green when above entry (winning), red when below (losing), muted
+         when no entry (idle/running). always visible so it stays a stable
+         reference even as the chart fades during the climb. */
+      const flagY = clamp(curY, 6, h - 6);
+      let flagFill = "rgba(244,236,216,0.55)";
+      let flagStroke = "rgba(244,236,216,0.85)";
+      if (entryPrice != null && (isLive || a.state === "STOPPED" || a.state === "DEAD")) {
+        if (a.price >= entryPrice) {
+          flagFill = "rgba(93,211,158,0.9)";
+          flagStroke = "#5dd39e";
+        } else {
+          flagFill = "rgba(255,95,86,0.9)";
+          flagStroke = "#ff5f56";
+        }
+      }
+      ctx.save();
+      // dashed track on the right edge for context
+      ctx.strokeStyle = "rgba(244,236,216,0.07)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(w - 1, 0);
+      ctx.lineTo(w - 1, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // flag triangle: anchored to the right edge, pointing inward at curY
+      ctx.fillStyle = flagFill;
+      ctx.strokeStyle = flagStroke;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(w, flagY - 7);
+      ctx.lineTo(w, flagY + 7);
+      ctx.lineTo(w - 14, flagY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
       /* dust particles */
       const dust = anim.current.dustParticles;
       for (const d of dust) {
