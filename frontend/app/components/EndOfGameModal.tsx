@@ -85,37 +85,42 @@ function BadgeIcon({ kind }: { kind: EndOfGameKind }) {
   );
 }
 
+/**
+ * USDC mark — solid blue circle with two split parentheses (3 segments each)
+ * around a bold "$". This matches the reference image the user shared.
+ */
 function UsdcCoin({ broken = false }: { broken?: boolean }) {
   if (broken) {
     return (
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-        <defs>
-          <radialGradient id="usdc-broken" cx="35%" cy="35%" r="65%">
-            <stop offset="0%" stopColor="#5a1a1a" />
-            <stop offset="60%" stopColor="#2a0808" />
-            <stop offset="100%" stopColor="#100" />
-          </radialGradient>
-        </defs>
-        <circle cx="13" cy="13" r="11" fill="url(#usdc-broken)" stroke="#400" strokeWidth="1.5" />
-        <path d="M8 8 L18 18 M18 8 L8 18" stroke="#ff5f56" strokeWidth="2.4" strokeLinecap="round" />
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="#3a0808" stroke="#400" strokeWidth="1.2" />
+        <path d="M10 10 L22 22 M22 10 L10 22" stroke="#ff5f56" strokeWidth="3" strokeLinecap="round" />
       </svg>
     );
   }
+  // arc segments traced on a circle of radius 9.6 around (16,16)
+  const arcStroke = 2.2;
   return (
-    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-      <defs>
-        <radialGradient id="usdc-face" cx="35%" cy="30%" r="70%">
-          <stop offset="0%" stopColor="#7eb3ee" />
-          <stop offset="55%" stopColor="#2775ca" />
-          <stop offset="100%" stopColor="#143966" />
-        </radialGradient>
-      </defs>
-      <circle cx="13" cy="13" r="11" fill="url(#usdc-face)" stroke="#0d2a4d" strokeWidth="1.5" />
-      <circle cx="13" cy="13" r="8" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
-      {/* stylized C with the two vertical bars (USDC mark) */}
-      <path d="M16 9.2 A4.5 4.5 0 1 0 16 16.8" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
-      <line x1="13" y1="6" x2="13" y2="9" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="13" y1="17" x2="13" y2="20" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="#2775ca" />
+      {/* left parenthesis: 3 segments with 2 small gaps */}
+      <path d="M 11.5 7.6 A 9.6 9.6 0 0 0 8.0 11.6" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      <path d="M 6.6 13.7 A 9.6 9.6 0 0 0 6.6 18.3" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      <path d="M 8.0 20.4 A 9.6 9.6 0 0 0 11.5 24.4" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      {/* right parenthesis: mirror of the left */}
+      <path d="M 20.5 7.6 A 9.6 9.6 0 0 1 24.0 11.6" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      <path d="M 25.4 13.7 A 9.6 9.6 0 0 1 25.4 18.3" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      <path d="M 24.0 20.4 A 9.6 9.6 0 0 1 20.5 24.4" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
+      {/* bold $ in the center — slightly stylized as a path so it scales cleanly */}
+      <text
+        x="16"
+        y="22.2"
+        textAnchor="middle"
+        fontFamily="'Arial Black', 'Helvetica Neue', sans-serif"
+        fontWeight={900}
+        fontSize="13"
+        fill="#fff"
+      >$</text>
     </svg>
   );
 }
@@ -234,31 +239,40 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
       ctx.lineTo(-r * 0.5, r * 0.5);
       ctx.stroke();
     } else {
-      const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, 0, 0, 0, r);
-      grad.addColorStop(0, "#7eb3ee");
-      grad.addColorStop(0.55, "#2775ca");
-      grad.addColorStop(1, "#143966");
-      ctx.fillStyle = grad;
+      // solid blue USDC face
+      ctx.fillStyle = "#2775ca";
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "#0d2a4d";
-      ctx.lineWidth = r * 0.12;
-      ctx.stroke();
-      // USDC mark: stylized C with two vertical bars
+      // two split parentheses + center dollar (matches the official mark)
       ctx.strokeStyle = "#ffffff";
       ctx.lineCap = "round";
-      ctx.lineWidth = r * 0.18;
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.42, -Math.PI * 0.32, Math.PI * 0.32, true);
-      ctx.stroke();
       ctx.lineWidth = r * 0.13;
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.7);
-      ctx.lineTo(0, -r * 0.45);
-      ctx.moveTo(0, r * 0.45);
-      ctx.lineTo(0, r * 0.7);
-      ctx.stroke();
+      const arcR = r * 0.7;
+      // left parenthesis: 3 segments at -180+/-Δ angles
+      const segs: Array<[number, number]> = [
+        [Math.PI * 0.78, Math.PI * 0.92],   // top-left
+        [Math.PI * 0.96, Math.PI * 1.04],   // mid-left
+        [Math.PI * 1.08, Math.PI * 1.22],   // bottom-left
+      ];
+      for (const [a1, a2] of segs) {
+        ctx.beginPath();
+        ctx.arc(0, 0, arcR, a1, a2);
+        ctx.stroke();
+      }
+      // right parenthesis: mirrored
+      for (const [a1, a2] of segs) {
+        ctx.beginPath();
+        ctx.arc(0, 0, arcR, -a2 + Math.PI * 2, -a1 + Math.PI * 2);
+        ctx.stroke();
+      }
+      // center dollar sign — system bold so it renders crisply
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `900 ${(r * 0.95).toFixed(0)}px "Arial Black", "Helvetica Neue", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("$", 0, r * 0.06);
+      ctx.textBaseline = "alphabetic";
     }
     ctx.restore();
   };
