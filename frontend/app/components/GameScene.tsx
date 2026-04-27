@@ -944,14 +944,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
 
       /* race flag DOM element tracks the live price.
-         clamp Y so the flag stays inside the stage even when price is
-         wildly out of the visible chart range. lerp the displayed Y for
-         smooth motion regardless of how chunky the upstream price ticks
-         are. flag sprite is 36x36, anchor by its center. */
+         Targets priceToY(renderPrice) — renderPrice is already smoothed
+         by the per-tick lerp at 0.08*dtNorm, so the flag inherits the
+         chart line's smoothing and stays perfectly in sync with it.
+         A second gentle lerp at 0.09 polishes any remaining micro-jitter.
+         Clamp Y so the flag can't escape the stage when price is way
+         outside the visible chart range. Sprite is 36x36, center-anchor. */
       const FLAG_H = 36;
-      const flagTargetY = clamp(curY, FLAG_H / 2, h - FLAG_H / 2);
+      const flagPriceY = priceToY(a.renderPrice);
+      const flagTargetY = clamp(flagPriceY, FLAG_H / 2, h - FLAG_H / 2);
       if (a.flagDisplayY < 0) a.flagDisplayY = flagTargetY;
-      a.flagDisplayY = lerp(a.flagDisplayY, flagTargetY, 0.18);
+      a.flagDisplayY = lerp(a.flagDisplayY, flagTargetY, 0.09);
       const flagEl = raceFlagRef.current;
       if (flagEl) {
         flagEl.style.transform = `translateY(${(a.flagDisplayY - FLAG_H / 2).toFixed(1)}px)`;
