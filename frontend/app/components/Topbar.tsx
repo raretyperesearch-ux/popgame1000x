@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { sounds } from "@/lib/sounds";
 
 interface TopbarProps {
   balance: number;
@@ -11,7 +12,15 @@ interface TopbarProps {
 export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   const { login, logout, authenticated, user } = usePrivy();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [muted, setMuted] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setMuted(sounds.isMuted()); }, []);
+  const onMuteClick = () => {
+    const m = sounds.toggleMute();
+    setMuted(m);
+    if (!m) sounds.play("ui-click");
+  };
 
   const walletAddress = user?.wallet?.address;
   const truncated = walletAddress
@@ -49,11 +58,14 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     <div className="topbar">
       <div className="topbar-left">
         <div className="brand">game</div>
-        <button className="help-btn" onClick={onHelpClick} aria-label="Help">?</button>
+        <button className="help-btn" onClick={() => { sounds.play("ui-click"); onHelpClick(); }} aria-label="Help">?</button>
+        <button className="mute-btn" onClick={onMuteClick} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute" : "Mute"}>
+          {muted ? "🔇" : "🔊"}
+        </button>
       </div>
       <div className="topbar-right">
         {!authenticated ? (
-          <button className="deposit-btn" onClick={() => login()}>
+          <button className="deposit-btn" onClick={() => { sounds.play("ui-click"); login(); }}>
             <span>deposit to play</span>
             <span className="deposit-arrow" aria-hidden="true">›</span>
           </button>
@@ -66,7 +78,7 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
             <div className="user-wrap" ref={wrapRef}>
               <button
                 className="avatar-btn"
-                onClick={() => setMenuOpen((v) => !v)}
+                onClick={() => { sounds.play("ui-click"); setMenuOpen((v) => !v); }}
                 aria-label="Account"
                 aria-expanded={menuOpen}
               >
@@ -78,20 +90,20 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
                     <div className="user-menu-label">wallet</div>
                     <div className="user-menu-addr">{truncated}</div>
                   </div>
-                  <button className="user-menu-item" role="menuitem" onClick={copyAddress}>
+                  <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
                   </button>
                   <button
                     className="user-menu-item"
                     role="menuitem"
-                    onClick={() => { setMenuOpen(false); login(); }}
+                    onClick={() => { sounds.play("ui-click"); setMenuOpen(false); login(); }}
                   >
                     deposit / fund
                   </button>
                   <button
                     className="user-menu-item danger"
                     role="menuitem"
-                    onClick={() => { setMenuOpen(false); logout(); }}
+                    onClick={() => { sounds.play("ui-click"); setMenuOpen(false); logout(); }}
                   >
                     disconnect
                   </button>

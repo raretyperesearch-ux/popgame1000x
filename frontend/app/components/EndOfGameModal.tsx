@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { sounds } from "@/lib/sounds";
 
 export type EndOfGameKind = "win" | "loss" | "rekt";
 
@@ -461,6 +462,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
   const copy = KIND_COPY[data.kind];
 
   const handleDownload = async () => {
+    sounds.play("coin-clink");
     const blob = await renderShareImage(data);
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -474,6 +476,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
   };
 
   const handleShare = async () => {
+    sounds.play("coin-clink");
     const blob = await renderShareImage(data);
     if (!blob) return;
     const file = new File([blob], `popgame-${data.kind}.png`, { type: "image/png" });
@@ -545,7 +548,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
         <div className="eog-actions">
           <button className="eog-btn" onClick={handleShare}>SHARE</button>
           <button className="eog-btn" onClick={handleDownload}>DOWNLOAD</button>
-          <button className="eog-btn primary" onClick={onClose}>CONTINUE</button>
+          <button className="eog-btn primary" onClick={() => { sounds.play("ui-click"); onClose(); }}>CONTINUE</button>
         </div>
       </div>
     </div>
