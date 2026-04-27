@@ -828,19 +828,10 @@ body::before {
 .eog-card.loss .eog-spark { background: var(--orange); box-shadow: 0 0 8px rgba(255,153,51,0.5); }
 .eog-card.rekt .eog-spark { background: var(--red); box-shadow: 0 0 10px rgba(255,95,86,0.7); }
 .eog-coin {
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fff7c0 0%, var(--gold) 50%, #b8860b 100%);
-  border: 2px solid #6e5300;
-  display: flex;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  color: #6e5300;
-}
-.eog-card.rekt .eog-coin {
-  background: radial-gradient(circle at 35% 35%, #6a1010 0%, #3a0808 100%);
-  border-color: #200;
-  color: #ff5f56;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
 }

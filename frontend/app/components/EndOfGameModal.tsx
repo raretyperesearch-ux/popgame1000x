@@ -85,7 +85,42 @@ function BadgeIcon({ kind }: { kind: EndOfGameKind }) {
   );
 }
 
-/* Decorative scattered sparkles + coins. Positions are deterministic (no Math.random in render). */
+function UsdcCoin({ broken = false }: { broken?: boolean }) {
+  if (broken) {
+    return (
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+        <defs>
+          <radialGradient id="usdc-broken" cx="35%" cy="35%" r="65%">
+            <stop offset="0%" stopColor="#5a1a1a" />
+            <stop offset="60%" stopColor="#2a0808" />
+            <stop offset="100%" stopColor="#100" />
+          </radialGradient>
+        </defs>
+        <circle cx="13" cy="13" r="11" fill="url(#usdc-broken)" stroke="#400" strokeWidth="1.5" />
+        <path d="M8 8 L18 18 M18 8 L8 18" stroke="#ff5f56" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      <defs>
+        <radialGradient id="usdc-face" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#7eb3ee" />
+          <stop offset="55%" stopColor="#2775ca" />
+          <stop offset="100%" stopColor="#143966" />
+        </radialGradient>
+      </defs>
+      <circle cx="13" cy="13" r="11" fill="url(#usdc-face)" stroke="#0d2a4d" strokeWidth="1.5" />
+      <circle cx="13" cy="13" r="8" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
+      {/* stylized C with the two vertical bars (USDC mark) */}
+      <path d="M16 9.2 A4.5 4.5 0 1 0 16 16.8" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+      <line x1="13" y1="6" x2="13" y2="9" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="13" y1="17" x2="13" y2="20" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* Decorative scattered sparkles + USDC coins. Positions are deterministic (no Math.random in render). */
 function Decorations({ kind }: { kind: EndOfGameKind }) {
   const sparks = [
     { top: "10%", left: "6%", rot: 0, scale: 1 },
@@ -119,7 +154,7 @@ function Decorations({ kind }: { kind: EndOfGameKind }) {
           className="eog-decor eog-coin"
           style={{ top: c.top, left: c.left, transform: `translate(-50%, -50%) rotate(${c.rot}deg)` }}
         >
-          {kind === "rekt" ? "✕" : "$"}
+          <UsdcCoin broken={kind === "rekt"} />
         </span>
       ))}
     </>
@@ -171,6 +206,72 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
     ctx.fillRect(-12, -12, 24, 24);
     ctx.restore();
   }
+
+  // USDC coins scattered (or broken USDC for rekt)
+  const drawUsdcCoin = (cx: number, cy: number, r: number, rot: number) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    if (data.kind === "rekt") {
+      const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+      grad.addColorStop(0, "#5a1a1a");
+      grad.addColorStop(1, "#100");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#400";
+      ctx.lineWidth = r * 0.12;
+      ctx.stroke();
+      // X mark
+      ctx.strokeStyle = "#ff5f56";
+      ctx.lineWidth = r * 0.22;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.5, -r * 0.5);
+      ctx.lineTo(r * 0.5, r * 0.5);
+      ctx.moveTo(r * 0.5, -r * 0.5);
+      ctx.lineTo(-r * 0.5, r * 0.5);
+      ctx.stroke();
+    } else {
+      const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, 0, 0, 0, r);
+      grad.addColorStop(0, "#7eb3ee");
+      grad.addColorStop(0.55, "#2775ca");
+      grad.addColorStop(1, "#143966");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#0d2a4d";
+      ctx.lineWidth = r * 0.12;
+      ctx.stroke();
+      // USDC mark: stylized C with two vertical bars
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineCap = "round";
+      ctx.lineWidth = r * 0.18;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.42, -Math.PI * 0.32, Math.PI * 0.32, true);
+      ctx.stroke();
+      ctx.lineWidth = r * 0.13;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.7);
+      ctx.lineTo(0, -r * 0.45);
+      ctx.moveTo(0, r * 0.45);
+      ctx.lineTo(0, r * 0.7);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  const coinPositions = data.kind === "rekt"
+    ? [{ x: 130, y: 730, r: 32, rot: 0.3 }]
+    : data.kind === "loss"
+    ? [{ x: 140, y: 770, r: 30, rot: 0.5 }]
+    : [
+        { x: 950, y: 250, r: 36, rot: -0.2 },
+        { x: 130, y: 720, r: 34, rot: 0.4 },
+        { x: 1000, y: 420, r: 28, rot: 0.6 },
+      ];
+  for (const c of coinPositions) drawUsdcCoin(c.x, c.y, c.r, c.rot);
 
   ctx.fillStyle = "#f4ecd8";
   ctx.font = '48px "Press Start 2P", monospace';
