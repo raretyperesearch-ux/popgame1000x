@@ -52,9 +52,6 @@ const GRASS_SLICE_W = 16;
 const WATER_SHELF_TOP_PCT = 0.73;
 const WATER_SURFACE_SRC_PCT = 0.34;
 const WATER_SURFACE_DRAW_PCT = 0.42;
-// the top ~22 px of water-hazard.png are solid black (RGB ~3,3,4) before the
-// wave foam begins at y≈20 — skip them so foam meets the cliff with no band
-const WATER_SRC_TOP_SKIP = 22;
 // foam crests extend a few px up into the cliff for a wet-edge blend
 const WATER_FOAM_OVERLAP = 4;
 const TERRAIN_SCROLL_PX = 18;
@@ -179,7 +176,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const spriteImageReadyRef = useRef(false);
   const groundImageRef = useRef<HTMLImageElement | null>(null);
   const groundImageReadyRef = useRef(false);
-  const waterImageRef = useRef<HTMLImageElement | null>(null);
+  const waterImageRef = useRef<HTMLImageElement | HTMLCanvasElement | null>(null);
   const waterImageReadyRef = useRef(false);
 
   /* mutable animation state */
@@ -920,29 +917,23 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const shelfTop = h * WATER_SHELF_TOP_PCT;
       const shelfH = h - shelfTop;
       if (waterImg && waterImageReadyRef.current) {
-        const visibleSrcH = WATER_SRC_H - WATER_SRC_TOP_SKIP;
-        const tileW = Math.max(w, shelfH * (WATER_SRC_W / visibleSrcH));
+        const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
         const drift = (a.groundScrollAcc * TERRAIN_SCROLL_PX) % tileW;
         const waveBob = Math.round(Math.sin(a.frame * 0.055) * 2);
         const foamDrift = (drift * 1.18 + Math.round(Math.sin(a.frame * 0.035) * 10)) % tileW;
-        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT) - WATER_SRC_TOP_SKIP;
+        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT);
         const surfaceH = Math.ceil(shelfH * WATER_SURFACE_DRAW_PCT);
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
         for (let x = -drift - tileW; x < w + tileW; x += tileW) {
-          ctx.drawImage(
-            waterImg,
-            0, WATER_SRC_TOP_SKIP, WATER_SRC_W, visibleSrcH,
-            Math.round(x), Math.round(shelfTop + waveBob),
-            Math.round(tileW), Math.round(shelfH),
-          );
+          ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
         }
         ctx.globalAlpha = groundAlpha * 0.78;
         for (let x = -foamDrift - tileW; x < w + tileW; x += tileW) {
           ctx.drawImage(
             waterImg,
-            0, WATER_SRC_TOP_SKIP, WATER_SRC_W, surfaceSrcH,
+            0, 0, WATER_SRC_W, surfaceSrcH,
             Math.round(x), Math.round(shelfTop - waveBob - WATER_FOAM_OVERLAP),
             Math.round(tileW), surfaceH,
           );
@@ -1576,10 +1567,34 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
+      // The water-hazard.png artist used solid black for the "sky" between
+      // foam peaks at the top of the asset. On the dark game background that
+      // reads as a hard black band sitting on top of the water. Punch those
+      // near-black pixels in the top portion to alpha=0 so the dirt cliff
+      // shows through the gaps between foam crests.
+      const off = document.createElement("canvas");
+      off.width = img.naturalWidth;
+      off.height = img.naturalHeight;
+      const offCtx = off.getContext("2d");
+      if (!offCtx) {
+        waterImageRef.current = img;
+        waterImageReadyRef.current = true;
+        return;
+      }
+      offCtx.drawImage(img, 0, 0);
+      const skyRows = Math.min(72, off.height);
+      const data = offCtx.getImageData(0, 0, off.width, skyRows);
+      const px = data.data;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i] + px[i + 1] + px[i + 2] < 24) {
+          px[i + 3] = 0;
+        }
+      }
+      offCtx.putImageData(data, 0, 0);
+      waterImageRef.current = off;
       waterImageReadyRef.current = true;
     };
     img.src = WATER_HAZARD_SRC;
-    waterImageRef.current = img;
     return () => {
       waterImageRef.current = null;
       waterImageReadyRef.current = false;
