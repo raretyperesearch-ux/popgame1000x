@@ -408,10 +408,10 @@ body::before {
 
 /* ============ CONTROLS ============ */
 .controls {
-  padding: 10px 12px 12px;
+  padding: 7px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   flex-shrink: 0;
   position: relative;
   isolation: isolate;
@@ -423,7 +423,7 @@ body::before {
 .controls::before {
   content: "";
   position: absolute;
-  inset: 6px 10px 8px;
+  inset: 5px 10px 7px;
   z-index: -1;
   border: 1px solid rgba(244,236,216,0.08);
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.55);
@@ -446,7 +446,7 @@ body::before {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
-  height: 22px;
+  height: 20px;
   background: transparent;
   cursor: pointer;
   outline: none;
@@ -461,12 +461,12 @@ body::before {
 }
 .hand-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   background: var(--night);
   border: 2px solid var(--ink);
   border-radius: 50%;
-  margin-top: -10.5px;
+  margin-top: -9.5px;
   cursor: pointer;
   box-shadow:
     0 0 0 4px rgba(244,236,216,0.08),
@@ -485,8 +485,8 @@ body::before {
   border-radius: 999px;
 }
 .hand-slider::-moz-range-thumb {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   background: var(--night);
   border: 2px solid var(--ink);
   border-radius: 50%;
@@ -511,11 +511,11 @@ body::before {
 .wager-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 7px;
+  gap: 6px;
 }
 .chip {
-  min-height: 42px;
-  padding: 7px 0 8px;
+  min-height: 34px;
+  padding: 3px 0 4px;
   background:
     linear-gradient(180deg, rgba(244,236,216,0.055), rgba(0,0,0,0.04)),
     #0d0d12;
@@ -523,7 +523,7 @@ body::before {
   color: rgba(244,236,216,0.58);
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 21px;
+  font-size: 20px;
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s, box-shadow 0.12s, transform 0.12s;
   transform: rotate(0deg);
@@ -558,28 +558,28 @@ body::before {
   pointer-events: none;
 }
 .action {
-  min-height: 58px;
-  padding: 8px 18px;
+  min-height: 38px;
+  padding: 4px 14px;
   background:
     linear-gradient(180deg, rgba(255,153,51,0.18), rgba(255,153,51,0.05)),
     linear-gradient(90deg, rgba(93,211,158,0.16), rgba(255,217,102,0.12)),
     #11100d;
-  border: 2px solid rgba(244,236,216,0.86);
+  border: 1.5px solid rgba(244,236,216,0.86);
   color: var(--ink);
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 30px;
+  font-size: 24px;
   letter-spacing: 2px;
   cursor: pointer;
   transition: background 0.12s, box-shadow 0.12s, color 0.12s, transform 0.1s;
   transform: rotate(-0.8deg);
   display: grid;
-  grid-template-columns: 54px 1fr 54px;
+  grid-template-columns: 38px 1fr 38px;
   align-items: center;
   position: relative;
   overflow: hidden;
   box-shadow:
-    inset 0 -4px 0 rgba(0,0,0,0.5),
+    inset 0 -3px 0 rgba(0,0,0,0.5),
     0 0 0 1px rgba(255,217,102,0.12),
     0 8px 20px rgba(0,0,0,0.22);
   text-shadow: 0 2px 0 rgba(0,0,0,0.45);
@@ -587,19 +587,19 @@ body::before {
 .action::after {
   content: "";
   position: absolute;
-  inset: 8px 12px;
+  inset: 6px 10px;
   border: 1px dashed rgba(244,236,216,0.18);
   pointer-events: none;
 }
 .action-sprite {
-  width: 45px;
-  height: 50px;
+  width: 32px;
+  height: 36px;
   grid-column: 3;
   justify-self: end;
   background-image: url(/spritesheet.png);
   background-repeat: no-repeat;
-  background-size: 225px 200px;
-  background-position: -135px -50px;
+  background-size: 162px 144px;
+  background-position: -97px -36px;
   image-rendering: pixelated;
   filter: drop-shadow(0 3px 0 rgba(0,0,0,0.48));
 }
@@ -615,7 +615,7 @@ body::before {
     linear-gradient(90deg, rgba(93,211,158,0.22), rgba(255,217,102,0.16)),
     #15130e;
   box-shadow:
-    inset 0 -4px 0 rgba(0,0,0,0.5),
+    inset 0 -3px 0 rgba(0,0,0,0.5),
     0 0 22px rgba(255,217,102,0.13),
     0 8px 20px rgba(0,0,0,0.22);
 }
@@ -632,7 +632,7 @@ body::before {
   animation: pulseStop 0.8s ease-in-out infinite;
 }
 .action.stop .action-sprite {
-  background-position: -45px -150px;
+  background-position: -32px -108px;
 }
 @keyframes pulseStop {
   0%, 100% { opacity: 1; }

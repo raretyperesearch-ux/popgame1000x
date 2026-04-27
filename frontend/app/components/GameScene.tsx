@@ -857,25 +857,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      /* water zone with animated waves */
-      const waterTop = h * 0.82;
+      /* lower-stage water hazard */
+      const waterTop = h * 0.72;
       const waterGrad = ctx.createLinearGradient(0, waterTop, 0, h);
-      waterGrad.addColorStop(0, "rgba(77,208,225,0.02)");
-      waterGrad.addColorStop(0.3, "rgba(40,140,170,0.08)");
-      waterGrad.addColorStop(1, "rgba(20,60,90,0.18)");
+      waterGrad.addColorStop(0, "rgba(77,208,225,0.06)");
+      waterGrad.addColorStop(0.34, "rgba(22,94,125,0.22)");
+      waterGrad.addColorStop(1, "rgba(3,22,38,0.64)");
       ctx.fillStyle = waterGrad;
       ctx.fillRect(0, waterTop, w, h - waterTop);
 
       /* animated wave lines */
       const waveTime = a.frame * 0.03;
-      for (let wl = 0; wl < 5; wl++) {
-        const wy = waterTop + 6 + wl * 12;
-        ctx.globalAlpha = 0.06 - wl * 0.008;
-        ctx.strokeStyle = "#4dd0e1";
+      for (let wl = 0; wl < 7; wl++) {
+        const wy = waterTop + 8 + wl * 13;
+        ctx.globalAlpha = 0.22 - wl * 0.018;
+        ctx.strokeStyle = wl % 2 === 0 ? "#4dd0e1" : "#f4ecd8";
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         for (let x = 0; x <= w; x += 6) {
-          const y = wy + Math.sin(x * 0.025 + waveTime + wl * 1.8) * 3;
+          const y = wy + Math.sin(x * 0.026 + waveTime + wl * 1.8) * 3;
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
@@ -883,19 +883,31 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       ctx.globalAlpha = 1;
 
-      /* shark fins */
-      const sharkPositions = [0.2, 0.55, 0.85];
-      for (const sp of sharkPositions) {
-        const sx = ((sp * w + waveTime * 12) % (w + 40)) - 20;
-        const sy = waterTop + 10 + Math.sin(waveTime + sp * 10) * 3;
-        ctx.globalAlpha = 0.15;
-        ctx.fillStyle = "#1a3040";
+      /* shark fins + wakes */
+      const sharkPositions = [0.18, 0.52, 0.82];
+      for (let i = 0; i < sharkPositions.length; i++) {
+        const sp = sharkPositions[i];
+        const dir = i % 2 === 0 ? 1 : -1;
+        const sx = ((sp * w + waveTime * 22 * dir + w * 2) % (w + 60)) - 30;
+        const sy = waterTop + 18 + i * 22 + Math.sin(waveTime * 1.4 + sp * 10) * 3;
+        ctx.globalAlpha = 0.34;
+        ctx.strokeStyle = "rgba(244,236,216,0.28)";
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx - 5, sy + 10);
-        ctx.lineTo(sx + 5, sy + 10);
+        ctx.moveTo(sx - 18 * dir, sy + 9);
+        ctx.quadraticCurveTo(sx - 8 * dir, sy + 4, sx + 10 * dir, sy + 8);
+        ctx.stroke();
+        ctx.globalAlpha = 0.62;
+        ctx.fillStyle = "#071522";
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 9);
+        ctx.quadraticCurveTo(sx - 8 * dir, sy + 4, sx - 18 * dir, sy + 10);
+        ctx.lineTo(sx + 9 * dir, sy + 8);
         ctx.closePath();
         ctx.fill();
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = "#4dd0e1";
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
 
@@ -943,6 +955,44 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         drawGrassGround(ctx, w, h, pts);
         ctx.restore();
       }
+
+      /* foreground water shelf fills the lower gap beneath the cliff */
+      const shelfTop = h * 0.78;
+      const shelfGrad = ctx.createLinearGradient(0, shelfTop, 0, h);
+      shelfGrad.addColorStop(0, "rgba(6,39,58,0)");
+      shelfGrad.addColorStop(0.2, "rgba(10,78,103,0.42)");
+      shelfGrad.addColorStop(1, "rgba(1,16,29,0.88)");
+      ctx.fillStyle = shelfGrad;
+      ctx.fillRect(0, shelfTop, w, h - shelfTop);
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = "#4dd0e1";
+      ctx.lineWidth = 1;
+      for (let wl = 0; wl < 5; wl++) {
+        const wy = shelfTop + 8 + wl * 16;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 7) {
+          const y = wy + Math.sin(x * 0.03 + waveTime * 1.4 + wl) * 2.4;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      for (let i = 0; i < 3; i++) {
+        const sx = ((i * 0.31 + 0.16) * w + waveTime * 18) % (w + 50) - 25;
+        const sy = shelfTop + 18 + i * 23;
+        ctx.globalAlpha = 0.58;
+        ctx.fillStyle = "#06111d";
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 8);
+        ctx.quadraticCurveTo(sx - 8, sy + 3, sx - 18, sy + 9);
+        ctx.lineTo(sx + 11, sy + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = "#4dd0e1";
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
 
       /* dust particles */
       const dust = anim.current.dustParticles;
