@@ -7,6 +7,7 @@ import GameScene, { type GameSceneHandle } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
+import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -31,6 +32,22 @@ export default function Home() {
     } catch {
       /* SSR safety */
     }
+  }, []);
+
+  /* Background music starts on the first user interaction (browser autoplay
+     policy needs it). One-shot listener — removes itself after firing. */
+  useEffect(() => {
+    const start = () => {
+      sounds.startMusic();
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+    };
+    window.addEventListener("pointerdown", start);
+    window.addEventListener("keydown", start);
+    return () => {
+      window.removeEventListener("pointerdown", start);
+      window.removeEventListener("keydown", start);
+    };
   }, []);
 
   const handleCloseHelp = useCallback(() => {

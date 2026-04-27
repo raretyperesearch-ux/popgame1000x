@@ -24,7 +24,8 @@ export type SoundId =
   | "rekt-crash"
   | "ui-click"
   | "coin-clink"
-  | "deploy-chute";
+  | "deploy-chute"
+  | "bg-music";
 
 interface SoundDef {
   file: string;
@@ -45,6 +46,7 @@ const DEFS: Record<SoundId, SoundDef> = {
   "ui-click":     { file: "click.ogg",       volume: 0.35 },
   "coin-clink":   { file: "coin.ogg",        volume: 0.45 },
   "deploy-chute": { file: "chute.ogg",       volume: 0.5 },
+  "bg-music":     { file: "bg-music.ogg",    volume: 0.22, loop: true },
 };
 
 const STORAGE_KEY = "popgame-muted";
@@ -52,9 +54,11 @@ const STORAGE_KEY = "popgame-muted";
 class SoundManager {
   private sounds = new Map<SoundId, Howl>();
   private engineHandle: number | null = null;
+  private musicHandle: number | null = null;
   private muted = false;
   private masterVolume = 0.8;
   private initialized = false;
+  private musicArmed = false;
 
   init() {
     if (this.initialized) return;
@@ -118,6 +122,34 @@ class SoundManager {
     this.engineHandle = null;
   }
 
+  /** Start the looping background track. Idempotent — calling twice is a no-op.
+   *  The actual music file (`/sounds/bg-music.ogg`) is not bundled; if it's
+   *  missing this is silent (just a console warning). */
+  startMusic() {
+    if (typeof window === "undefined") return;
+    this.init();
+    if (this.musicHandle !== null) return;
+    if (this.muted) {
+      this.musicArmed = true; // re-attempt on unmute
+      return;
+    }
+    const h = this.getSound("bg-music");
+    this.musicHandle = h.play();
+    h.fade(0, (DEFS["bg-music"].volume ?? 0.25), 800, this.musicHandle);
+  }
+
+  stopMusic() {
+    if (this.musicHandle === null) return;
+    const h = this.sounds.get("bg-music");
+    if (h) {
+      const handle = this.musicHandle;
+      h.fade(h.volume(handle) as number, 0, 400, handle);
+      window.setTimeout(() => h.stop(handle), 450);
+    }
+    this.musicHandle = null;
+    this.musicArmed = false;
+  }
+
   isMuted() {
     this.init();
     return this.muted;
@@ -130,7 +162,14 @@ class SoundManager {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, m ? "1" : "0");
     }
-    if (m) this.stopEngine();
+    if (m) {
+      this.stopEngine();
+      // Don't fully stop the music handle — Howler.mute(true) silences it.
+      // That way unmuting picks up where it left off without restarting.
+    } else if (this.musicArmed) {
+      this.musicArmed = false;
+      this.startMusic();
+    }
   }
 
   toggleMute() {

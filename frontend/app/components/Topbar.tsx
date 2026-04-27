@@ -57,7 +57,7 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   return (
     <div className="topbar">
       <div className="topbar-left">
-        <div className="brand">game</div>
+        <div className="brand">scalprunner</div>
         <button className="help-btn" onClick={() => { sounds.play("ui-click"); onHelpClick(); }} aria-label="Help">?</button>
         <button className="mute-btn" onClick={onMuteClick} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute" : "Mute"}>
           {muted ? "🔇" : "🔊"}
