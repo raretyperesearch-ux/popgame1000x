@@ -98,7 +98,6 @@ export default function Home() {
         balance={balance}
         onHelpClick={() => setShowHelp(true)}
       />
-      <HistoryStrip history={history} />
       <GameScene
         ref={gameRef}
         balance={balance}
@@ -111,6 +110,7 @@ export default function Home() {
         onPnlChange={setPnl}
         pnlReadout={<PnLReadout pnlDollars={gameState === "LIVE" ? pnl : null} />}
       />
+      <HistoryStrip history={history} />
       <Controls
         leverage={leverage}
         wager={wager}
