@@ -30,7 +30,6 @@ const CHART_SPEED_IDLE = 0.25; // sub-point scroll per frame (idle)
 const CHART_SPEED_RUN = 1.0; // sub-point scroll per frame (running)
 const CHART_SPEED_LIVE = 0.45; // sub-point scroll per frame (live)
 const PRICE_VOL = 0.65; // random walk step for new chart points
-const MOCK_DRIFT = 0.18; // per-frame mini drift
 const STEP_FREQ = 4.2; // step cycles per second during run
 const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
 const DUST_MAX = 15; // max dust particles alive
@@ -1123,8 +1122,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const dtNorm = dt / 16.67;
       const a = anim.current;
 
-      /* price drift (mock mode) */
-      a.price += (Math.random() - 0.485) * MOCK_DRIFT * dtNorm;
+      /* a.price is set by the /price/stream WS subscription (see PRICE
+         STREAM useEffect). renderPrice lerps toward whatever the feed
+         last delivered so the chart smooths between discrete ticks. */
       a.renderPrice = lerp(a.renderPrice, a.price, 0.08 * dtNorm);
 
       /* chart scroll speed based on state */
