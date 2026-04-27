@@ -9,6 +9,7 @@ import {
   useImperativeHandle,
 } from "react";
 import type { HistoryEntry } from "./HistoryStrip";
+import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
 
 /* ============ CONSTANTS ============ */
@@ -43,10 +44,10 @@ const GRASS_SRC_H = 256;
 const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
-const GRASS_SLICE_W = 8;
+const GRASS_SLICE_W = 16;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
-const SPRITE_SCALE = 1.5;
+const SPRITE_SCALE = 0.5;
 const SPRITE_DISPLAY_W = SPRITE_FRAME_W * SPRITE_SCALE;
 const SPRITE_DISPLAY_H = SPRITE_FRAME_H * SPRITE_SCALE;
 const SPRITE_FOOT_GAP = 8 * SPRITE_SCALE;
@@ -92,17 +93,21 @@ function featureNoise(n: number): number {
 function terrainAt(worldX: number, stageH: number, seed: number): number {
   const base = stageH * TERRAIN_BASE_PCT;
   const y = base
-    + Math.sin(worldX * 0.11 + seed) * stageH * 0.035
-    + Math.sin(worldX * 0.041 + seed * 1.7) * stageH * 0.045;
+    + Math.sin(worldX * 0.018 + seed) * stageH * 0.012
+    + Math.sin(worldX * 0.007 + seed * 1.7) * stageH * 0.018;
   return clamp(y, stageH * TERRAIN_MIN_PCT, stageH * TERRAIN_MAX_PCT);
 }
 
 function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
   const raw: number[] = [];
   for (let i = 0; i < count; i++) raw.push(terrainAt(startWorldX + i, stageH, seed));
-  const out = [...raw];
-  for (let i = 1; i < count - 1; i++) {
-    out[i] = (raw[i - 1] + raw[i] * 3 + raw[i + 1]) / 5;
+  let out = [...raw];
+  for (let pass = 0; pass < 3; pass++) {
+    const next = [...out];
+    for (let i = 1; i < count - 1; i++) {
+      next[i] = (out[i - 1] + out[i] * 4 + out[i + 1]) / 6;
+    }
+    out = next;
   }
   return out;
 }
@@ -196,10 +201,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     runStartTime: 0, // timestamp when RUNNING began
     prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
+    idleStartTime: 0, // timestamp when IDLE began (sprite-only)
     prevStepHalf: 0, // tracks half-cycle for dust spawn
     spriteState: "idle" as SpriteState,
     spriteRunStart: 0, // timestamp when run animation started
     spriteFrame: 5, // current sprite frame index
+    skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
+    groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     dustParticles: [] as Array<{
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
@@ -226,6 +234,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const [priceDisplay, setPriceDisplay] = useState("ETH $3500.00");
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
+  const [endOfGame, setEndOfGame] = useState<EndOfGameData | null>(null);
 
   /* stars (generated once for atmosphere) */
   const [stars] = useState(() =>
@@ -261,9 +270,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const fig = figRef.current;
       if (!fig) return;
       const a = anim.current;
+      // skyAlt-driven dramatic camera: shrink the sprite and push it up the screen as we climb the atmosphere.
+      // Reverses naturally when PnL drops because skyAlt lerps both directions.
+      const lift = a.skyAlt * a.stageH * 0.25;
+      const figScale = lerp(1, 0.4, a.skyAlt);
       const tx = (x - SPRITE_DISPLAY_W / 2).toFixed(1);
-      const ty = (SPRITE_FOOT_GAP - alt - a.curBobY).toFixed(1);
-      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg)`;
+      const ty = (SPRITE_FOOT_GAP - alt - a.curBobY - lift).toFixed(1);
+      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg) scale(${figScale.toFixed(3)})`;
     },
     [],
   );
@@ -297,47 +310,65 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     }
     a.spriteFrame = frameIdx;
 
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(SPRITE_DISPLAY_W * dpr);
+    const targetH = Math.round(SPRITE_DISPLAY_H * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!img || !spriteImageReadyRef.current) return;
     const sx = (frameIdx % SPRITE_COLS) * SPRITE_FRAME_W;
     const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_FRAME_H;
-    const dpr = window.devicePixelRatio || 1;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
       img,
       sx, sy, SPRITE_FRAME_W, SPRITE_FRAME_H,
-      0, 0, SPRITE_DISPLAY_W * dpr, SPRITE_DISPLAY_H * dpr,
+      0, 0, canvas.width, canvas.height,
     );
   }, []);
 
   const drawGrassGround = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, pts: { x: number; y: number }[]) => {
+    const smoothPts = pts.map((p, i) => {
+      const prev = pts[Math.max(0, i - 1)];
+      const next = pts[Math.min(pts.length - 1, i + 1)];
+      return { x: p.x, y: (prev.y + p.y * 4 + next.y) / 6 };
+    });
     const groundYAt = (x: number) => {
-      if (pts.length < 2) return terrainAt(0, h, 0);
-      for (let i = 1; i < pts.length; i++) {
-        if (x <= pts[i].x) {
-          const prev = pts[i - 1];
-          const cur = pts[i];
+      if (smoothPts.length < 2) return terrainAt(0, h, 0);
+      for (let i = 1; i < smoothPts.length; i++) {
+        if (x <= smoothPts[i].x) {
+          const prev = smoothPts[i - 1];
+          const cur = smoothPts[i];
           const span = Math.max(1, cur.x - prev.x);
           return lerp(prev.y, cur.y, clamp((x - prev.x) / span, 0, 1));
         }
       }
-      return pts[pts.length - 1].y;
+      return smoothPts[smoothPts.length - 1].y;
     };
     const img = groundImageRef.current;
     const firstY = groundYAt(0);
+    const minY = Math.min(...smoothPts.map((p) => p.y));
 
     const shadow = ctx.createLinearGradient(0, firstY - 48, 0, firstY + 24);
     shadow.addColorStop(0, "rgba(0,0,0,0)");
     shadow.addColorStop(1, "rgba(0,0,0,0.24)");
     ctx.fillStyle = shadow;
-    ctx.fillRect(0, Math.min(...pts.map((p) => p.y)) - 48, w, 120);
+    ctx.fillRect(0, minY - 48, w, 120);
 
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    for (let x = 0; x <= w; x += 8) {
-      ctx.lineTo(x, groundYAt(x) + GRASS_TILE_H - GRASS_SURFACE_Y - 8);
+    ctx.moveTo(0, groundYAt(0) + GRASS_TILE_H - GRASS_SURFACE_Y - 10);
+    for (let x = 0; x <= w; x += GRASS_SLICE_W) {
+      const midX = x + GRASS_SLICE_W * 0.5;
+      const endX = x + GRASS_SLICE_W;
+      ctx.quadraticCurveTo(
+        midX, groundYAt(midX) + GRASS_TILE_H - GRASS_SURFACE_Y - 10,
+        endX, groundYAt(endX) + GRASS_TILE_H - GRASS_SURFACE_Y - 10,
+      );
     }
     ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
     ctx.closePath();
     const dirt = ctx.createLinearGradient(0, firstY, 0, h);
     dirt.addColorStop(0, "#17261b");
@@ -347,15 +378,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     ctx.fill();
 
     if (img && groundImageReadyRef.current) {
-      const scroll = (anim.current.scrollFrac * 18) % GRASS_TILE_W;
+      const scroll = (anim.current.groundScrollAcc * 18) % GRASS_TILE_W;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
+        const leftY = groundYAt(x);
+        const rightY = groundYAt(x + GRASS_SLICE_W);
+        const skewY = (rightY - leftY) / GRASS_SLICE_W;
         const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
         const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * GRASS_SLICE_W / GRASS_TILE_W)));
+        ctx.save();
+        // skew each slice so its top tilts to match the slope; adjacent slices meet at the exact same y
+        ctx.transform(1, skewY, 0, 1, x, leftY - GRASS_SURFACE_Y);
         ctx.drawImage(
           img,
           sourceX, 0, sourceW, GRASS_SRC_H,
-          x, groundYAt(x) - GRASS_SURFACE_Y, GRASS_SLICE_W + 1, GRASS_TILE_H,
+          0, 0, GRASS_SLICE_W + 1, GRASS_TILE_H,
         );
+        ctx.restore();
       }
       return;
     }
@@ -409,39 +447,165 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      /* background gradient */
+      /* altitude-driven sky: 4 layers blended by skyAlt (0=night, 1=galaxies) */
+      const skyAlt = a.skyAlt;
+      const layerColors = [
+        // night (default ground level)
+        ["#000208", "#050818", "#0a1a30", "#0a1828", "#060a14"],
+        // stratosphere (sun, warm horizon)
+        ["#1a3050", "#3060a0", "#80a0c0", "#d09060", "#704030"],
+        // space (deep blue → black, planets visible)
+        ["#000010", "#02040c", "#050818", "#02040a", "#000005"],
+        // galaxies (purple-black, nebula tint)
+        ["#080018", "#180830", "#280a40", "#100525", "#02000a"],
+      ];
+      const layerIdx = clamp(Math.floor(skyAlt * 3), 0, 2);
+      const layerLocal = clamp(skyAlt * 3 - layerIdx, 0, 1);
+      const blendHex = (a1: string, b1: string, t: number) => {
+        const ar = parseInt(a1.slice(1, 3), 16), ag = parseInt(a1.slice(3, 5), 16), ab = parseInt(a1.slice(5, 7), 16);
+        const br = parseInt(b1.slice(1, 3), 16), bg = parseInt(b1.slice(3, 5), 16), bb = parseInt(b1.slice(5, 7), 16);
+        const r = Math.round(ar + (br - ar) * t);
+        const g = Math.round(ag + (bg - ag) * t);
+        const bl = Math.round(ab + (bb - ab) * t);
+        return `rgb(${r},${g},${bl})`;
+      };
       const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, "#000208");
-      grad.addColorStop(0.25, "#050818");
-      grad.addColorStop(0.5, "#0a1a30");
-      grad.addColorStop(0.8, "#0a1828");
-      grad.addColorStop(1, "#060a14");
+      const stops = [0, 0.25, 0.5, 0.8, 1];
+      for (let i = 0; i < stops.length; i++) {
+        grad.addColorStop(stops[i], blendHex(layerColors[layerIdx][i], layerColors[layerIdx + 1][i], layerLocal));
+      }
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
-      /* stars */
+      /* stars — fade in as altitude increases */
+      const starAlpha = clamp(1 - skyAlt * 0.2 + skyAlt * 0.6, 0.6, 1.4);
       ctx.fillStyle = "#f4ecd8";
       for (const s of stars) {
-        ctx.globalAlpha = s.opacity;
+        ctx.globalAlpha = clamp(s.opacity * starAlpha, 0, 1);
         ctx.fillRect((s.x / 100) * w, (s.y / 100) * h, s.size, s.size);
       }
       ctx.globalAlpha = 1;
 
-      /* crescent moon */
-      const moonX = w * 0.82, moonY = h * 0.09, moonR = 14;
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = "#f4ecd8";
-      ctx.beginPath();
-      ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.beginPath();
-      ctx.arc(moonX + 7, moonY - 3, moonR * 0.85, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 1;
+      /* extra deep-space stars (only visible past stratosphere) */
+      if (skyAlt > 0.35) {
+        const deepAlpha = clamp((skyAlt - 0.35) * 1.6, 0, 1);
+        ctx.fillStyle = "#ffffff";
+        for (let i = 0; i < 80; i++) {
+          const sx = ((i * 137.5) % 100) / 100 * w;
+          const sy = ((i * 91.7) % 100) / 100 * h * 0.7;
+          const flicker = 0.5 + 0.5 * Math.sin(a.frame * 0.02 + i * 0.7);
+          ctx.globalAlpha = deepAlpha * 0.6 * flicker;
+          ctx.fillRect(sx, sy, 1.4, 1.4);
+        }
+        ctx.globalAlpha = 1;
+      }
 
-      /* sketch clouds */
+      /* moon — fades out as we leave the troposphere */
+      const moonAlpha = Math.max(0, 0.18 - skyAlt * 0.4);
+      if (moonAlpha > 0.01) {
+        const moonX = w * 0.82, moonY = h * 0.09, moonR = 14;
+        ctx.globalAlpha = moonAlpha;
+        ctx.fillStyle = "#f4ecd8";
+        ctx.beginPath();
+        ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.arc(moonX + 7, moonY - 3, moonR * 0.85, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+      }
+
+      /* sun — peaks in the stratosphere band (skyAlt 0.2 - 0.6) */
+      const sunAlpha = Math.max(0, 1 - Math.abs(skyAlt - 0.4) * 3.2);
+      if (sunAlpha > 0.01) {
+        const sunX = w * 0.78, sunY = h * 0.18, sunR = 28;
+        const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 3);
+        sunGrad.addColorStop(0, `rgba(255,230,140,${sunAlpha})`);
+        sunGrad.addColorStop(0.4, `rgba(255,180,90,${sunAlpha * 0.5})`);
+        sunGrad.addColorStop(1, "rgba(255,140,80,0)");
+        ctx.fillStyle = sunGrad;
+        ctx.fillRect(0, 0, w, h * 0.5);
+        ctx.fillStyle = `rgba(255,240,200,${sunAlpha})`;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      /* planets — appear in the space band (skyAlt 0.5 - 1.0) */
+      const planetAlpha = clamp((skyAlt - 0.45) * 2.0, 0, 1);
+      if (planetAlpha > 0.05) {
+        const planets = [
+          { x: 0.18, y: 0.12, r: 18, color: "#c87850", ring: false },
+          { x: 0.52, y: 0.22, r: 11, color: "#6890c0", ring: false },
+          { x: 0.88, y: 0.35, r: 22, color: "#a08060", ring: true },
+        ];
+        for (const p of planets) {
+          ctx.globalAlpha = planetAlpha;
+          const px = w * p.x;
+          const py = h * p.y;
+          const pg = ctx.createRadialGradient(px - p.r * 0.3, py - p.r * 0.3, 0, px, py, p.r);
+          pg.addColorStop(0, p.color);
+          pg.addColorStop(1, "#000");
+          ctx.fillStyle = pg;
+          ctx.beginPath();
+          ctx.arc(px, py, p.r, 0, Math.PI * 2);
+          ctx.fill();
+          if (p.ring) {
+            ctx.strokeStyle = `rgba(200,180,140,${planetAlpha * 0.6})`;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.ellipse(px, py, p.r * 1.6, p.r * 0.35, -0.3, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      /* nebula + galaxies — appear past skyAlt 0.65 */
+      const nebulaAlpha = clamp((skyAlt - 0.6) * 2.5, 0, 1);
+      if (nebulaAlpha > 0.05) {
+        const blobs = [
+          { x: 0.3, y: 0.3, r: 180, c1: "rgba(180,80,200,0.18)", c2: "rgba(80,40,120,0)" },
+          { x: 0.75, y: 0.18, r: 150, c1: "rgba(80,140,220,0.15)", c2: "rgba(40,60,140,0)" },
+          { x: 0.55, y: 0.5, r: 220, c1: "rgba(220,80,120,0.12)", c2: "rgba(120,40,80,0)" },
+        ];
+        ctx.globalAlpha = nebulaAlpha;
+        for (const b of blobs) {
+          const bx = w * b.x;
+          const by = h * b.y;
+          const bg = ctx.createRadialGradient(bx, by, 0, bx, by, b.r);
+          bg.addColorStop(0, b.c1);
+          bg.addColorStop(1, b.c2);
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, w, h * 0.7);
+        }
+        /* spiral galaxy hint */
+        if (nebulaAlpha > 0.5) {
+          const gx = w * 0.15, gy = h * 0.2;
+          ctx.globalAlpha = nebulaAlpha * 0.35;
+          for (let arm = 0; arm < 2; arm++) {
+            const rot = arm * Math.PI;
+            ctx.strokeStyle = "#e0d0ff";
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            for (let t = 0; t < 1; t += 0.05) {
+              const r = t * 60;
+              const ang = rot + t * Math.PI * 1.6;
+              const px = gx + Math.cos(ang) * r;
+              const py = gy + Math.sin(ang) * r * 0.7;
+              if (t === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      /* sketch clouds — fade out as we leave the troposphere */
+      const cloudAlpha = Math.max(0, 1 - skyAlt * 2.5);
       const cloudScroll = a.scrollFrac * 0.08;
       const cloudPositions = [
         { x: 0.12, y: 0.06, s: 1.1 },
@@ -450,7 +614,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         { x: 0.78, y: 0.12, s: 0.9 },
         { x: 0.92, y: 0.07, s: 1.0 },
       ];
-      ctx.strokeStyle = "rgba(244,236,216,0.06)";
+      ctx.strokeStyle = `rgba(244,236,216,${0.06 * cloudAlpha})`;
       ctx.lineWidth = 1.2;
       for (const c of cloudPositions) {
         const cx = ((c.x * w + cloudScroll * w * 0.5) % (w + 60)) - 30;
@@ -743,7 +907,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const curY = priceToY(a.price);
       ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
 
-      drawGrassGround(ctx, w, h, pts);
+      /* ground fades away as we climb out of the atmosphere; rendered grayscale to match the UI */
+      const groundAlpha = clamp(1 - a.skyAlt * 1.6, 0, 1);
+      if (groundAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = groundAlpha;
+        ctx.filter = "grayscale(1) contrast(1.15) brightness(0.95)";
+        drawGrassGround(ctx, w, h, pts);
+        ctx.restore();
+      }
 
       /* dust particles */
       const dust = anim.current.dustParticles;
@@ -793,6 +965,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.runStartTime = 0;
     a.prepareStartTime = 0;
     a.jumpStartTime = 0;
+    a.idleStartTime = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
     a.loco.grounded = true;
@@ -808,10 +981,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "DEAD";
     setGameState("DEAD");
     setSpriteState("fail");
-    showBanner("loss", "\u2212$" + a.positionWager.toFixed(2));
     onHistoryPush({ amt: -a.positionWager, win: false });
-    setTimeout(reset, 1900);
-  }, [setGameState, setSpriteState, showBanner, onHistoryPush, reset]);
+    // brief pause so the splat animation reads, then show modal
+    setTimeout(() => {
+      setEndOfGame({
+        kind: "rekt",
+        pnlDollars: -a.positionWager,
+        pnlPct: -1,
+        entry: a.entry,
+        exit: null,
+        boost: a.positionLev,
+        wager: a.positionWager,
+      });
+    }, 900);
+  }, [setGameState, setSpriteState, onHistoryPush]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -825,14 +1008,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const pnlDollars = pnlPct * a.positionWager;
     setBalance((prev: number) => prev + a.positionWager + pnlDollars);
     setSpriteState("land");
-    const sign = pnlDollars >= 0 ? "+" : "\u2212";
-    showBanner(
-      pnlDollars >= 0 ? "win" : "loss",
-      sign + "$" + Math.abs(pnlDollars).toFixed(2),
-    );
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
-    setTimeout(reset, 2000);
-  }, [setGameState, setBalance, setSpriteState, showBanner, onHistoryPush, reset]);
+    // wait for parachute descent to settle before showing modal
+    setTimeout(() => {
+      setEndOfGame({
+        kind: pnlDollars >= 0 ? "win" : "loss",
+        pnlDollars,
+        pnlPct,
+        entry: a.entry,
+        exit: a.price,
+        boost: a.positionLev,
+        wager: a.positionWager,
+      });
+    }, 900);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush]);
+
+  const closeEndOfGame = useCallback(() => {
+    setEndOfGame(null);
+    reset();
+  }, [reset]);
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
@@ -882,12 +1076,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       /* chart scroll speed based on state */
       let speed = CHART_SPEED_IDLE;
       if (a.state === "RUNNING" || a.state === "PREPARE" || a.state === "JUMPING") speed = CHART_SPEED_RUN;
+      else if (a.state === "IDLE" && a.idleStartTime > 0 && time - a.idleStartTime >= 800) speed = CHART_SPEED_RUN;
       else if (a.state === "LIVE") speed = CHART_SPEED_LIVE;
       else if (a.state === "STOPPED") speed = CHART_SPEED_IDLE;
       speed *= GAME_SPEED;
 
       /* advance chart scroll */
       a.scrollFrac += speed * dtNorm;
+      a.groundScrollAcc += speed * dtNorm; // monotonic mirror; never wraps so the grass texture doesn't snap
       while (a.scrollFrac >= 1) {
         a.scrollFrac -= 1;
         /* add new price point from current price */
@@ -897,10 +1093,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const i = a.terrainPoints.length;
         const terrainRaw = terrainAt(i, a.stageH || 700, a.terrainSeed);
         const prev = a.terrainPoints[a.terrainPoints.length - 1] ?? terrainRaw;
-        const priceTilt = clamp(step, -1.2, 1.2) * -34;
-        const desired = lerp(terrainRaw, prev + priceTilt, 0.72);
+        const priceTilt = clamp(step, -1.2, 1.2) * -4;
+        const desired = lerp(terrainRaw, prev + priceTilt, 0.18);
         const terrainNext = clamp(
-          lerp(prev, desired, 0.42),
+          lerp(prev, desired, 0.08),
           (a.stageH || 700) * TERRAIN_MIN_PCT,
           (a.stageH || 700) * TERRAIN_MAX_PCT,
         );
@@ -934,6 +1130,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ? a.entry - a.entry / a.positionLev
         : null;
       const isLive = a.state === "LIVE" || a.state === "STOPPED";
+
+      /* sky altitude target — climbs with PnL during LIVE, holds during STOPPED, decays otherwise */
+      let skyTarget = 0;
+      if (a.state === "LIVE") {
+        const pnlPct = (a.price - a.entry) / a.entry * a.positionLev;
+        skyTarget = clamp(pnlPct * 0.5, 0, 1);
+      } else if (a.state === "STOPPED") {
+        skyTarget = 0; // decay back to ground while parachuting
+      } else if (a.state === "JUMPING") {
+        skyTarget = 0.08; // brief lift during liftoff
+      }
+      a.skyAlt = lerp(a.skyAlt, skyTarget, 0.08 * dtNorm);
 
       /* draw chart (returns priceToY function) */
       const priceToY = drawScene(
@@ -986,7 +1194,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* ---- state-specific logic ---- */
       if (a.state === "IDLE") {
-        setSpriteState("idle", time);
+        if (a.idleStartTime === 0) a.idleStartTime = time;
+        const idleHold = time - a.idleStartTime < 800;
+        setSpriteState(idleHold ? "idle" : "run", time);
         const loco = a.loco;
         const stepHz = 1.8;
         loco.bodyX = figWorldX;
@@ -1014,10 +1224,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
         const ridgeY = getTerrainY(figWorldX);
         loco.bodyY = ridgeY - BODY_HEIGHT_PX;
-        a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX * 0.45;
-        const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
+        a.curBobY = 0;
+        const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
         a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.65 * dtNorm);
         setFig(figScreenX, a.smoothAlt, a.smoothRot);
         a.figPrice = priceAtFig;
         a.smoothFigPrice = priceAtFig;
@@ -1089,10 +1299,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           }
           const ridgeY = getTerrainY(figWorldX);
           loco.bodyY = ridgeY - BODY_HEIGHT_PX;
-          a.curBobY = -Math.sin(stepT * Math.PI) * BODY_BOB_PX;
-          const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -14, 14);
+          a.curBobY = 0;
+          const slopeDeg = clamp(Math.atan(getTerrainSlope(figWorldX)) * (180 / Math.PI), -3, 3);
           a.smoothRot = lerp(a.smoothRot, slopeDeg, ROTATION_LERP * dtNorm);
-          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.5 * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, a.stageH - ridgeY, 0.65 * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
         a.figPrice = priceAtFig;
@@ -1155,7 +1365,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        setSpriteState("air", time);
+        const livePnlPct = (a.price - a.entry) / a.entry * a.positionLev;
+        // panicked-fall sprite when we're deep in the red, otherwise the airborne pose
+        setSpriteState(livePnlPct < -0.3 ? "fail" : "air", time);
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
@@ -1384,8 +1596,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         </svg>
         <canvas
           ref={spriteCanvasRef}
-          width={SPRITE_DISPLAY_W * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
-          height={SPRITE_DISPLAY_H * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1)}
           style={{
             position: "absolute",
             left: 0,
@@ -1398,6 +1608,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         />
       </div>
       <div className="banner" ref={bannerRef} />
+      <EndOfGameModal data={endOfGame} onClose={closeEndOfGame} />
     </div>
   );
 });
