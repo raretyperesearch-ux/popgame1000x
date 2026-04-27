@@ -86,32 +86,60 @@ function BadgeIcon({ kind }: { kind: EndOfGameKind }) {
 }
 
 /**
- * USDC mark — solid blue circle with two split parentheses (3 segments each)
- * around a bold "$". This matches the reference image the user shared.
+ * USDC coin with 3D depth — radial highlight gradient, dark rim,
+ * inner crescent gleam, and the proper USDC mark (split parentheses + $).
  */
 function UsdcCoin({ broken = false }: { broken?: boolean }) {
+  // unique gradient ids per render so multiple instances don't share state
+  const id = (broken ? "rkt" : "usd") + Math.random().toString(36).slice(2, 6);
   if (broken) {
     return (
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="14" fill="#3a0808" stroke="#400" strokeWidth="1.2" />
+        <defs>
+          <radialGradient id={`${id}-face`} cx="35%" cy="30%" r="75%">
+            <stop offset="0%" stopColor="#7a2020" />
+            <stop offset="55%" stopColor="#3a0808" />
+            <stop offset="100%" stopColor="#180202" />
+          </radialGradient>
+        </defs>
+        <circle cx="16" cy="16" r="14.5" fill="#000" opacity="0.6" />
+        <circle cx="16" cy="16" r="14" fill={`url(#${id}-face)`} />
+        <circle cx="16" cy="16" r="13" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.6" />
         <path d="M10 10 L22 22 M22 10 L10 22" stroke="#ff5f56" strokeWidth="3" strokeLinecap="round" />
       </svg>
     );
   }
-  // arc segments traced on a circle of radius 9.6 around (16,16)
   const arcStroke = 2.2;
   return (
     <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="14" fill="#2775ca" />
-      {/* left parenthesis: 3 segments with 2 small gaps */}
+      <defs>
+        <radialGradient id={`${id}-face`} cx="32%" cy="28%" r="78%">
+          <stop offset="0%" stopColor="#7eb6f0" />
+          <stop offset="45%" stopColor="#3a86d4" />
+          <stop offset="80%" stopColor="#2775ca" />
+          <stop offset="100%" stopColor="#143966" />
+        </radialGradient>
+        <radialGradient id={`${id}-shine`} cx="35%" cy="25%" r="40%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.55)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+        </radialGradient>
+      </defs>
+      {/* dark rim/shadow halo */}
+      <circle cx="16" cy="16.4" r="14.2" fill="#000" opacity="0.55" />
+      {/* coin face with radial gradient for top-left light */}
+      <circle cx="16" cy="16" r="14" fill={`url(#${id}-face)`} />
+      {/* inner stroke groove */}
+      <circle cx="16" cy="16" r="13.1" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
+      <circle cx="16" cy="16" r="12.4" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.5" />
+      {/* USDC mark — left parenthesis (3 segments) */}
       <path d="M 11.5 7.6 A 9.6 9.6 0 0 0 8.0 11.6" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       <path d="M 6.6 13.7 A 9.6 9.6 0 0 0 6.6 18.3" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       <path d="M 8.0 20.4 A 9.6 9.6 0 0 0 11.5 24.4" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
-      {/* right parenthesis: mirror of the left */}
+      {/* right parenthesis */}
       <path d="M 20.5 7.6 A 9.6 9.6 0 0 1 24.0 11.6" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       <path d="M 25.4 13.7 A 9.6 9.6 0 0 1 25.4 18.3" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       <path d="M 24.0 20.4 A 9.6 9.6 0 0 1 20.5 24.4" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
-      {/* bold $ in the center — slightly stylized as a path so it scales cleanly */}
+      {/* center $ */}
       <text
         x="16"
         y="22.2"
@@ -121,6 +149,8 @@ function UsdcCoin({ broken = false }: { broken?: boolean }) {
         fontSize="13"
         fill="#fff"
       >$</text>
+      {/* top-left specular highlight crescent on top of everything */}
+      <ellipse cx="11" cy="9.5" rx="6" ry="3.2" fill={`url(#${id}-shine)`} opacity="0.7" />
     </svg>
   );
 }
@@ -239,11 +269,32 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
       ctx.lineTo(-r * 0.5, r * 0.5);
       ctx.stroke();
     } else {
-      // solid blue USDC face
-      ctx.fillStyle = "#2775ca";
+      // shadow halo for depth
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.beginPath();
+      ctx.arc(0, r * 0.04, r * 1.02, 0, Math.PI * 2);
+      ctx.fill();
+      // coin face with radial gradient (top-left light)
+      const grad = ctx.createRadialGradient(-r * 0.36, -r * 0.42, 0, 0, 0, r * 1.05);
+      grad.addColorStop(0, "#7eb6f0");
+      grad.addColorStop(0.45, "#3a86d4");
+      grad.addColorStop(0.8, "#2775ca");
+      grad.addColorStop(1, "#143966");
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
+      // inner ring grooves
+      ctx.strokeStyle = "rgba(255,255,255,0.2)";
+      ctx.lineWidth = r * 0.04;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.94, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = r * 0.035;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2);
+      ctx.stroke();
       // two split parentheses + center dollar (matches the official mark)
       ctx.strokeStyle = "#ffffff";
       ctx.lineCap = "round";
@@ -273,6 +324,14 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
       ctx.textBaseline = "middle";
       ctx.fillText("$", 0, r * 0.06);
       ctx.textBaseline = "alphabetic";
+      // top-left specular highlight crescent for the 3D feel
+      const shine = ctx.createRadialGradient(-r * 0.45, -r * 0.55, 0, -r * 0.4, -r * 0.5, r * 0.55);
+      shine.addColorStop(0, "rgba(255,255,255,0.55)");
+      shine.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = shine;
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.32, -r * 0.42, r * 0.45, r * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   };

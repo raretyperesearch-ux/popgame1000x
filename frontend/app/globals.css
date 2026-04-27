@@ -624,10 +624,10 @@ body::before {
 }
 .eog-card {
   position: relative;
-  width: min(88vw, 380px);
-  max-height: 92vh;
-  border-radius: 14px;
-  padding: 18px 18px 14px;
+  width: min(78vw, 250px);
+  max-height: 88vh;
+  border-radius: 10px;
+  padding: 11px 11px 9px;
   font-family: 'Press Start 2P', monospace;
   color: var(--ink);
   overflow: hidden;
@@ -639,38 +639,38 @@ body::before {
 }
 .eog-card.win {
   background: linear-gradient(160deg, #0e1d2c 0%, #0a1828 60%, #061018 100%);
-  border: 3px solid #2a4456;
-  box-shadow: 0 0 60px rgba(93, 211, 158, 0.25), inset 0 0 0 1px rgba(93, 211, 158, 0.15);
+  border: 2px solid #2a4456;
+  box-shadow: 0 0 40px rgba(93, 211, 158, 0.22), inset 0 0 0 1px rgba(93, 211, 158, 0.15);
 }
 .eog-card.loss {
   background: linear-gradient(160deg, #1f1810 0%, #1a1408 60%, #0f0a04 100%);
-  border: 3px solid #4a3818;
-  box-shadow: 0 0 60px rgba(255, 153, 51, 0.18), inset 0 0 0 1px rgba(255, 153, 51, 0.12);
+  border: 2px solid #4a3818;
+  box-shadow: 0 0 40px rgba(255, 153, 51, 0.16), inset 0 0 0 1px rgba(255, 153, 51, 0.12);
 }
 .eog-card.rekt {
   background: linear-gradient(160deg, #240808 0%, #1a0606 60%, #0d0202 100%);
-  border: 3px solid #5a1818;
-  box-shadow: 0 0 80px rgba(255, 95, 86, 0.32), inset 0 0 0 1px rgba(255, 95, 86, 0.2);
+  border: 2px solid #5a1818;
+  box-shadow: 0 0 50px rgba(255, 95, 86, 0.28), inset 0 0 0 1px rgba(255, 95, 86, 0.2);
 }
 .eog-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 7px;
   position: relative;
   z-index: 2;
 }
 .eog-title {
-  font-size: 12px;
-  letter-spacing: 0.5px;
+  font-size: 9px;
+  letter-spacing: 0.4px;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
 .eog-subtitle {
-  font-size: 6px;
-  margin-top: 4px;
+  font-size: 4.5px;
+  margin-top: 3px;
   color: var(--cyan);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   opacity: 0.85;
   white-space: nowrap;
 }
@@ -679,62 +679,63 @@ body::before {
 .eog-badge {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  border: 2px solid;
-  font-size: 10px;
+  gap: 3px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  border: 1.5px solid;
+  font-size: 7px;
   background: rgba(0,0,0,0.35);
   flex-shrink: 0;
 }
+.eog-badge svg { width: 9px; height: 9px; }
 .eog-badge.win { color: var(--green); border-color: var(--green); }
 .eog-badge.loss { color: var(--orange); border-color: var(--orange); }
 .eog-badge.rekt { color: var(--red); border-color: var(--red); }
 .eog-body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  margin: 4px 0 12px;
+  margin: 2px 0 8px;
   position: relative;
   z-index: 2;
 }
 .eog-sprite-frame {
-  width: 96px;
-  height: 106px;
+  width: 64px;
+  height: 71px;
   background-image: url(/spritesheet.png);
   background-repeat: no-repeat;
-  background-size: 480px 213px;
+  background-size: 320px 142px;
   image-rendering: pixelated;
-  filter: drop-shadow(0 3px 0 rgba(0,0,0,0.4));
+  filter: drop-shadow(0 2px 0 rgba(0,0,0,0.4));
 }
-.eog-sprite-frame.f8 { background-position: -288px -107px; }
-.eog-sprite-frame.f6 { background-position: -96px -107px; }
-.eog-sprite-frame.f9 { background-position: -384px -107px; }
+.eog-sprite-frame.f8 { background-position: -192px -71px; }
+.eog-sprite-frame.f6 { background-position: -64px -71px; }
+.eog-sprite-frame.f9 { background-position: -256px -71px; }
 .eog-pnl-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 .eog-pnl-label {
-  font-size: 10px;
+  font-size: 7px;
   color: var(--ink);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   position: relative;
 }
 .eog-pnl-label::before, .eog-pnl-label::after {
   content: '> ';
   color: var(--muted);
-  font-size: 9px;
+  font-size: 6px;
 }
 .eog-pnl-label::after { content: ' <'; }
 .eog-pnl-amount {
-  font-size: 24px;
+  font-size: 17px;
   line-height: 1;
-  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
-  letter-spacing: -1px;
+  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.5);
+  letter-spacing: -0.5px;
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-all;
@@ -744,10 +745,10 @@ body::before {
 .eog-card.loss .eog-pnl-amount { color: var(--orange); }
 .eog-card.rekt .eog-pnl-amount { color: var(--red); }
 .eog-pnl-pct {
-  padding: 3px 10px;
-  border-radius: 5px;
-  font-size: 10px;
-  margin-top: 2px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 7px;
+  margin-top: 1px;
 }
 .eog-card.win .eog-pnl-pct { background: rgba(93,211,158,0.18); color: var(--green); }
 .eog-card.loss .eog-pnl-pct { background: rgba(255,153,51,0.18); color: var(--orange); }
@@ -755,12 +756,12 @@ body::before {
 .eog-stats {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
-  padding: 8px 6px;
-  border-radius: 8px;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 6px;
   background: rgba(0,0,0,0.4);
   border: 1px solid rgba(244,236,216,0.08);
-  margin-bottom: 10px;
+  margin-bottom: 7px;
   position: relative;
   z-index: 2;
 }
@@ -768,20 +769,20 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 3px 2px;
+  gap: 2px;
+  padding: 2px 1px;
   min-width: 0;
 }
 .eog-stat-label {
-  font-size: 6px;
+  font-size: 4.5px;
   color: var(--muted);
   letter-spacing: 0.4px;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 .eog-stat-value {
-  font-size: 9px;
+  font-size: 7px;
   color: var(--ink);
   text-align: center;
   white-space: nowrap;
@@ -790,10 +791,10 @@ body::before {
   max-width: 100%;
 }
 .eog-stat-sub {
-  font-size: 5px;
+  font-size: 3.5px;
   color: var(--muted);
   margin-top: 1px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 .eog-stat-divider {
   width: 1px;
@@ -802,20 +803,20 @@ body::before {
 .eog-actions {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
+  gap: 5px;
   position: relative;
   z-index: 2;
 }
 .eog-btn {
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 9px 4px;
-  border-radius: 6px;
+  font-size: 5px;
+  padding: 6px 3px;
+  border-radius: 4px;
   cursor: pointer;
   background: rgba(0,0,0,0.4);
-  border: 2px solid rgba(244,236,216,0.25);
+  border: 1.5px solid rgba(244,236,216,0.25);
   color: var(--ink);
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   transition: all 0.12s;
 }
 .eog-btn:hover { background: rgba(244,236,216,0.08); border-color: var(--ink); transform: translateY(-1px); }
@@ -832,20 +833,20 @@ body::before {
   user-select: none;
 }
 .eog-spark {
-  width: 10px; height: 10px;
+  width: 6px; height: 6px;
   background: var(--gold);
   transform: rotate(45deg);
-  box-shadow: 0 0 8px rgba(255,215,0,0.6);
+  box-shadow: 0 0 6px rgba(255,215,0,0.6);
 }
 .eog-card.loss .eog-spark { background: var(--orange); box-shadow: 0 0 8px rgba(255,153,51,0.5); }
 .eog-card.rekt .eog-spark { background: var(--red); box-shadow: 0 0 10px rgba(255,95,86,0.7); }
 .eog-coin {
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.55));
 }
 
 /* ============ TOPBAR — DEPOSIT + AUTH ============ */
