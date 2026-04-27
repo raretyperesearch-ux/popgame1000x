@@ -1665,6 +1665,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         {levTagText}
       </div>
       {pnlReadout}
+      <div className="race-flag" aria-hidden="true" />
 
       {/* FIGURE */}
       <div
