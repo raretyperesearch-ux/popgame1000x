@@ -936,11 +936,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             Math.round(tileW), surfaceH,
           );
         }
-        const blend = ctx.createLinearGradient(0, shelfTop, 0, shelfTop + shelfH * 0.28);
-        blend.addColorStop(0, "rgba(6,10,20,0.65)");
-        blend.addColorStop(1, "rgba(6,10,20,0)");
-        ctx.fillStyle = blend;
-        ctx.fillRect(0, shelfTop, w, shelfH * 0.28);
         ctx.restore();
       }
 
