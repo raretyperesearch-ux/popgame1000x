@@ -298,26 +298,25 @@ body::before {
   transform: translateX(-50%) rotate(-1.2deg);
   padding: 4px 18px;
   background: transparent;
-  border: 1.5px dashed var(--muted);
+  border: none;
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 32px;
+  font-size: 36px;
   letter-spacing: 1px;
   color: var(--muted);
   z-index: 8;
   min-width: 120px;
   text-align: center;
   line-height: 1;
+  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.55);
 }
 .pnl-readout.up {
   color: var(--green);
-  border-color: var(--green);
-  text-shadow: 0.5px 0.5px 0 rgba(93,211,158,0.3);
+  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.6), 0 0 18px rgba(93,211,158,0.45);
 }
 .pnl-readout.down {
   color: var(--red);
-  border-color: var(--red);
-  text-shadow: 0.5px 0.5px 0 rgba(255,95,86,0.3);
+  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.6), 0 0 18px rgba(255,95,86,0.45);
 }
 .lev-tag {
   position: absolute;
@@ -1017,4 +1016,26 @@ body::before {
 .user-menu-item.danger:hover {
   background: rgba(255, 95, 86, 0.12);
   color: #ff8a82;
+}
+
+/* ============ MUTE TOGGLE ============ */
+.mute-btn {
+  background: transparent;
+  border: 1.5px dashed var(--muted);
+  color: var(--ink);
+  font-size: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transform: rotate(2deg);
+  transition: all 0.15s;
+}
+.mute-btn:hover {
+  border-color: var(--ink);
 }

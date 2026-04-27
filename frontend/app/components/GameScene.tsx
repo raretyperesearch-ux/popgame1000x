@@ -11,6 +11,7 @@ import {
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
+import { sounds } from "@/lib/sounds";
 
 /* ============ CONSTANTS ============ */
 const GRAVITY_P = 0.004; // price-space gravity per frame (60fps base)
@@ -1004,6 +1005,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "DEAD";
     setGameState("DEAD");
     setSpriteState("fail");
+    sounds.stopEngine();
+    sounds.play("rekt-crash");
     onHistoryPush({ amt: -a.positionWager, win: false });
     // brief pause so the splat animation reads, then show modal
     setTimeout(() => {
@@ -1025,6 +1028,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (a.state !== "LIVE") return;
     a.state = "STOPPED";
     setGameState("STOPPED");
+    sounds.stopEngine();
+    sounds.play("deploy-chute");
     if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
     const move = (a.price - a.entry) / a.entry;
     const pnlPct = move * a.positionLev;
@@ -1032,10 +1037,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setBalance((prev: number) => prev + a.positionWager + pnlDollars);
     setSpriteState("land");
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+    const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
     // wait for parachute descent to settle before showing modal
     setTimeout(() => {
+      sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       setEndOfGame({
-        kind: pnlDollars >= 0 ? "win" : "loss",
+        kind,
         pnlDollars,
         pnlPct,
         entry: a.entry,
@@ -1055,6 +1062,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const startJump = useCallback(
     (lev: number, wag: number) => {
       const a = anim.current;
+      sounds.play("lever-pull");
       a.state = "RUNNING";
       setGameState("RUNNING");
       a.positionLev = lev;
@@ -1345,6 +1353,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setGameState("JUMPING");
           a.jumpStartTime = time;
           a.curBobY = 0;
+          sounds.play("liftoff");
         }
 
       } else if (a.state === "JUMPING") {
@@ -1374,6 +1383,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setLevTagShow(true);
           const fig = figRef.current;
           if (fig) fig.style.transition = "none";
+          sounds.startEngine();
         } else {
           /* rising arc from chart line */
           const liftT = elapsed / JUMP_DURATION;
