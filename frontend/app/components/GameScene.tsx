@@ -40,6 +40,9 @@ const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
+const WATER_HAZARD_SRC = "/assets/water-hazard.png";
+const WATER_SRC_W = 2172;
+const WATER_SRC_H = 350;
 const GRASS_SRC_W = 1024;
 const GRASS_SRC_H = 256;
 const GRASS_TILE_W = 520;
@@ -167,6 +170,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const spriteImageReadyRef = useRef(false);
   const groundImageRef = useRef<HTMLImageElement | null>(null);
   const groundImageReadyRef = useRef(false);
+  const waterImageRef = useRef<HTMLImageElement | null>(null);
+  const waterImageReadyRef = useRef(false);
 
   /* mutable animation state */
   const anim = useRef({
@@ -857,59 +862,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      /* lower-stage water hazard */
-      const waterTop = h * 0.72;
-      const waterGrad = ctx.createLinearGradient(0, waterTop, 0, h);
-      waterGrad.addColorStop(0, "rgba(77,208,225,0.06)");
-      waterGrad.addColorStop(0.34, "rgba(22,94,125,0.22)");
-      waterGrad.addColorStop(1, "rgba(3,22,38,0.64)");
-      ctx.fillStyle = waterGrad;
-      ctx.fillRect(0, waterTop, w, h - waterTop);
-
-      /* animated wave lines */
       const waveTime = a.frame * 0.03;
-      for (let wl = 0; wl < 7; wl++) {
-        const wy = waterTop + 8 + wl * 13;
-        ctx.globalAlpha = 0.22 - wl * 0.018;
-        ctx.strokeStyle = wl % 2 === 0 ? "#4dd0e1" : "#f4ecd8";
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        for (let x = 0; x <= w; x += 6) {
-          const y = wy + Math.sin(x * 0.026 + waveTime + wl * 1.8) * 3;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      /* shark fins + wakes */
-      const sharkPositions = [0.18, 0.52, 0.82];
-      for (let i = 0; i < sharkPositions.length; i++) {
-        const sp = sharkPositions[i];
-        const dir = i % 2 === 0 ? 1 : -1;
-        const sx = ((sp * w + waveTime * 22 * dir + w * 2) % (w + 60)) - 30;
-        const sy = waterTop + 18 + i * 22 + Math.sin(waveTime * 1.4 + sp * 10) * 3;
-        ctx.globalAlpha = 0.34;
-        ctx.strokeStyle = "rgba(244,236,216,0.28)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(sx - 18 * dir, sy + 9);
-        ctx.quadraticCurveTo(sx - 8 * dir, sy + 4, sx + 10 * dir, sy + 8);
-        ctx.stroke();
-        ctx.globalAlpha = 0.62;
-        ctx.fillStyle = "#071522";
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - 9);
-        ctx.quadraticCurveTo(sx - 8 * dir, sy + 4, sx - 18 * dir, sy + 10);
-        ctx.lineTo(sx + 9 * dir, sy + 8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = "#4dd0e1";
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
 
       /* liquidation line + zone */
       if (isLive && liqPrice !== null) {
@@ -956,43 +909,26 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.restore();
       }
 
-      /* foreground water shelf fills the lower gap beneath the cliff */
-      const shelfTop = h * 0.78;
-      const shelfGrad = ctx.createLinearGradient(0, shelfTop, 0, h);
-      shelfGrad.addColorStop(0, "rgba(6,39,58,0)");
-      shelfGrad.addColorStop(0.2, "rgba(10,78,103,0.42)");
-      shelfGrad.addColorStop(1, "rgba(1,16,29,0.88)");
-      ctx.fillStyle = shelfGrad;
-      ctx.fillRect(0, shelfTop, w, h - shelfTop);
-      ctx.globalAlpha = 0.35;
-      ctx.strokeStyle = "#4dd0e1";
-      ctx.lineWidth = 1;
-      for (let wl = 0; wl < 5; wl++) {
-        const wy = shelfTop + 8 + wl * 16;
-        ctx.beginPath();
-        for (let x = 0; x <= w; x += 7) {
-          const y = wy + Math.sin(x * 0.03 + waveTime * 1.4 + wl) * 2.4;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+      /* generated pixel-art water hazard fills the lower gap beneath the cliff */
+      const waterImg = waterImageRef.current;
+      const shelfTop = h * 0.73;
+      const shelfH = h - shelfTop;
+      if (waterImg && waterImageReadyRef.current) {
+        const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
+        const drift = (waveTime * 24) % tileW;
+        ctx.save();
+        ctx.globalAlpha = groundAlpha;
+        ctx.imageSmoothingEnabled = false;
+        for (let x = -drift - tileW; x < w + tileW; x += tileW) {
+          ctx.drawImage(waterImg, x, shelfTop, tileW, shelfH);
         }
-        ctx.stroke();
+        const blend = ctx.createLinearGradient(0, shelfTop, 0, shelfTop + shelfH * 0.28);
+        blend.addColorStop(0, "rgba(6,10,20,0.65)");
+        blend.addColorStop(1, "rgba(6,10,20,0)");
+        ctx.fillStyle = blend;
+        ctx.fillRect(0, shelfTop, w, shelfH * 0.28);
+        ctx.restore();
       }
-      for (let i = 0; i < 3; i++) {
-        const sx = ((i * 0.31 + 0.16) * w + waveTime * 18) % (w + 50) - 25;
-        const sy = shelfTop + 18 + i * 23;
-        ctx.globalAlpha = 0.58;
-        ctx.fillStyle = "#06111d";
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - 8);
-        ctx.quadraticCurveTo(sx - 8, sy + 3, sx - 18, sy + 9);
-        ctx.lineTo(sx + 11, sy + 8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 0.4;
-        ctx.strokeStyle = "#4dd0e1";
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
 
       /* dust particles */
       const dust = anim.current.dustParticles;
@@ -1614,6 +1550,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     return () => {
       groundImageRef.current = null;
       groundImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      waterImageReadyRef.current = true;
+    };
+    img.src = WATER_HAZARD_SRC;
+    waterImageRef.current = img;
+    return () => {
+      waterImageRef.current = null;
+      waterImageReadyRef.current = false;
     };
   }, []);
 
