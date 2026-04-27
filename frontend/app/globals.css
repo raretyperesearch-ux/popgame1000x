@@ -33,6 +33,7 @@
 
 html, body {
   height: 100%;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -67,7 +68,8 @@ body::before {
 .cabinet {
   width: 100%;
   max-width: 420px;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   max-height: 900px;
   background: var(--bg-cabinet);
   border: 2px solid #1a1a1e;
@@ -605,6 +607,14 @@ body::before {
   transform: rotate(1deg) scale(0.97);
 }
 
+button,
+input,
+.chip,
+.action,
+.eog-btn {
+  touch-action: manipulation;
+}
+
 /* ============ END OF GAME MODAL ============ */
 .eog-overlay {
   position: fixed;
@@ -869,6 +879,117 @@ body::before {
 .eog-coin svg {
   width: 28px;
   height: 28px;
+}
+
+@media (max-width: 480px) {
+  body {
+    align-items: stretch;
+  }
+
+  .cabinet {
+    max-width: none;
+    max-height: none;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .topbar {
+    padding: calc(10px + env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .brand {
+    font-size: 20px;
+  }
+
+  .balance {
+    font-size: 19px;
+  }
+
+  .history-row {
+    padding: 7px 10px;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .history-row .label {
+    font-size: 7px;
+  }
+
+  .h-tag {
+    font-size: 12px;
+    padding: 2px 4px;
+  }
+
+  .price-tick {
+    top: 64px;
+    left: 10px;
+    font-size: 13px;
+  }
+
+  .pnl-readout {
+    top: 8px;
+    font-size: 24px;
+    min-width: 98px;
+    padding: 3px 10px;
+  }
+
+  .lev-tag {
+    top: 8px;
+    right: 8px;
+    font-size: 8px;
+  }
+
+  .controls {
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+    gap: 9px;
+  }
+
+  .chip {
+    min-height: 42px;
+    font-size: 20px;
+  }
+
+  .action {
+    min-height: 56px;
+    padding: 10px 0;
+    font-size: 30px;
+  }
+
+  .hand-slider {
+    height: 34px;
+  }
+
+  .slider-value {
+    font-size: 20px;
+    min-width: 50px;
+  }
+
+  .eog-overlay {
+    padding: 8px;
+  }
+
+  .eog-card {
+    width: min(100%, 330px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .eog-title {
+    font-size: 10px;
+  }
+
+  .eog-body {
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .eog-pnl-amount {
+    font-size: 17px;
+  }
+
+  .eog-btn {
+    min-height: 40px;
+    font-size: 6px;
+  }
 }
 
 /* ============ TOPBAR — DEPOSIT + AUTH ============ */
