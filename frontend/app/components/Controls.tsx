@@ -40,7 +40,7 @@ export default function Controls({
 
   return (
     <div className="controls">
-      <div className="slider-row">
+      <div className="slider-row boost-row">
         <div className="slider-label">boost</div>
         <input
           type="range"
