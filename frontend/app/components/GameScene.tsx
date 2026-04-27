@@ -31,6 +31,7 @@ const CHART_SPEED_LIVE = 0.45; // sub-point scroll per frame (live)
 const PRICE_VOL = 0.65; // random walk step for new chart points
 const MOCK_DRIFT = 0.18; // per-frame mini drift
 const STEP_FREQ = 4.2; // step cycles per second during run
+const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
 const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
@@ -53,9 +54,12 @@ const SPRITE_FOOT_GAP = 8 * SPRITE_SCALE;
 const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
-const JUMP_FRAMES = [7, 10, 10];
-const AIR_FRAMES = [8];
-const AIR_FRAME_MS = 180;
+const JUMP_FRAMES = [7, 10, 11];
+// single calm hover loop — frames 11/12/13 share the same bbox so they
+// don't pop vertically as they cycle. Avoids velocity-driven frame switching
+// which was visibly glitchy as figPriceVel oscillated around the threshold.
+const AIR_FRAMES = [11, 12, 13, 12];
+const AIR_FRAME_MS = 150;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
 type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "land" | "fail";
@@ -162,7 +166,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const spriteImageReadyRef = useRef(false);
   const groundImageRef = useRef<HTMLImageElement | null>(null);
   const groundImageReadyRef = useRef(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
   /* mutable animation state */
   const anim = useRef({
@@ -211,7 +214,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteAirStart: 0,
     spriteLandStart: 0,
     spriteFrame: 5, // current sprite frame index
-    lastJetSoundAt: 0,
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     dustParticles: [] as Array<{
@@ -345,29 +347,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       sx, sy, SPRITE_FRAME_W, SPRITE_FRAME_H,
       0, 0, canvas.width, canvas.height,
     );
-
-    if (a.spriteState === "jump" || a.spriteState === "air") {
-      const px = SPRITE_DISPLAY_W / SPRITE_FRAME_W * dpr;
-      const py = SPRITE_DISPLAY_H / SPRITE_FRAME_H * dpr;
-      const boosted = a.spriteState === "jump" ? 1.25 : clamp(0.75 + Math.max(0, a.figPriceVel) * 2.2 + Math.max(0, a.smoothDelta) * 4, 0.7, 1.65);
-      const flicker = 1 + Math.sin(time * 0.034) * 0.14;
-      const flame = boosted * flicker;
-      const rect = (x: number, y: number, w: number, h: number, c: string) => {
-        ctx.fillStyle = c;
-        ctx.fillRect(Math.round(x * px), Math.round(y * py), Math.max(1, Math.round(w * px)), Math.max(1, Math.round(h * py)));
-      };
-
-      const len = 15 * flame;
-      rect(11 - len * 0.45, 51, len, 5, "rgba(49,205,235,0.86)");
-      rect(14 - len * 0.36, 55, len * 0.74, 4, "rgba(99,235,255,0.95)");
-      rect(17 - len * 0.2, 56, len * 0.36, 2, "rgba(245,255,255,0.95)");
-      rect(8 - len * 0.52, 60, len * 0.58, 3, "rgba(15,117,165,0.72)");
-
-      const windAlpha = a.spriteState === "air" ? 0.52 : 0.34;
-      rect(2, 34 + Math.sin(time * 0.018) * 2, 12, 1, `rgba(244,236,216,${windAlpha})`);
-      rect(4, 42 + Math.cos(time * 0.016) * 2, 18, 1, `rgba(77,208,225,${windAlpha})`);
-      rect(0, 58, 10, 1, `rgba(77,208,225,${windAlpha * 0.7})`);
-    }
   }, []);
 
   const drawGrassGround = useCallback((ctx: CanvasRenderingContext2D, w: number, h: number, pts: { x: number; y: number }[]) => {
@@ -978,43 +957,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     [drawGrassGround, stars],
   );
 
-  const getAudio = useCallback(() => {
-    if (typeof window === "undefined") return null;
-    const AudioCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtor) return null;
-    if (!audioCtxRef.current) audioCtxRef.current = new AudioCtor();
-    if (audioCtxRef.current.state === "suspended") {
-      void audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
+  /* ============ BANNER ============ */
+  const showBanner = useCallback((kind: "win" | "loss", text: string) => {
+    const b = bannerRef.current;
+    if (!b) return;
+    b.textContent = text;
+    b.className = "banner show " + kind;
+    setTimeout(() => b.classList.remove("show"), 1500);
   }, []);
-
-  const playTone = useCallback((
-    freq: number,
-    dur = 0.12,
-    type: OscillatorType = "square",
-    gain = 0.035,
-    endFreq?: number,
-  ) => {
-    const ctx = getAudio();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const amp = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    if (endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), ctx.currentTime + dur);
-    amp.gain.setValueAtTime(0.0001, ctx.currentTime);
-    amp.gain.exponentialRampToValueAtTime(gain, ctx.currentTime + 0.015);
-    amp.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-    osc.connect(amp);
-    amp.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + dur + 0.02);
-  }, [getAudio]);
-
-  const playChord = useCallback((notes: number[], gain = 0.026) => {
-    notes.forEach((note, i) => window.setTimeout(() => playTone(note, 0.12, "triangle", gain, note * 1.08), i * 42));
-  }, [playTone]);
 
   /* ============ RESET ============ */
   const reset = useCallback(() => {
@@ -1054,7 +1004,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "DEAD";
     setGameState("DEAD");
     setSpriteState("fail");
-    playTone(92, 0.24, "sawtooth", 0.05, 42);
     onHistoryPush({ amt: -a.positionWager, win: false });
     // brief pause so the splat animation reads, then show modal
     setTimeout(() => {
@@ -1067,9 +1016,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: a.positionLev,
         wager: a.positionWager,
       });
-      playTone(62, 0.35, "triangle", 0.04, 36);
     }, 900);
-  }, [setGameState, setSpriteState, playTone, onHistoryPush]);
+  }, [setGameState, setSpriteState, onHistoryPush]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -1083,7 +1031,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const pnlDollars = pnlPct * a.positionWager;
     setBalance((prev: number) => prev + a.positionWager + pnlDollars);
     setSpriteState("land");
-    playTone(240, 0.14, "triangle", 0.028, 120);
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
     // wait for parachute descent to settle before showing modal
     setTimeout(() => {
@@ -1096,10 +1043,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: a.positionLev,
         wager: a.positionWager,
       });
-      if (pnlDollars >= 0) playChord([523, 659, 784], 0.023);
-      else playTone(180, 0.22, "sawtooth", 0.032, 110);
     }, 900);
-  }, [setGameState, setBalance, setSpriteState, playTone, playChord, onHistoryPush]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush]);
 
   const closeEndOfGame = useCallback(() => {
     setEndOfGame(null);
@@ -1110,8 +1055,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const startJump = useCallback(
     (lev: number, wag: number) => {
       const a = anim.current;
-      getAudio();
-      playTone(180, 0.18, "sawtooth", 0.035, 520);
       a.state = "RUNNING";
       setGameState("RUNNING");
       a.positionLev = lev;
@@ -1133,7 +1076,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.loco.rightFoot = { x: a.loco.bodyX + 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: false };
       a.loco.squash = 0;
     },
-    [setGameState, getAudio, playTone],
+    [setGameState],
   );
 
   useImperativeHandle(ref, () => ({ startJump, stopTrade }), [
@@ -1479,10 +1422,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.smoothDelta > 0.001) {
           const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
           a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * dtNorm);
-          if (time - a.lastJetSoundAt > 145) {
-            playTone(155 + Math.min(260, Math.max(0, a.figPriceVel) * 340), 0.055, "sawtooth", 0.012, 230);
-            a.lastJetSoundAt = time;
-          }
           if (a.dustParticles.length < DUST_MAX) {
             a.dustParticles.push({
               x: figScreenX - 6 + Math.random() * 5,
@@ -1567,7 +1506,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [drawScene, drawSprite, setSpriteState, setFig, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState, playTone]);
+  }, [drawScene, drawSprite, setSpriteState, setFig, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
 
   /* ============ PRICE STREAM ============ */
   useEffect(() => {
