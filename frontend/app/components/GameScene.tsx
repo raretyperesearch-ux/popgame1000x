@@ -54,14 +54,16 @@ const SPRITE_FOOT_GAP = 8 * SPRITE_SCALE;
 const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
+const JUMP_FRAMES = [7, 10, 11];
+const AIR_FRAMES = [11, 12, 13, 8];
+const AIR_FRAME_MS = 115;
+const LAND_FRAMES = [14, 15];
+const LAND_FRAME_MS = 140;
 type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "land" | "fail";
-const SPRITE_FRAME: Record<Exclude<SpriteState, "run">, number> = {
+const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "land">, number> = {
   idle: 5,
   crouch: 6,
-  jump: 7,
-  air: 8,
-  land: 6,
-  fail: 9,
+  fail: 16,
 };
 const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
@@ -205,6 +207,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     prevStepHalf: 0, // tracks half-cycle for dust spawn
     spriteState: "idle" as SpriteState,
     spriteRunStart: 0, // timestamp when run animation started
+    spriteJumpStart: 0,
+    spriteAirStart: 0,
+    spriteLandStart: 0,
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
@@ -288,6 +293,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       if (a.spriteState !== state) {
         a.spriteState = state;
         if (state === "run") a.spriteRunStart = time ?? performance.now();
+        if (state === "jump") a.spriteJumpStart = time ?? performance.now();
+        if (state === "air") a.spriteAirStart = time ?? performance.now();
+        if (state === "land") a.spriteLandStart = time ?? performance.now();
       }
     },
     [],
@@ -305,6 +313,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     if (a.spriteState === "run") {
       const elapsed = time - (a.spriteRunStart || time);
       frameIdx = RUN_FRAMES[Math.floor(elapsed / RUN_FRAME_MS) % RUN_FRAMES.length];
+    } else if (a.spriteState === "jump") {
+      const elapsed = time - (a.spriteJumpStart || time);
+      frameIdx = JUMP_FRAMES[Math.min(JUMP_FRAMES.length - 1, Math.floor(elapsed / 115))];
+    } else if (a.spriteState === "air") {
+      const elapsed = time - (a.spriteAirStart || time);
+      frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
+    } else if (a.spriteState === "land") {
+      const elapsed = time - (a.spriteLandStart || time);
+      frameIdx = LAND_FRAMES[Math.min(LAND_FRAMES.length - 1, Math.floor(elapsed / LAND_FRAME_MS))];
     } else {
       frameIdx = SPRITE_FRAME[a.spriteState];
     }
@@ -966,6 +983,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.prepareStartTime = 0;
     a.jumpStartTime = 0;
     a.idleStartTime = 0;
+    a.spriteJumpStart = 0;
+    a.spriteAirStart = 0;
+    a.spriteLandStart = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
     a.loco.grounded = true;
@@ -1042,6 +1062,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.runStartTime = 0; // set on first tick
       a.prepareStartTime = 0;
       a.jumpStartTime = 0;
+      a.spriteJumpStart = 0;
+      a.spriteAirStart = 0;
+      a.spriteLandStart = 0;
       a.dustParticles.length = 0;
       a.loco.grounded = true;
       a.loco.stepPhase = 0;
@@ -1326,7 +1349,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.jumpStartTime === 0) a.jumpStartTime = time;
         const elapsed = time - a.jumpStartTime;
         const loco = a.loco;
-        setSpriteState("jump", time);
+        setSpriteState(elapsed > JUMP_DURATION * 0.52 ? "air" : "jump", time);
         if (loco.grounded) {
           loco.grounded = false;
           const n = getTerrainNormal(loco.bodyX || figWorldX);
@@ -1365,9 +1388,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        const livePnlPct = (a.price - a.entry) / a.entry * a.positionLev;
-        // panicked-fall sprite when we're deep in the red, otherwise the airborne pose
-        setSpriteState(livePnlPct < -0.3 ? "fail" : "air", time);
+        setSpriteState("air", time);
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
@@ -1464,14 +1485,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
       } else if (a.state === "DEAD") {
-        /* figure falls off screen */
+        /* keep the liquidated frame visible long enough to read */
         setSpriteState("fail", time);
-        a.figPrice -= 0.5 * dtNorm;
-        if (priceToY) {
-          const figY = priceToY(a.figPrice);
-          const alt = a.stageH - figY;
-          setFig(figScreenX, Math.max(-100, alt), (a.frame * 8) % 360);
-        }
+        const groundY = getTerrainY(figWorldX);
+        a.smoothAlt = lerp(a.smoothAlt, a.stageH - groundY + 2, 0.35 * dtNorm);
+        setFig(figScreenX, a.smoothAlt, 0);
         a.frame++;
       }
 

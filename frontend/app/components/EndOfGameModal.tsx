@@ -19,23 +19,23 @@ interface Props {
   onClose: () => void;
 }
 
-const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; spriteFrame: 6 | 8 | 9; exitFallback: string }> = {
+const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; spriteFrame: 11 | 15 | 16; exitFallback: string }> = {
   win: {
     subtitle: "YOU CAME. YOU SCALPED. YOU WON.",
     badge: "WIN",
-    spriteFrame: 8,
+    spriteFrame: 11,
     exitFallback: "—",
   },
   loss: {
     subtitle: "YOU CAME. YOU SCALPED. YOU FOLDED.",
     badge: "LOSS",
-    spriteFrame: 6,
+    spriteFrame: 15,
     exitFallback: "—",
   },
   rekt: {
     subtitle: "YOU CAME. YOU SCALPED. YOU GOT REKT.",
     badge: "REKT",
-    spriteFrame: 9,
+    spriteFrame: 16,
     exitFallback: "LIQUIDATED",
   },
 };
@@ -516,7 +516,10 @@ export default function EndOfGameModal({ data, onClose }: Props) {
           <div className={`eog-sprite-frame f${copy.spriteFrame}`} aria-hidden="true" />
           <div className="eog-pnl-block">
             <div className="eog-pnl-label">PNL</div>
-            <div className="eog-pnl-amount">{fmtMoney(data.pnlDollars)}</div>
+            <div className="eog-pnl-amount">
+              <span>{fmtMoney(data.pnlDollars)}</span>
+              <span className="eog-pnl-coin"><UsdcCoin broken={data.kind === "rekt"} /></span>
+            </div>
             <div className="eog-pnl-pct">{fmtPct(data.pnlPct)}</div>
           </div>
         </div>
