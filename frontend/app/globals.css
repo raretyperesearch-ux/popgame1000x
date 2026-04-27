@@ -373,26 +373,29 @@ body::before {
 }
 .race-flag {
   position: absolute;
-  top: 34%;
-  right: -3px;
-  width: 64px;
-  height: 64px;
+  top: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
   z-index: 9;
   pointer-events: none;
   background-image: url(/assets/red-race-flag-sheet.png);
   background-repeat: no-repeat;
-  background-size: 256px 64px;
+  background-size: 144px 36px;
   image-rendering: pixelated;
   filter:
-    drop-shadow(0 3px 0 rgba(0,0,0,0.5))
-    drop-shadow(0 0 8px rgba(255,95,86,0.25));
-  transform: translateY(-50%);
+    drop-shadow(0 2px 0 rgba(0,0,0,0.5))
+    drop-shadow(0 0 6px rgba(255,95,86,0.25));
+  /* JS sets transform: translateY(...) every frame to track the live price.
+     Initial offscreen position; the first drawScene tick moves it in. */
+  transform: translateY(-100px);
+  will-change: transform;
   animation: raceFlagWave 0.44s steps(4) infinite;
 }
 
 @keyframes raceFlagWave {
   from { background-position: 0 0; }
-  to { background-position: -256px 0; }
+  to { background-position: -144px 0; }
 }
 
 /* ============ BANNER ============ */

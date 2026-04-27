@@ -171,6 +171,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const figRef = useRef<HTMLDivElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const parachuteRef = useRef<SVGSVGElement>(null);
+  const raceFlagRef = useRef<HTMLDivElement>(null);
   const spriteCanvasRef = useRef<HTMLCanvasElement>(null);
   const spriteImageRef = useRef<HTMLImageElement | null>(null);
   const spriteImageReadyRef = useRef(false);
@@ -228,6 +229,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
+    flagDisplayY: -1, // smoothed Y for the right-edge race flag (lerps toward priceToY); -1 = uninitialized
     dustParticles: [] as Array<{
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
@@ -941,44 +943,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.restore();
       }
 
-      /* price flag pinned to the right edge — slides up/down with price.
-         green when above entry (winning), red when below (losing), muted
-         when no entry (idle/running). always visible so it stays a stable
-         reference even as the chart fades during the climb. */
-      const flagY = clamp(curY, 6, h - 6);
-      let flagFill = "rgba(244,236,216,0.55)";
-      let flagStroke = "rgba(244,236,216,0.85)";
-      if (entryPrice != null && (isLive || a.state === "STOPPED" || a.state === "DEAD")) {
-        if (a.price >= entryPrice) {
-          flagFill = "rgba(93,211,158,0.9)";
-          flagStroke = "#5dd39e";
-        } else {
-          flagFill = "rgba(255,95,86,0.9)";
-          flagStroke = "#ff5f56";
-        }
+      /* race flag DOM element tracks the live price.
+         clamp Y so the flag stays inside the stage even when price is
+         wildly out of the visible chart range. lerp the displayed Y for
+         smooth motion regardless of how chunky the upstream price ticks
+         are. flag sprite is 36x36, anchor by its center. */
+      const FLAG_H = 36;
+      const flagTargetY = clamp(curY, FLAG_H / 2, h - FLAG_H / 2);
+      if (a.flagDisplayY < 0) a.flagDisplayY = flagTargetY;
+      a.flagDisplayY = lerp(a.flagDisplayY, flagTargetY, 0.18);
+      const flagEl = raceFlagRef.current;
+      if (flagEl) {
+        flagEl.style.transform = `translateY(${(a.flagDisplayY - FLAG_H / 2).toFixed(1)}px)`;
       }
-      ctx.save();
-      // dashed track on the right edge for context
-      ctx.strokeStyle = "rgba(244,236,216,0.07)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 5]);
-      ctx.beginPath();
-      ctx.moveTo(w - 1, 0);
-      ctx.lineTo(w - 1, h);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // flag triangle: anchored to the right edge, pointing inward at curY
-      ctx.fillStyle = flagFill;
-      ctx.strokeStyle = flagStroke;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(w, flagY - 7);
-      ctx.lineTo(w, flagY + 7);
-      ctx.lineTo(w - 14, flagY);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
 
       /* dust particles */
       const dust = anim.current.dustParticles;
@@ -1665,7 +1642,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         {levTagText}
       </div>
       {pnlReadout}
-      <div className="race-flag" aria-hidden="true" />
+      <div className="race-flag" aria-hidden="true" ref={raceFlagRef} />
 
       {/* FIGURE */}
       <div
