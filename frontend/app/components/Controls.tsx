@@ -65,7 +65,7 @@ export default function Controls({
           </button>
         ))}
       </div>
-      <div className="slider-row">
+      <div className="slider-row cash-row">
         <div className="slider-label">wager</div>
         <input
           type="range"

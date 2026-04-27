@@ -626,6 +626,93 @@ body::before {
   transform: rotate(-1deg) skewX(-4deg);
 }
 
+/* ---- CASH ROW: arcade money skin layered on top of .slider-row ---- */
+.cash-row {
+  position: relative;
+  background: radial-gradient(ellipse at 35% 50%, rgba(93,211,158,0.10), transparent 65%);
+  border-radius: 6px;
+  padding: 1px 2px;
+}
+.cash-row .slider-label {
+  font-family: 'Press Start 2P', monospace;
+  font-weight: normal;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--green);
+  text-shadow:
+    0 0 6px rgba(93,211,158,0.55),
+    0 0 12px rgba(77,208,225,0.3),
+    0 1px 0 rgba(0,0,0,0.65);
+  transform: rotate(-1.2deg) skewX(-6deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cash-row .slider-label::before {
+  /* dollar sign accent — money cue, mirrors the boost row's play arrow */
+  content: "$";
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: var(--green);
+  text-shadow:
+    0 0 6px rgba(93,211,158,0.7),
+    0 0 10px rgba(168,239,199,0.4),
+    0 1px 0 rgba(0,0,0,0.6);
+  flex-shrink: 0;
+}
+.cash-row .hand-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background:
+    repeating-linear-gradient(90deg, rgba(212,247,226,0.7) 0 6px, transparent 6px 12px),
+    linear-gradient(90deg, rgba(93,211,158,0.65), rgba(77,208,225,0.55) 60%, rgba(93,211,158,0.55));
+  border: 1px solid rgba(93,211,158,0.32);
+  border-radius: 999px;
+  box-shadow:
+    0 0 8px rgba(93,211,158,0.32),
+    inset 0 0 4px rgba(0,0,0,0.4);
+}
+.cash-row .hand-slider::-moz-range-track {
+  height: 6px;
+  background:
+    repeating-linear-gradient(90deg, rgba(212,247,226,0.7) 0 6px, transparent 6px 12px),
+    linear-gradient(90deg, rgba(93,211,158,0.65), rgba(77,208,225,0.55) 60%, rgba(93,211,158,0.55));
+  border: 1px solid rgba(93,211,158,0.32);
+  border-radius: 999px;
+  box-shadow:
+    0 0 8px rgba(93,211,158,0.32),
+    inset 0 0 4px rgba(0,0,0,0.4);
+}
+.cash-row .hand-slider::-webkit-slider-thumb {
+  background:
+    radial-gradient(circle at 35% 30%, #d4f7e2 0%, var(--green) 55%, #1f7a4f 100%);
+  border: 2px solid var(--ink);
+  box-shadow:
+    0 0 0 3px rgba(93,211,158,0.22),
+    0 0 14px rgba(93,211,158,0.55),
+    0 3px 0 rgba(0,0,0,0.5);
+}
+.cash-row .hand-slider::-moz-range-thumb {
+  background:
+    radial-gradient(circle at 35% 30%, #d4f7e2 0%, var(--green) 55%, #1f7a4f 100%);
+  border: 2px solid var(--ink);
+  box-shadow:
+    0 0 0 3px rgba(93,211,158,0.22),
+    0 0 14px rgba(93,211,158,0.55),
+    0 3px 0 rgba(0,0,0,0.5);
+}
+.cash-row .hand-slider::-webkit-slider-thumb:active {
+  transform: scale(1.2);
+}
+.cash-row .slider-value {
+  color: #d4f7e2;
+  text-shadow:
+    0 0 6px rgba(93,211,158,0.55),
+    0 0 12px rgba(77,208,225,0.4),
+    0 1px 0 rgba(0,0,0,0.6);
+  transform: rotate(-1deg) skewX(-4deg);
+}
+
 .wager-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
