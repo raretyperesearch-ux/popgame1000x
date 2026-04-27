@@ -40,11 +40,11 @@ export default function Controls({
 
   return (
     <div className="controls">
-      <div className="slider-row boost-row">
-        <div className="slider-label boost-label">BOOST!</div>
+      <div className="slider-row">
+        <div className="slider-label">boost</div>
         <input
           type="range"
-          className="hand-slider boost-slider"
+          className="hand-slider"
           min={75}
           max={250}
           step={1}
@@ -52,7 +52,7 @@ export default function Controls({
           disabled={disabled}
           onChange={(e) => onLeverageChange(parseInt(e.target.value, 10))}
         />
-        <div className="slider-value boost-value">{leverage}x</div>
+        <div className="slider-value">{leverage}x</div>
       </div>
       <div className="wager-row">
         {CHIPS.map((amt) => (
