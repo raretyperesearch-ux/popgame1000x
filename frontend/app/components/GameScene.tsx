@@ -392,9 +392,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     ctx.lineTo(0, h);
     ctx.closePath();
     const dirt = ctx.createLinearGradient(0, firstY, 0, h);
-    dirt.addColorStop(0, "#17261b");
-    dirt.addColorStop(0.35, "#141210");
-    dirt.addColorStop(1, "#05080d");
+    dirt.addColorStop(0, "#2d4a2a");
+    dirt.addColorStop(0.35, "#3a2a18");
+    dirt.addColorStop(1, "#1f1408");
     ctx.fillStyle = dirt;
     ctx.fill();
 
@@ -934,12 +934,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const curY = priceToY(a.price);
       ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
 
-      /* ground fades away as we climb out of the atmosphere; rendered grayscale to match the UI */
+      /* ground fades away as we climb out of the atmosphere */
       const groundAlpha = clamp(1 - a.skyAlt * 1.6, 0, 1);
       if (groundAlpha > 0.01) {
         ctx.save();
         ctx.globalAlpha = groundAlpha;
-        ctx.filter = "grayscale(1) contrast(1.15) brightness(0.95)";
         drawGrassGround(ctx, w, h, pts);
         ctx.restore();
       }
