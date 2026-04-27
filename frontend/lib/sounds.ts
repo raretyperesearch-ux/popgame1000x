@@ -33,16 +33,16 @@ interface SoundDef {
 }
 
 const DEFS: Record<SoundId, SoundDef> = {
-  "lever-pull":   { file: "lever.mp3",      volume: 0.55 },
-  "liftoff":      { file: "liftoff.mp3",    volume: 0.7 },
-  "engine-loop":  { file: "engine.mp3",     volume: 0.35, loop: true },
-  "engine-stop":  { file: "engine-stop.mp3", volume: 0.5 },
-  "win-fanfare":  { file: "win.mp3",        volume: 0.75 },
-  "loss-thud":    { file: "loss.mp3",       volume: 0.6 },
-  "rekt-crash":   { file: "rekt.mp3",       volume: 0.85 },
-  "ui-click":     { file: "click.mp3",      volume: 0.35 },
-  "coin-clink":   { file: "coin.mp3",       volume: 0.45 },
-  "deploy-chute": { file: "chute.mp3",      volume: 0.5 },
+  "lever-pull":   { file: "lever.ogg",       volume: 0.55 },
+  "liftoff":      { file: "liftoff.ogg",     volume: 0.7 },
+  "engine-loop":  { file: "engine.ogg",      volume: 0.35, loop: true },
+  "engine-stop":  { file: "engine-stop.ogg", volume: 0.5 },
+  "win-fanfare":  { file: "win.ogg",         volume: 0.75 },
+  "loss-thud":    { file: "loss.ogg",        volume: 0.6 },
+  "rekt-crash":   { file: "rekt.ogg",        volume: 0.85 },
+  "ui-click":     { file: "click.ogg",       volume: 0.35 },
+  "coin-clink":   { file: "coin.ogg",        volume: 0.45 },
+  "deploy-chute": { file: "chute.ogg",       volume: 0.5 },
 };
 
 const STORAGE_KEY = "popgame-muted";

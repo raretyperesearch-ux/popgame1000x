@@ -1,47 +1,45 @@
-# Game audio
+# Game audio (Kenney CC0)
 
-The sound system in `frontend/lib/sounds.ts` looks for these files. If a file is missing the corresponding play() is silent (with a console warning) — the game still works, it just stays quiet on that event.
+These sounds are bundled directly from [Kenney.nl](https://kenney.nl) audio packs. All Kenney assets are released under **Creative Commons Zero (CC0)** — public domain, no attribution required, free for any use including commercial.
 
-## Required files
+The sound system in `frontend/lib/sounds.ts` references each file by name. Swap any of these for your own files (any Howler-supported format: `.ogg`, `.mp3`, `.wav`, `.m4a`) and update the `DEFS` map in `lib/sounds.ts` if you change the extension.
 
-Drop into this folder (`frontend/public/sounds/`):
+## What's currently shipped
 
-| File | Triggered when | Suggested vibe |
+| File | Triggered when | Source |
 |---|---|---|
-| `lever.mp3` | Player pulls the lever to start a trade | mechanical click / chip handle / lever clack |
-| `liftoff.mp3` | Liftoff at end of PREPARE → JUMPING | rocket whoosh / jet ignition |
-| `engine.mp3` | LIVE state (loops while flying) | seamless jet engine loop, ~1–2 s, low-mid frequency, looped |
-| `engine-stop.mp3` | LIVE → STOPPED (parachute deploy) | engine sputter / shutdown |
-| `chute.mp3` | Parachute opens at stop | fabric whoosh / pop |
-| `win.mp3` | EOG modal opens with kind="win" | short jingle / cha-ching / fanfare |
-| `loss.mp3` | EOG modal opens with kind="loss" | sad trombone / minor sting |
-| `rekt.mp3` | Liquidation impact (immediate) | explosion / crash / thud |
-| `click.mp3` | Any UI button (deposit, share, continue, menu) | crisp soft click, < 100 ms |
-| `coin.mp3` | Share/Download buttons in the EOG modal | coin clink / chip drop |
+| `lever.ogg` | Player pulls the lever to start a trade | Kenney Casino Audio · `chips-handle-3` |
+| `liftoff.ogg` | Liftoff at end of PREPARE → JUMPING | Kenney Sci-Fi Sounds · `spaceEngine_000` |
+| `engine.ogg` | LIVE state (loops while flying) | Kenney Sci-Fi Sounds · `spaceEngineLow_000` |
+| `engine-stop.ogg` | LIVE → STOPPED (parachute deploy) | Kenney Sci-Fi Sounds · `forceField_002` |
+| `chute.ogg` | Parachute opens at stop | Kenney Sci-Fi Sounds · `forceField_000` |
+| `win.ogg` | EOG modal opens with kind="win" | Kenney Music Jingles · `8-Bit/jingles_NES00` |
+| `loss.ogg` | EOG modal opens with kind="loss" | Kenney Music Jingles · `8-Bit/jingles_NES05` |
+| `rekt.ogg` | Liquidation impact (immediate) | Kenney Sci-Fi Sounds · `explosionCrunch_004` |
+| `click.ogg` | Any UI button | Kenney Interface Sounds · `click_004` |
+| `coin.ogg` | Share/Download buttons | Kenney Casino Audio · `chips-collide-1` |
 
-`.mp3` is preferred for compression; Howler also accepts `.wav`/`.ogg`/`.m4a` if you swap the extension in `lib/sounds.ts` definitions.
+## Swapping a sound
 
-## Free CC0 sources (no attribution required)
+Want a different vibe?
 
-Best fit overall: **Kenney.nl** — free game audio packs, CC0, designed for games. Each pack is ~50–200 sounds organized by theme.
+1. Browse the original Kenney packs:
+   - [Casino Audio](https://kenney.nl/assets/casino-audio)
+   - [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds)
+   - [Interface Sounds](https://kenney.nl/assets/interface-sounds)
+   - [Music Jingles](https://kenney.nl/assets/music-jingles) (8-Bit / NES, Pizzicato, Sax, Hit, Steel)
+   - [Impact Sounds](https://kenney.nl/assets/impact-sounds)
+   - [UI Audio](https://kenney.nl/assets/ui-audio)
+2. Replace the file in this folder, keeping the same filename, OR
+3. Use a different filename and update the path in `frontend/lib/sounds.ts` (`DEFS` map).
 
-- **Casino Audio Pack** (https://kenney.nl/assets/casino-audio) — `lever.mp3` (chip drop / handle), `coin.mp3`
-- **Sci-Fi Sounds** (https://kenney.nl/assets/sci-fi-sounds) — `liftoff.mp3` (rocket / launch), `engine.mp3` (looping engines), `engine-stop.mp3` (shutdowns)
-- **Interface Sounds** (https://kenney.nl/assets/interface-sounds) — `click.mp3`
-- **Impact Sounds** (https://kenney.nl/assets/impact-sounds) — `rekt.mp3` (explosion / crash)
-- **Jingles** — search Kenney for jingle/positive/negative stings, or freesound.org if Kenney's set doesn't fit
+## Tuning
 
-Other CC0 options:
-- https://opengameart.org/art-search-advanced (filter by CC0)
-- https://pixabay.com/sound-effects/ (royalty-free, free with account)
-- https://freesound.org (CC-licensed, attribution often required)
-
-## Rough tuning
-
-Default per-sound volumes are set in `lib/sounds.ts` (`DEFS` object). Engine loop is intentionally low (0.35) since it plays continuously; one-shots are louder. Master volume is 0.8. The mute toggle is in the top bar (🔊 / 🔇 icon next to the help button).
+Per-sound default volumes are in `lib/sounds.ts` (`DEFS`). Master volume is 0.8. Engine loop is intentionally low (0.35) since it plays continuously. The 🔊 / 🔇 toggle in the top bar mutes everything (persisted to `localStorage`).
 
 ## Adding a new sound
 
-1. Add the file to this folder.
-2. Add the id and file definition to `DEFS` in `frontend/lib/sounds.ts`.
-3. `sounds.play("your-id")` from anywhere.
+1. Drop the file in this folder.
+2. Add the id and definition to `DEFS` in `lib/sounds.ts`.
+3. Add the id to the `SoundId` union type.
+4. `sounds.play("your-id")` from anywhere.
