@@ -52,6 +52,11 @@ const GRASS_SLICE_W = 16;
 const WATER_SHELF_TOP_PCT = 0.73;
 const WATER_SURFACE_SRC_PCT = 0.34;
 const WATER_SURFACE_DRAW_PCT = 0.42;
+// the top ~22 px of water-hazard.png are solid black (RGB ~3,3,4) before the
+// wave foam begins at y≈20 — skip them so foam meets the cliff with no band
+const WATER_SRC_TOP_SKIP = 22;
+// foam crests extend a few px up into the cliff for a wet-edge blend
+const WATER_FOAM_OVERLAP = 4;
 const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
@@ -915,24 +920,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const shelfTop = h * WATER_SHELF_TOP_PCT;
       const shelfH = h - shelfTop;
       if (waterImg && waterImageReadyRef.current) {
-        const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
+        const visibleSrcH = WATER_SRC_H - WATER_SRC_TOP_SKIP;
+        const tileW = Math.max(w, shelfH * (WATER_SRC_W / visibleSrcH));
         const drift = (a.groundScrollAcc * TERRAIN_SCROLL_PX) % tileW;
         const waveBob = Math.round(Math.sin(a.frame * 0.055) * 2);
         const foamDrift = (drift * 1.18 + Math.round(Math.sin(a.frame * 0.035) * 10)) % tileW;
-        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT);
+        const surfaceSrcH = Math.floor(WATER_SRC_H * WATER_SURFACE_SRC_PCT) - WATER_SRC_TOP_SKIP;
         const surfaceH = Math.ceil(shelfH * WATER_SURFACE_DRAW_PCT);
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
         for (let x = -drift - tileW; x < w + tileW; x += tileW) {
-          ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
+          ctx.drawImage(
+            waterImg,
+            0, WATER_SRC_TOP_SKIP, WATER_SRC_W, visibleSrcH,
+            Math.round(x), Math.round(shelfTop + waveBob),
+            Math.round(tileW), Math.round(shelfH),
+          );
         }
         ctx.globalAlpha = groundAlpha * 0.78;
         for (let x = -foamDrift - tileW; x < w + tileW; x += tileW) {
           ctx.drawImage(
             waterImg,
-            0, 0, WATER_SRC_W, surfaceSrcH,
-            Math.round(x), Math.round(shelfTop - waveBob),
+            0, WATER_SRC_TOP_SKIP, WATER_SRC_W, surfaceSrcH,
+            Math.round(x), Math.round(shelfTop - waveBob - WATER_FOAM_OVERLAP),
             Math.round(tileW), surfaceH,
           );
         }
