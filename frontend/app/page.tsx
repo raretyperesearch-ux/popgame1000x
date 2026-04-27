@@ -7,6 +7,7 @@ import GameScene, { type GameSceneHandle } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
+import { openTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
@@ -19,6 +20,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [openInFlight, setOpenInFlight] = useState(false);
 
   const gameRef = useRef<GameSceneHandle>(null);
 
@@ -66,15 +68,29 @@ export default function Home() {
     });
   }, []);
 
-  const handleAction = useCallback(() => {
-    if (gameState === "IDLE" && balance >= wager) {
-      setBalance((prev) => prev - wager);
-      setGameState("RUNNING");
-      gameRef.current?.startJump(leverage, wager);
+  const handleAction = useCallback(async () => {
+    if (gameState === "IDLE" && balance >= wager && !openInFlight) {
+      setOpenInFlight(true);
+      try {
+        const trade = await openTrade(leverage, wager);
+        setBalance((prev) => prev - wager);
+        gameRef.current?.startJump(
+          leverage,
+          wager,
+          trade.entry_price,
+          trade.liquidation_price,
+        );
+      } catch (e) {
+        console.error("openTrade failed:", e);
+        // Stay IDLE; balance is unchanged. A real error banner can come
+        // later — for now the dev console is enough.
+      } finally {
+        setOpenInFlight(false);
+      }
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage]);
+  }, [gameState, balance, wager, leverage, openInFlight]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {

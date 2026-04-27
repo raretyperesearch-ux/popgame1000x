@@ -11,6 +11,7 @@ import {
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
+import { closeTrade, forceCloseTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 /* ============ CONSTANTS ============ */
@@ -138,7 +139,12 @@ function terrainifyNorm(t: number): number {
 
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
-  startJump: (leverage: number, wager: number) => void;
+  startJump: (
+    leverage: number,
+    wager: number,
+    entryPrice: number,
+    liquidationPrice: number,
+  ) => void;
   stopTrade: () => void;
 }
 
@@ -195,6 +201,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     entry: 3500,
     positionLev: 100,
     positionWager: 5,
+    /* backend-provided values from /trade/open. pendingEntry/pendingLiq are
+       captured at startJump and snapped onto a.entry / a.liquidationPrice
+       at the LIVE-state transition. */
+    pendingEntry: 0 as number,
+    pendingLiqPrice: 0 as number,
+    liquidationPrice: 0 as number,
     figPrice: 3500, // figure's virtual price-level during LIVE
     figPriceVel: 0,
     frame: 0,
@@ -1028,6 +1040,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setSpriteState("fail");
     sounds.play("rekt-crash");
     onHistoryPush({ amt: -a.positionWager, win: false });
+    // Settle on-chain in the background. Optimistic visuals continue —
+    // result is logged for now; reconciling the EOG modal with real
+    // net_pnl_usdc is a follow-up.
+    forceCloseTrade()
+      .then((res) =>
+        console.log("forceCloseTrade settled:", res.net_pnl_usdc, res.tx_hash),
+      )
+      .catch((e) => console.error("forceCloseTrade failed:", e));
     // brief pause so the splat animation reads, then show modal
     setTimeout(() => {
       setEndOfGame({
@@ -1050,6 +1070,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("STOPPED");
     sounds.play("deploy-chute");
     if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
+    // Settle on-chain in the background. Visual PnL continues with the
+    // optimistic local calc below — real net_pnl_usdc reconciliation is
+    // a follow-up.
+    closeTrade()
+      .then((res) =>
+        console.log("closeTrade settled:", res.net_pnl_usdc, res.tx_hash),
+      )
+      .catch((e) => console.error("closeTrade failed:", e));
     const move = (a.price - a.entry) / a.entry;
     const pnlPct = move * a.positionLev;
     const pnlDollars = pnlPct * a.positionWager;
@@ -1079,13 +1107,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
-    (lev: number, wag: number) => {
+    (lev: number, wag: number, entryPrice: number, liqPrice: number) => {
       const a = anim.current;
       sounds.play("lever-pull");
       a.state = "RUNNING";
       setGameState("RUNNING");
       a.positionLev = lev;
       a.positionWager = wag;
+      a.pendingEntry = entryPrice;
+      a.pendingLiqPrice = liqPrice;
       a.runFrame = 0;
       a.stepPhase = 0;
       a.prevStepHalf = 0;
@@ -1179,9 +1209,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const figWorldX = figDataIdx;
       a.cameraWorldX = lerp(a.cameraWorldX || worldLeft, worldLeft, CAMERA_LERP * dtNorm);
 
-      /* compute liqPrice */
-      const liqPrice = a.state === "LIVE" || a.state === "STOPPED"
-        ? a.entry - a.entry / a.positionLev
+      /* liqPrice comes from the on-chain trade snapshotted at LIVE entry
+         (a.liquidationPrice). Visible during LIVE/STOPPED so the chart's
+         liquidation zone follows the real on-chain trigger. */
+      const liqPrice = (a.state === "LIVE" || a.state === "STOPPED")
+        ? a.liquidationPrice
         : null;
       const isLive = a.state === "LIVE" || a.state === "STOPPED";
 
@@ -1392,10 +1424,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
         if (elapsed > JUMP_DURATION) {
-          /* enter LIVE */
+          /* enter LIVE — use the on-chain entry/liq from /trade/open if
+             present (positive value); otherwise fall back to the current
+             price for entry and the 1/lev formula for liq so the game
+             still works in pure-frontend mode. */
           a.state = "LIVE";
           setGameState("LIVE");
-          a.entry = a.price;
+          a.entry = a.pendingEntry > 0 ? a.pendingEntry : a.price;
+          a.liquidationPrice =
+            a.pendingLiqPrice > 0
+              ? a.pendingLiqPrice
+              : a.entry - a.entry / a.positionLev;
           a.figPrice = a.price;
           a.figPriceVel = 0.08;
           a.smoothDelta = 0;

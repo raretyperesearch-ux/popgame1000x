@@ -160,6 +160,7 @@ async def open_trade(body: OpenTradeRequest):
         house_fee_usdc=house_fee,
         collateral_usdc=collateral,
         entry_price=new_trade.trade.open_price,
+        liquidation_price=new_trade.liquidation_price,
         opened_at=datetime.now(timezone.utc),
         tx_hash=_tx_hash_str(receipt),
     )

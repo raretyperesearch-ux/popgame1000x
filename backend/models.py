@@ -24,6 +24,7 @@ class OpenTradeResponse(BaseModel):
     house_fee_usdc: float
     collateral_usdc: float
     entry_price: float
+    liquidation_price: float
     opened_at: datetime
     tx_hash: str
 
