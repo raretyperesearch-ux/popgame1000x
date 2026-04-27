@@ -404,7 +404,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       // mutually cover each other. Without this, sharp slope changes between
       // adjacent slices leave visible vertical slivers because the skewed
       // parallelograms only kiss at one point per edge.
-      const SLICE_OVERLAP = 4;
+      const SLICE_OVERLAP = 10;
       for (let x = -GRASS_SLICE_W; x < w + GRASS_SLICE_W; x += GRASS_SLICE_W) {
         const leftY = groundYAt(x);
         const rightY = groundYAt(x + GRASS_SLICE_W);

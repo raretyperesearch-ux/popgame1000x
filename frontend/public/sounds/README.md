@@ -1,27 +1,53 @@
-# Game audio (Kenney CC0)
+# Game audio (Kenney CC0 + your own background music)
 
-These sounds are bundled directly from [Kenney.nl](https://kenney.nl) audio packs. All Kenney assets are released under **Creative Commons Zero (CC0)** — public domain, no attribution required, free for any use including commercial.
+Sound effects are bundled from [Kenney.nl](https://kenney.nl) audio packs (Creative Commons Zero — public domain, no attribution required, free for commercial use).
 
 The sound system in `frontend/lib/sounds.ts` references each file by name. Swap any of these for your own files (any Howler-supported format: `.ogg`, `.mp3`, `.wav`, `.m4a`) and update the `DEFS` map in `lib/sounds.ts` if you change the extension.
 
-## What's currently shipped
+## Bundled sound effects
 
 | File | Triggered when | Source |
 |---|---|---|
-| `lever.ogg` | Player pulls the lever to start a trade | Kenney Casino Audio · `chips-handle-3` |
-| `liftoff.ogg` | Liftoff at end of PREPARE → JUMPING | Kenney Sci-Fi Sounds · `spaceEngine_000` |
-| `engine.ogg` | LIVE state (loops while flying) | Kenney Sci-Fi Sounds · `spaceEngineLow_000` |
-| `engine-stop.ogg` | LIVE → STOPPED (parachute deploy) | Kenney Sci-Fi Sounds · `forceField_002` |
-| `chute.ogg` | Parachute opens at stop | Kenney Sci-Fi Sounds · `forceField_000` |
-| `win.ogg` | EOG modal opens with kind="win" | Kenney Music Jingles · `8-Bit/jingles_NES00` |
-| `loss.ogg` | EOG modal opens with kind="loss" | Kenney Music Jingles · `8-Bit/jingles_NES05` |
-| `rekt.ogg` | Liquidation impact (immediate) | Kenney Sci-Fi Sounds · `explosionCrunch_004` |
-| `click.ogg` | Any UI button | Kenney Interface Sounds · `click_004` |
-| `coin.ogg` | Share/Download buttons | Kenney Casino Audio · `chips-collide-1` |
+| `lever.ogg` | Player pulls the lever to start a trade | Kenney Casino · `chips-handle-3` |
+| `liftoff.ogg` | Liftoff at PREPARE → JUMPING | Kenney Music Jingles · `Hit/jingles_HIT00` |
+| `footstep.ogg` | Each step during RUNNING | Kenney Impact · `footstep_grass_000` |
+| `engine.ogg` | (unused — left for swap-back) | Kenney Sci-Fi · `spaceEngineLow_000` |
+| `engine-stop.ogg` | (unused — left for swap-back) | Kenney Sci-Fi · `forceField_002` |
+| `chute.ogg` | Parachute opens at stop | Kenney Casino · `card-fan-2` |
+| `win.ogg` | EOG modal opens with kind="win" | Kenney Music Jingles · `8-Bit/jingles_NES05` |
+| `loss.ogg` | EOG modal opens with kind="loss" | Kenney Music Jingles · `8-Bit/jingles_NES00` |
+| `rekt.ogg` | Liquidation impact (immediate) | Kenney Sci-Fi · `explosionCrunch_004` |
+| `click.ogg` | Any UI button | Kenney Interface · `click_004` |
+| `coin.ogg` | Share / Download buttons | Kenney Casino · `chips-collide-1` |
 
-## Swapping a sound
+## Background music
 
-Want a different vibe?
+`bg-music.ogg` (or `.mp3` — update the extension in `lib/sounds.ts`) plays in a low-volume loop, starting on the first user click anywhere. **Not bundled** — drop in your own track.
+
+### Why no bundled track
+
+Authentic K-pop is copyrighted; CC0 K-pop doesn't really exist. Kenney has zero looping music tracks in any of its packs. So this slot is intentionally empty until you supply something.
+
+### Where to grab a free track
+
+- **[Pixabay Music](https://pixabay.com/music/)** — free for commercial use, no attribution required. Search "kpop", "synth pop", "jpop", "dance pop", "electro pop". Filter by Genre → Pop / Electronic. Click a track → "Free Download" button → you'll get an MP3.
+- **[Free Music Archive](https://freemusicarchive.org/)** — CC-licensed (some attribution required, some not — read each track's license). Genre filters help.
+- **[ccMixter](https://ccmixter.org/)** — Creative Commons remixes and originals. Lots of attribution-required, some CC0.
+- **[Bensound](https://www.bensound.com/)** — free with attribution on the free tier.
+
+### How to add it
+
+1. Download an `.mp3` or `.ogg` file (5 MB or smaller is ideal — gets re-streamed by Howler).
+2. Save it to `frontend/public/sounds/bg-music.ogg` (or `.mp3` — if mp3, change `file: "bg-music.ogg"` to `file: "bg-music.mp3"` in `lib/sounds.ts`).
+3. Reload — the track auto-starts on the first click anywhere on the page.
+
+### Tuning
+
+Default music volume is `0.22` (in `DEFS["bg-music"]`). The 🔊/🔇 toggle in the topbar mutes everything including music.
+
+## Swapping a sound effect
+
+Want a different vibe for any of the SFX above?
 
 1. Browse the original Kenney packs:
    - [Casino Audio](https://kenney.nl/assets/casino-audio)
@@ -30,12 +56,8 @@ Want a different vibe?
    - [Music Jingles](https://kenney.nl/assets/music-jingles) (8-Bit / NES, Pizzicato, Sax, Hit, Steel)
    - [Impact Sounds](https://kenney.nl/assets/impact-sounds)
    - [UI Audio](https://kenney.nl/assets/ui-audio)
-2. Replace the file in this folder, keeping the same filename, OR
+2. Replace the file in this folder keeping the same filename, OR
 3. Use a different filename and update the path in `frontend/lib/sounds.ts` (`DEFS` map).
-
-## Tuning
-
-Per-sound default volumes are in `lib/sounds.ts` (`DEFS`). Master volume is 0.8. Engine loop is intentionally low (0.35) since it plays continuously. The 🔊 / 🔇 toggle in the top bar mutes everything (persisted to `localStorage`).
 
 ## Adding a new sound
 
