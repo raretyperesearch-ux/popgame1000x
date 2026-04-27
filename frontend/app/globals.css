@@ -79,6 +79,30 @@ body::before {
 @media (min-height: 920px) {
   .cabinet { max-height: 900px; }
 }
+/* Landscape phones / tight wide viewports: stage on the left, controls
+   on the right, topbar + history span the top. Uses CSS grid because
+   the underlying DOM is flat. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .cabinet {
+    max-width: none;
+    width: 100vw;
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "topbar  topbar"
+      "history history"
+      "stage   controls";
+  }
+  .cabinet > .topbar { grid-area: topbar; }
+  .cabinet > .history-row { grid-area: history; }
+  .cabinet > .stage { grid-area: stage; border-right: 1px dashed var(--border); border-bottom: none; }
+  .cabinet > .controls { grid-area: controls; padding: 8px 10px; gap: 6px; align-self: stretch; justify-content: center; }
+  .controls .slider-row { gap: 8px; }
+  .controls .slider-value { font-size: 16px; min-width: 42px; }
+  .controls .chip { padding: 5px 0; font-size: 16px; }
+  .controls .action { padding: 8px 0; font-size: 22px; }
+}
 
 /* ============ TOPBAR ============ */
 .topbar {
