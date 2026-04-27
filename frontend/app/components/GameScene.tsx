@@ -55,8 +55,11 @@ const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
 const JUMP_FRAMES = [7, 10, 11];
-const AIR_FRAMES = [11, 12, 13, 8];
-const AIR_FRAME_MS = 115;
+// air-cycle frames split by velocity: jet-up vs hover vs fall
+const AIR_RISING_FRAMES = [10, 8];        // jetting upward
+const AIR_HOVER_FRAMES = [11, 12, 13, 12]; // floating, slight body sway
+const AIR_FALLING_FRAMES = [14, 13];       // diving / face-down
+const AIR_FRAME_MS = 90;                   // tighter cycle for a bit more snap
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
 type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "land" | "fail";
@@ -318,7 +321,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       frameIdx = JUMP_FRAMES[Math.min(JUMP_FRAMES.length - 1, Math.floor(elapsed / 115))];
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
-      frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
+      const phase = Math.floor(elapsed / AIR_FRAME_MS);
+      // pick the frame set from the figure's vertical velocity so the pose
+      // reads as actively jetting up vs floating vs diving
+      const set =
+        a.figPriceVel > 0.04
+          ? AIR_RISING_FRAMES
+          : a.figPriceVel < -0.04
+          ? AIR_FALLING_FRAMES
+          : AIR_HOVER_FRAMES;
+      frameIdx = set[phase % set.length];
     } else if (a.spriteState === "land") {
       const elapsed = time - (a.spriteLandStart || time);
       frameIdx = LAND_FRAMES[Math.min(LAND_FRAMES.length - 1, Math.floor(elapsed / LAND_FRAME_MS))];
@@ -1390,6 +1402,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const loco = a.loco;
         setSpriteState("air", time);
 
+        // subtle vertical sway while hovering — fades out as actual vertical
+        // velocity grows so the bob doesn't fight the rising/falling motion
+        const hoverDamp = Math.max(0, 1 - Math.abs(a.figPriceVel) * 8);
+        a.curBobY = Math.sin(a.frame * 0.13) * 2.6 * hoverDamp;
+
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
         a.smoothDelta = lerp(a.smoothDelta, priceDelta, VELOCITY_LERP * dtNorm);
@@ -1414,10 +1431,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const pnlDollars = pnlPct * a.positionWager;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
-        /* rotation + thrust dust */
+        /* rotation + thrust dust — bigger tilt + faster response so the body
+           visibly cranks back when jetting up and tips forward when diving */
         if (a.smoothDelta > 0.001) {
-          const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * dtNorm);
+          const targetRot = clamp(-a.figPriceVel * 55, -25, 25);
+          a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * 2 * dtNorm);
           if (a.dustParticles.length < DUST_MAX) {
             a.dustParticles.push({
               x: figScreenX - 6 + Math.random() * 5,
@@ -1429,8 +1447,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             });
           }
         } else if (a.smoothDelta < -0.001) {
-          const targetRot = clamp(a.figPriceVel * 45, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, (ROTATION_LERP * 0.7) * dtNorm);
+          const targetRot = clamp(a.figPriceVel * 65, -25, 25);
+          a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * 1.6 * dtNorm);
         } else {
           a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
         }
