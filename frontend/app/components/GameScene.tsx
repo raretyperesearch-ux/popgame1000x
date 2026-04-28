@@ -8,7 +8,11 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import {
+  usePrivy,
+  useWallets,
+  getEmbeddedConnectedWallet,
+} from "@privy-io/react-auth";
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
@@ -179,8 +183,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   },
   ref,
 ) {
-  const { getAccessToken, user } = usePrivy();
-  const walletAddress = user?.wallet?.address;
+  const { getAccessToken } = usePrivy();
+  const { wallets } = useWallets();
+  // Embedded wallet only — matches Topbar/balance/fund flow.
+  const walletAddress = getEmbeddedConnectedWallet(wallets)?.address;
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const figRef = useRef<HTMLDivElement>(null);
