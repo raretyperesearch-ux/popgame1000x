@@ -21,32 +21,30 @@ def _init_privy_client():
     """Best-effort Privy client init. None if env not configured —
     routes that need it will 503 with a clear message via auth.require_user.
 
-    Uses AsyncPrivyAPI (the async variant of the privy-client SDK) since
-    /trade/* handlers await the wallets.rpc calls. PRIVY_AUTH_PRIVATE_KEY
-    is passed via authorization_key= so the SDK auto-signs the
-    privy-authorization-signature header on delegated wallet calls
-    (eth_sendTransaction etc.) — without it Privy rejects them as
-    unauthorized for delegated execution."""
+    AsyncPrivyAPI in privy-client 0.5 does NOT accept authorization_key
+    (only the sync class does, and that subclass auto-signs requests
+    for us). Async users must compute the
+    privy-authorization-signature header per-request — that wiring
+    lives in privy_send.py and reads PRIVY_AUTH_PRIVATE_KEY directly.
+
+    All we use the AsyncPrivyAPI client for here is read-only ops
+    (users.get for wallet lookup, etc.), which only need basic auth
+    via app_id/app_secret."""
     app_id = os.getenv("PRIVY_APP_ID", "")
     app_secret = os.getenv("PRIVY_APP_SECRET", "")
-    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "") or None
+    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
     if not app_id or not app_secret:
         print("• Privy not configured (PRIVY_APP_ID / PRIVY_APP_SECRET missing) — running in single-wallet legacy mode")
         return None
+    if not auth_key:
+        print(
+            "⚠️  PRIVY_AUTH_PRIVATE_KEY missing — delegated tx signing will fail. "
+            "Set the PEM/base64 private key on Railway."
+        )
     try:
         from privy import AsyncPrivyAPI  # type: ignore
-        client = AsyncPrivyAPI(
-            app_id=app_id,
-            app_secret=app_secret,
-            authorization_key=auth_key,
-        )
-        if auth_key:
-            print(f"✓ Privy client initialized for app {app_id} (with auth key)")
-        else:
-            print(
-                f"⚠️  Privy client initialized for app {app_id} but PRIVY_AUTH_PRIVATE_KEY "
-                f"is not set — delegated wallet signing will fail. Configure in Railway."
-            )
+        client = AsyncPrivyAPI(app_id=app_id, app_secret=app_secret)
+        print(f"✓ Privy client initialized for app {app_id} (auth_key={'set' if auth_key else 'MISSING'})")
         return client
     except Exception as e:
         print(f"⚠️  Privy client init failed: {e}")
