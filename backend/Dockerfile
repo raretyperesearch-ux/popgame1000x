@@ -24,4 +24,7 @@ COPY . .
 ENV PORT=8000
 EXPOSE 8000
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT}
+# Exec form with sh -c so $PORT actually expands at runtime — without
+# the shell wrapper, Docker (or Railway's startCommand) passes "$PORT"
+# as a literal string and uvicorn errors with "not a valid integer".
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
