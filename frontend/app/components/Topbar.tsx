@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   usePrivy,
-  useDelegatedActions,
+  useSigners,
   useFundWallet,
 } from "@privy-io/react-auth";
 import { base } from "viem/chains";
@@ -14,9 +14,15 @@ interface TopbarProps {
   onHelpClick: () => void;
 }
 
+/* The Privy signerId is generated when the authorization key's public PEM
+   is registered in the Privy dashboard. It pairs requests from the
+   frontend's addSigners() call with the matching backend's
+   PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
+const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
+
 export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   const { login, logout, authenticated, user } = usePrivy();
-  const { delegateWallet, revokeWallets } = useDelegatedActions();
+  const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const [menuOpen, setMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -56,15 +62,26 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
      - user is authenticated
      - they have an embedded Ethereum wallet
      - delegation hasn't been granted yet
+     - a NEXT_PUBLIC_PRIVY_SIGNER_ID is configured (matches a registered
+       authorization key in the Privy dashboard)
      The Privy modal handles consent UX; the user can decline and
      try again later via the menu. */
   useEffect(() => {
     if (!authenticated || !walletAddress) return;
     if (isDelegated) return;
     if (delegating) return;
+    if (!PRIVY_SIGNER_ID) {
+      console.warn(
+        "[delegate] NEXT_PUBLIC_PRIVY_SIGNER_ID not set — backend cannot sign trades on the user's behalf until this is configured",
+      );
+      return;
+    }
     let cancelled = false;
     setDelegating(true);
-    delegateWallet({ address: walletAddress, chainType: "ethereum" })
+    addSigners({
+      address: walletAddress,
+      signers: [{ signerId: PRIVY_SIGNER_ID }],
+    })
       .catch((e) => console.warn("[delegate] declined or failed:", e))
       .finally(() => {
         if (!cancelled) setDelegating(false);
@@ -72,7 +89,7 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, walletAddress, isDelegated, delegateWallet, delegating]);
+  }, [authenticated, walletAddress, isDelegated, addSigners, delegating]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -118,8 +135,9 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
 
   const onRevoke = async () => {
     setMenuOpen(false);
+    if (!walletAddress) return;
     try {
-      await revokeWallets();
+      await removeSigners({ address: walletAddress });
     } catch (e) {
       console.warn("[delegate] revoke failed:", e);
     }

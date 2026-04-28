@@ -59,7 +59,11 @@ Before deploying, configure the Privy app for delegated signing:
 
    Privy → App Settings → Authorization Keys → "Add key" → paste the
    public PEM. Paste the **private** PEM into Railway as
-   `PRIVY_AUTH_PRIVATE_KEY`.
+   `PRIVY_AUTH_PRIVATE_KEY`. **After saving, copy the auto-generated
+   "Signer ID"** Privy assigns to the registered key — that goes into
+   Vercel as `NEXT_PUBLIC_PRIVY_SIGNER_ID`. Without it, the frontend's
+   `addSigners()` call has no way to pair user delegations with the
+   backend's signing key, and trades fail silently.
 6. **Delegation policy** *(recommended for safety)* — Privy → Policies →
    "New policy" → restrict the authorization key's permissions to:
    - Method: `eth_sendTransaction`
@@ -116,6 +120,7 @@ Before deploying, configure the Privy app for delegated signing:
    |---|---|
    | `NEXT_PUBLIC_API_URL` | `https://YOUR-RAILWAY-URL` *(no trailing slash)* |
    | `NEXT_PUBLIC_PRIVY_APP_ID` | `cmm1yn38100dm0cldx1mcej4t` *(or your own)* |
+   | `NEXT_PUBLIC_PRIVY_SIGNER_ID` | The Signer ID from step 0.5 |
 
 5. Click **Deploy**. After the build finishes, copy the production URL.
 6. Go back to Railway → backend → Variables → update `ALLOWED_ORIGINS`
