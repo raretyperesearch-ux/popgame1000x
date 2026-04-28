@@ -23,7 +23,13 @@ export default function Home() {
   const [pnl, setPnl] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
-  const needsAuthForTrades = Boolean(process.env.NEXT_PUBLIC_API_URL);
+  /* Auth is required when we're talking to a real backend, not for mock or
+     localhost. Without this the auth gate fires login() on every jump in
+     local dev and the character never flies. */
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const isLocalApi =
+    apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
+  const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
 
   const gameRef = useRef<GameSceneHandle>(null);
 
