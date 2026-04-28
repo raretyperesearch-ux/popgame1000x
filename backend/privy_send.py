@@ -27,6 +27,7 @@ import os
 from typing import Any, Optional
 
 import httpx
+from cryptography.hazmat.primitives import serialization
 
 # get_authorization_signature handles canonicalization + ECDSA P-256
 # signing. It's pure, no client deps. We pass it the same fields the
@@ -36,6 +37,48 @@ from privy.lib.authorization_signatures import get_authorization_signature
 
 PRIVY_API_BASE = os.getenv("PRIVY_API_BASE_URL", "https://api.privy.io")
 BASE_CAIP2 = "eip155:8453"
+
+
+def _normalize_auth_key(raw: str) -> str:
+    """Privy's signing helper hardcodes the PKCS8 wrapper:
+
+      -----BEGIN PRIVATE KEY-----
+      <base64 body>
+      -----END PRIVATE KEY-----
+
+    so the value we pass it must be a bare PKCS8 base64 body. Users
+    typically generate the auth key with `openssl ecparam -name
+    secp256r1 -genkey -noout -out k.pem`, which produces an
+    `EC PRIVATE KEY` (sec1) format that mismatches the wrapper and
+    fails with MismatchedTags("PRIVATE KEY", "EC PRIVATE KEY").
+
+    Accept either form, plus a fully-formed PKCS8 PEM, and emit the
+    bare PKCS8 base64 body the SDK expects."""
+    s = raw.strip().replace("\\n", "\n")
+    s = s.replace("wallet-auth:", "")
+
+    # If it's bare base64 (no headers), trust it. The SDK will wrap as
+    # PKCS8 — the user must have generated PKCS8 form for this to work.
+    if "-----BEGIN" not in s:
+        return "".join(s.split())
+
+    # Has PEM headers. Load via cryptography, re-emit as PKCS8, strip.
+    try:
+        key = serialization.load_pem_private_key(s.encode("utf-8"), password=None)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            f"PRIVY_AUTH_PRIVATE_KEY isn't a loadable PEM private key: {e}"
+        )
+    pkcs8_pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    body = "".join(
+        line for line in pkcs8_pem.splitlines()
+        if line and not line.startswith("-----")
+    )
+    return body
 
 
 def _to_hex(v: Any) -> Any:
@@ -97,13 +140,14 @@ async def send_via_privy(
             "Privy client missing app_id/app_secret — can't send tx"
         )
 
-    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
-    if not auth_key:
+    raw_auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
+    if not raw_auth_key:
         raise RuntimeError(
             "PRIVY_AUTH_PRIVATE_KEY not set — cannot sign delegated tx. "
             "Set this on Railway with the PEM private key registered as an "
             "Authorization Key on the Privy dashboard."
         )
+    auth_key = _normalize_auth_key(raw_auth_key)
 
     transaction = _normalize_tx(raw_tx)
     body = {
