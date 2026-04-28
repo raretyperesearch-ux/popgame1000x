@@ -65,19 +65,26 @@ const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
 const JUMP_FRAMES = [7, 10, 11];
-// single calm hover loop — frames 11/12/13 share the same bbox so they
-// don't pop vertically as they cycle. Avoids velocity-driven frame switching
-// which was visibly glitchy as figPriceVel oscillated around the threshold.
-const AIR_FRAMES = [11, 12, 13, 12];
+// "air" = ascending / hovering. Frames 10/11 are upright torso poses.
+// "fall" = descending. Frames 12/13 are the head-first dive poses, which
+// belong on the way down — keeping them in air looked like the character
+// was casually floating during a losing trade.
+const AIR_FRAMES = [10, 11];
 const AIR_FRAME_MS = 150;
+const FALL_FRAMES = [12, 13];
+const FALL_FRAME_MS = 130;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
-type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "land" | "fail";
-const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "land">, number> = {
+type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "fall" | "land" | "fail";
+const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land">, number> = {
   idle: 5,
   crouch: 6,
   fail: 16,
 };
+// Velocity threshold for switching air -> fall during LIVE. Small positive
+// number (not zero) to avoid one-frame flickering as figPriceVel crosses 0
+// from random price jitter.
+const FALL_VEL_THRESHOLD = -0.015;
 const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
@@ -237,6 +244,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteRunStart: 0, // timestamp when run animation started
     spriteJumpStart: 0,
     spriteAirStart: 0,
+    spriteFallStart: 0,
     spriteLandStart: 0,
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
@@ -330,6 +338,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (state === "run") a.spriteRunStart = time ?? performance.now();
         if (state === "jump") a.spriteJumpStart = time ?? performance.now();
         if (state === "air") a.spriteAirStart = time ?? performance.now();
+        if (state === "fall") a.spriteFallStart = time ?? performance.now();
         if (state === "land") a.spriteLandStart = time ?? performance.now();
       }
     },
@@ -354,6 +363,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
       frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
+    } else if (a.spriteState === "fall") {
+      const elapsed = time - (a.spriteFallStart || time);
+      frameIdx = FALL_FRAMES[Math.floor(elapsed / FALL_FRAME_MS) % FALL_FRAMES.length];
     } else if (a.spriteState === "land") {
       const elapsed = time - (a.spriteLandStart || time);
       frameIdx = LAND_FRAMES[Math.min(LAND_FRAMES.length - 1, Math.floor(elapsed / LAND_FRAME_MS))];
@@ -1541,7 +1553,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        setSpriteState("air", time);
+        // Air when ascending or hovering, fall when clearly losing altitude.
+        // Threshold sits below zero so price-jitter wobble around 0 doesn't
+        // flicker the sprite frame-by-frame.
+        setSpriteState(
+          a.figPriceVel < FALL_VEL_THRESHOLD ? "fall" : "air",
+          time,
+        );
         a.curBobY = 0;
 
         /* price delta for physics */
