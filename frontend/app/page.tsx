@@ -190,6 +190,7 @@ export default function Home() {
       <Topbar
         balance={balance}
         onHelpClick={() => setShowHelp(true)}
+        onError={showTradeError}
       />
       <GameScene
         ref={gameRef}

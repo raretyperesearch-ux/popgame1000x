@@ -13,6 +13,7 @@ import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 interface TopbarProps {
   balance: number;
   onHelpClick: () => void;
+  onError?: (msg: string) => void;
 }
 
 /* The Privy signerId is generated when the authorization key's public PEM
@@ -21,7 +22,7 @@ interface TopbarProps {
    PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
 
-export default function Topbar({ balance, onHelpClick }: TopbarProps) {
+export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
   const { login, logout, authenticated, user, ready } = usePrivy();
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
@@ -118,24 +119,39 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
 
   const onDelegate = async () => {
     if (!walletAddress) {
-      console.warn("[delegate] no embedded wallet to delegate");
+      onError?.("Embedded wallet hasn't loaded yet. Wait a sec and retry.");
       return;
     }
     if (!PRIVY_SIGNER_ID) {
-      console.warn(
-        "[delegate] NEXT_PUBLIC_PRIVY_SIGNER_ID not set — backend can't sign trades on the user's behalf",
+      onError?.(
+        "Server signer ID not configured. NEXT_PUBLIC_PRIVY_SIGNER_ID is missing on Vercel.",
       );
       return;
     }
     setMenuOpen(false);
     setDelegating(true);
     try {
-      await addSigners({
-        address: walletAddress,
-        signers: [{ signerId: PRIVY_SIGNER_ID }],
-      });
+      // addSigners is headless for TEE wallets — it shouldn't open a
+      // popup. If it hangs past 15s, something's wrong (signerId not
+      // recognized server-side, wallet proxy not initialized, etc.) —
+      // race against a timeout so the UI can't get stuck on "waiting".
+      await Promise.race([
+        addSigners({
+          address: walletAddress,
+          signers: [{ signerId: PRIVY_SIGNER_ID }],
+        }),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () => rej(new Error("addSigners timed out after 15s — Privy didn't respond. Try refreshing.")),
+            15000,
+          ),
+        ),
+      ]);
+      onError?.("Trading delegated. Try opening a trade now.");
     } catch (e) {
-      console.warn("[delegate] retry declined or failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[delegate] failed:", e);
+      onError?.(`Couldn't enable trading: ${msg}`);
     } finally {
       setDelegating(false);
     }
