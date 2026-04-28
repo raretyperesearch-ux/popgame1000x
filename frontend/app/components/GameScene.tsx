@@ -1566,15 +1566,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        // While airborne: air when ascending/hovering, fall when clearly
-        // losing altitude. Threshold sits below zero so price-jitter
-        // wobble around 0 doesn't flicker the sprite frame-by-frame.
-        // While grounded on the chart line: land sprite (its frames hold
-        // on the last crouched pose, so it reads as "perched" not
-        // "looping").
+        // Airborne: air when ascending/hovering, fall when losing
+        // altitude. Threshold sits below zero so price-jitter wobble
+        // around 0 doesn't flicker the sprite frame-by-frame.
+        // Grounded on the chart line: run, so the figure stays in
+        // motion as the chart scrolls underneath instead of looking
+        // stiff/floating in a static crouched pose.
         setSpriteState(
           loco.grounded
-            ? "land"
+            ? "run"
             : a.figPriceVel < FALL_VEL_THRESHOLD
               ? "fall"
               : "air",
