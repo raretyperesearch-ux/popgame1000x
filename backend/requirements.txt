@@ -4,8 +4,9 @@ pydantic>=2.9,<3
 python-dotenv>=1.0,<2
 websockets>=13,<14
 avantis-trader-sdk
+privy
+httpx
+pyjwt[crypto]>=2.9,<3
 
 # P3 additions:
 # supabase
-# httpx
-# pyjwt

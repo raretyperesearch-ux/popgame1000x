@@ -1,12 +1,13 @@
 # Deploy
 
-End-to-end deploy guide. ~15 minutes once you have the accounts.
+End-to-end deploy guide for the multi-user game. ~30 minutes once you have
+the accounts.
 
 ```
                 ┌─────────────────────┐
                 │ Vercel (frontend)   │
                 │ Next.js auto-build  │
-                │ NEXT_PUBLIC_API_URL │
+                │ Privy login + UI    │
                 └──────────┬──────────┘
                            │  WSS / HTTPS
                            ▼
@@ -14,20 +15,60 @@ End-to-end deploy guide. ~15 minutes once you have the accounts.
                 │ Railway (backend)   │
                 │ FastAPI + uvicorn   │
                 │ Avantis SDK + Lazer │
-                └──────────┬──────────┘
-                           │
-                           ▼
-                  Avantis Lazer (Pyth)
-                  + Base RPC (mainnet)
+                │ Privy delegated sig │
+                └─────┬────────────┬──┘
+                      │            │
+                      ▼            ▼
+            Avantis Lazer    Privy REST API
+            + Base RPC       (signs as user)
 ```
+
+Each player gets their own Privy-managed embedded wallet on Base. When
+they click JUMP, the backend uses Privy's delegated-signer API to sign
+the Avantis trade as that user — no per-trade wallet popup. Players
+fund their own wallets with USDC + a tiny bit of ETH for gas.
 
 ## Prerequisites
 
 - GitHub account with this repo
+- Privy account with this app already configured (app ID
+  `cmm1yn38100dm0cldx1mcej4t` per `frontend/.env.example`)
 - Railway account (https://railway.app) — sign in with GitHub
 - Vercel account (https://vercel.com) — sign in with GitHub
-- A Base mainnet wallet with USDC for the trader (only required for real
-  trade execution; price feed alone needs no wallet)
+
+## 0 — Privy dashboard setup
+
+Before deploying, configure the Privy app for delegated signing:
+
+1. **App ID** — already set; copy it from Privy → App Settings → Basics.
+2. **App secret** — Privy → App Settings → API Keys → "App Secret".
+   Copy this; you'll paste it into Railway as `PRIVY_APP_SECRET`.
+3. **Verification key** — Privy → App Settings → JWKS / Verification Key.
+   Copy the PEM-formatted public key. This is what the backend uses to
+   verify access tokens. Paste into Railway as `PRIVY_VERIFICATION_KEY`.
+4. **Embedded wallets** — Privy → Embedded Wallets → set "Create wallets"
+   to **"all users"** (matches frontend `createOnLogin: "all-users"`).
+5. **Authorization key** — generate locally with:
+
+   ```bash
+   openssl ecparam -name secp256r1 -genkey -noout -out privy-auth.pem
+   openssl ec -in privy-auth.pem -pubout -out privy-auth.pub.pem
+   cat privy-auth.pem        # the private key — Railway env
+   cat privy-auth.pub.pem    # the public key — Privy dashboard
+   ```
+
+   Privy → App Settings → Authorization Keys → "Add key" → paste the
+   public PEM. Paste the **private** PEM into Railway as
+   `PRIVY_AUTH_PRIVATE_KEY`.
+6. **Delegation policy** *(recommended for safety)* — Privy → Policies →
+   "New policy" → restrict the authorization key's permissions to:
+   - Method: `eth_sendTransaction`
+   - Allowed contracts: the Avantis trading contract address on Base
+     (find it in the Avantis docs or extract from a previous trade tx).
+
+   Without a policy, the auth key can sign ANY transaction on behalf of
+   any user who has delegated to your app. The policy locks this down
+   to "place Avantis trades only".
 
 ## 1 — Backend on Railway
 
@@ -39,12 +80,18 @@ End-to-end deploy guide. ~15 minutes once you have the accounts.
 
    | Key | Value | Notes |
    |---|---|---|
-   | `PRIVATE_KEY` | `0x…` | Hex private key for the trader wallet |
-   | `TREASURY_ADDRESS` | `0x…` | House-fee recipient address |
    | `BASE_RPC_URL` | `https://mainnet.base.org` | Or your own Alchemy/Infura RPC |
    | `ALLOWED_ORIGINS` | `https://YOUR-VERCEL-URL.vercel.app` | Comma-sep if multiple. Set after the Vercel deploy. |
+   | `PRIVY_APP_ID` | `cmm1yn38100dm0cldx1mcej4t` | Same as frontend |
+   | `PRIVY_APP_SECRET` | `…` | From step 0.2 above |
+   | `PRIVY_VERIFICATION_KEY` | (PEM) | From step 0.3 above |
+   | `PRIVY_AUTH_PRIVATE_KEY` | (PEM) | From step 0.5 above |
+   | `PRIVY_POLICY_ID` | `…` | From step 0.6 if you created one |
+   | `TREASURY_ADDRESS` | `0x…` | House-fee recipient address |
    | `ETH_LAZER_FEED_ID` | `2` | Optional; only set if Avantis re-numbers |
    | `PRICE_FEED_DISABLE` | (unset) | Set to `1` to skip the FeedClient (testing only) |
+   | `AUTH_DISABLE` | (unset) | Local-dev convenience. Never set in prod. |
+   | `PRIVATE_KEY` | (unset in prod) | Legacy single-wallet env. Leave empty when Privy is configured — falls back to single-wallet only if Privy vars are missing. |
 
 4. Click **Deploy**. Watch the build logs — you should see:
 
@@ -85,21 +132,28 @@ Open the Vercel URL and:
    `{eth_price, timestamp, active_trade}` payloads ~once per second.
 2. The chart should follow the real ETH/USD price from Avantis Lazer.
 3. The race flag on the right edge should track price moves.
-4. Click **JUMP** — the character runs and lifts off. If your wallet
-   has USDC, a real Avantis position opens (you'll see a pending tx in
-   the Railway logs). If not, the catch falls through to optimistic
-   mode and the game still plays for that round (warning logged in the
-   browser console).
+4. Click **Connect** (or whatever the Privy login button reads as) —
+   Privy modal opens. Sign in via email / Google / wallet. You'll get
+   an embedded wallet on Base.
+5. **First-time delegation modal** — once after login, Privy asks you
+   to approve the app to place trades on your behalf. Approve. From
+   here on, jumps fire silently with no further popups.
+6. Click **JUMP**. If your embedded wallet has USDC + a tiny bit of
+   ETH for gas, a real Avantis position opens (you'll see the pending
+   tx in the Railway logs). If your wallet is empty, the funding banner
+   should appear telling you what's missing.
 
 ## Local development
 
-You don't need any of the above for local dev. See the backend
-`.env.example` and `frontend/.env.example`. Quick start:
+For local dev you can skip Privy setup entirely with `AUTH_DISABLE=1`
+and the legacy single-wallet env (your trades come from one wallet
+defined in `.env`). Useful for quickly iterating on game mechanics
+without the full multi-user auth flow.
 
 ```bash
 # Backend
 cd backend && pip install -r requirements.txt
-cp .env.example .env  # fill in PRIVATE_KEY, TREASURY_ADDRESS
+cp .env.example .env  # fill in PRIVATE_KEY, TREASURY_ADDRESS, AUTH_DISABLE=1
 uvicorn main:app --port 8000
 
 # Frontend (separate terminal)
@@ -107,6 +161,11 @@ cd frontend && npm install
 cp .env.example .env.local  # set NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev
 ```
+
+For local dev WITH Privy auth (closer to prod), drop `AUTH_DISABLE` and
+set the Privy vars from step 0 above in `backend/.env`. You'll need to
+log in via Privy in the browser to get a JWT and the backend will
+verify it just like in prod.
 
 The backend's lifespan is decoupled — even if `init_trader()` fails
 (bad/missing key, slow RPC), the price feed still starts, so the chart

@@ -10,7 +10,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       config={{
         loginMethods: ["email", "google", "wallet"],
         embeddedWallets: {
-          ethereum: { createOnLogin: "users-without-wallets" },
+          /* Every player needs a Privy-managed embedded wallet so the
+             backend can sign trades on their behalf via delegated
+             signers. "all-users" guarantees this even when they connect
+             an external wallet like MetaMask. */
+          ethereum: { createOnLogin: "all-users" },
         },
         defaultChain: base,
         supportedChains: [base],
