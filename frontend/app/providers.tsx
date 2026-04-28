@@ -1,7 +1,16 @@
 "use client";
 
 import { PrivyProvider } from "@privy-io/react-auth";
+import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 import { base } from "viem/chains";
+
+/* The shared Privy app has Solana login enabled (used by another game),
+   so users may carry a Solana wallet on their account when they reach
+   us. Without a registered Solana connector, Privy's internal wallet
+   iteration hands the base58 address to viem's hex parser and the page
+   crashes with InvalidAddressError. Registering the connector quiets
+   the SDK without forcing us to support Solana flows in this app. */
+const solanaConnectors = toSolanaWalletConnectors();
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -15,11 +24,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
              signers. "all-users" guarantees this even when they connect
              an external wallet like MetaMask. */
           ethereum: { createOnLogin: "all-users" },
-          /* Explicitly OFF — the game is EVM-only on Base, and a Solana
-             wallet on the user object causes viem to throw
-             InvalidAddressError when other Privy code paths iterate
-             linkedAccounts through hex-only address parsers. */
+          /* This game is EVM-only on Base — don't auto-create a Solana
+             embedded wallet for new logins here. Existing users who
+             have one from the sister Solana game still arrive with it,
+             which is why externalWallets.solana below is wired up. */
           solana: { createOnLogin: "off" },
+        },
+        externalWallets: {
+          solana: { connectors: solanaConnectors },
         },
         defaultChain: base,
         supportedChains: [base],
