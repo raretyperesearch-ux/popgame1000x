@@ -85,18 +85,26 @@ export default function Home() {
       }
       setOpenInFlight(true);
       try {
-        const trade = await openTrade(leverage, wager, getAccessToken);
+        let entryPrice = 0;
+        let liquidationPrice = 0;
+        try {
+          const trade = await openTrade(leverage, wager, getAccessToken);
+          entryPrice = trade.entry_price;
+          liquidationPrice = trade.liquidation_price;
+        } catch (e) {
+          // Backend unreachable / 503 / network error. Don't strand the
+          // player on click — fall through to the jump animation with
+          // entry=0/liq=0; startJump's `pendingEntry > 0 ? ... : a.price`
+          // ternary uses the live chart price and the 1/lev formula as a
+          // graceful fallback. Logging so the dev console makes it clear
+          // the on-chain leg didn't execute.
+          console.warn(
+            "[trade] openTrade failed — game will run in optimistic-only mode for this round:",
+            e,
+          );
+        }
         setBalance((prev) => prev - wager);
-        gameRef.current?.startJump(
-          leverage,
-          wager,
-          trade.entry_price,
-          trade.liquidation_price,
-        );
-      } catch (e) {
-        console.error("openTrade failed:", e);
-        // Stay IDLE; balance is unchanged. A real error banner can come
-        // later — for now the dev console is enough.
+        gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice);
       } finally {
         setOpenInFlight(false);
       }
