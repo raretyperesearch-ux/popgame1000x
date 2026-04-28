@@ -88,7 +88,10 @@ def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
     Base. Caller routes it through send_via_privy.
 
     `amount_usdc` is in human units (e.g., 1000.0 = 1000 USDC). USDC
-    has 6 decimals on Base."""
+    has 6 decimals on Base. We don't include chainId — Privy's
+    wallets.rpc takes the chain via `caip2`, and passing chainId in
+    params.transaction is rejected with `Unrecognized key(s) in
+    object: 'chainId'`."""
     amount_raw = int(round(amount_usdc * (10**USDC_DECIMALS)))
     selector = function_signature_to_4byte_selector("approve(address,uint256)")
     args = encode(["address", "uint256"], [_to_checksum(spender), amount_raw])
@@ -97,5 +100,4 @@ def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
         "to": USDC_BASE_ADDRESS,
         "data": data,
         "value": 0,
-        "chainId": BASE_CHAIN_ID,
     }
