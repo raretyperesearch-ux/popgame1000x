@@ -1057,29 +1057,57 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("DEAD");
     setSpriteState("fail");
     sounds.play("rekt-crash");
-    onHistoryPush({ amt: -a.positionWager, win: false });
-    // Settle on-chain in the background. Optimistic visuals continue —
-    // result is logged for now; reconciling the EOG modal with real
-    // net_pnl_usdc is a follow-up.
-    forceCloseTrade()
-      .then((res) =>
-        console.log("forceCloseTrade settled:", res.net_pnl_usdc, res.tx_hash),
-      )
-      .catch((e) => console.error("forceCloseTrade failed:", e));
+
+    // Snapshot — anim refs can mutate before the async settle resolves.
+    const positionWager = a.positionWager;
+    const positionLev = a.positionLev;
+    const entry = a.entry;
+    const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
-    // brief pause so the splat animation reads, then show modal
-    setTimeout(() => {
+    const pnlDollarsOptimistic = -positionWager; // liq = full collateral loss
+
+    const settleAndShow = (
+      pnlDollars: number,
+      pnlPct: number,
+      entryPrice: number,
+      exitPrice: number | null,
+    ) => {
+      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
       setEndOfGame({
         kind: "rekt",
-        pnlDollars: -a.positionWager,
-        pnlPct: -1,
-        entry: a.entry,
-        exit: null,
-        boost: a.positionLev,
-        wager: a.positionWager,
+        pnlDollars,
+        pnlPct,
+        entry: entryPrice,
+        exit: exitPrice,
+        boost: positionLev,
+        wager: positionWager,
         durationSeconds,
       });
-    }, 900);
+    };
+
+    // Race on-chain settle against a min descent-animation delay so the
+    // modal opens only after the splat reads visually AND we have real
+    // PnL (or a clear fallback if the backend is unreachable).
+    const minDelay = new Promise<void>((r) => setTimeout(r, 900));
+    Promise.all([
+      forceCloseTrade()
+        .then((res) => ({ ok: true as const, res }))
+        .catch((e) => {
+          console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
+          return { ok: false as const };
+        }),
+      minDelay,
+    ]).then(([result]) => {
+      if (result.ok) {
+        const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
+        const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
+        const pnlDollars = result.res.net_pnl_usdc;
+        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : -1;
+        settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
+      } else {
+        settleAndShow(pnlDollarsOptimistic, -1, entry, null);
+      }
+    });
   }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
 
   /* ============ STOP TRADE ============ */
@@ -1090,36 +1118,65 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("STOPPED");
     sounds.play("deploy-chute");
     if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
-    // Settle on-chain in the background. Visual PnL continues with the
-    // optimistic local calc below — real net_pnl_usdc reconciliation is
-    // a follow-up.
-    closeTrade()
-      .then((res) =>
-        console.log("closeTrade settled:", res.net_pnl_usdc, res.tx_hash),
-      )
-      .catch((e) => console.error("closeTrade failed:", e));
-    const move = (a.price - a.entry) / a.entry;
-    const pnlPct = move * a.positionLev;
-    const pnlDollars = pnlPct * a.positionWager;
-    setBalance((prev: number) => prev + a.positionWager + pnlDollars);
     setSpriteState("land");
-    onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
-    const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
+
+    // Snapshot — anim refs can mutate before the async settle resolves.
+    const positionWager = a.positionWager;
+    const positionLev = a.positionLev;
+    const entry = a.entry;
+    const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
-    // wait for parachute descent to settle before showing modal
-    setTimeout(() => {
+
+    // Optimistic fallback PnL based on the live chart price.
+    const moveOptimistic = (exitOptimistic - entry) / (entry || 1);
+    const pnlPctOptimistic = moveOptimistic * positionLev;
+    const pnlDollarsOptimistic = pnlPctOptimistic * positionWager;
+
+    const settleAndShow = (
+      pnlDollars: number,
+      pnlPct: number,
+      entryPrice: number,
+      exitPrice: number,
+    ) => {
+      setBalance((prev: number) => prev + positionWager + pnlDollars);
+      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+      const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       setEndOfGame({
         kind,
         pnlDollars,
         pnlPct,
-        entry: a.entry,
-        exit: a.price,
-        boost: a.positionLev,
-        wager: a.positionWager,
+        entry: entryPrice,
+        exit: exitPrice,
+        boost: positionLev,
+        wager: positionWager,
         durationSeconds,
       });
-    }, 900);
+    };
+
+    // Race the on-chain close against the parachute descent. Modal opens
+    // when both finish — real net_pnl_usdc when available, optimistic
+    // local calc when backend is unreachable.
+    const minDelay = new Promise<void>((r) => setTimeout(r, 900));
+    Promise.all([
+      closeTrade()
+        .then((res) => ({ ok: true as const, res }))
+        .catch((e) => {
+          console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
+          return { ok: false as const };
+        }),
+      minDelay,
+    ]).then(([result]) => {
+      if (result.ok) {
+        const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
+        const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
+        const pnlDollars = result.res.net_pnl_usdc;
+        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : 0;
+        settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
+      } else {
+        settleAndShow(pnlDollarsOptimistic, pnlPctOptimistic, entry, exitOptimistic);
+      }
+    });
   }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
 
   const closeEndOfGame = useCallback(() => {

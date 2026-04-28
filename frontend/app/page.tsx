@@ -8,7 +8,7 @@ import GameScene, { type GameSceneHandle } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { openTrade } from "@/lib/api";
+import { getBalance, openTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
@@ -32,6 +32,27 @@ export default function Home() {
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
 
   const gameRef = useRef<GameSceneHandle>(null);
+
+  /* Balance refresh: pulls the real wallet USDC from /balance whenever
+     the game returns to IDLE (mount + after each trade settles via
+     reset()). On-chain balance becomes source of truth at idle; the
+     in-flight optimistic local balance still drives wager-deduct/PnL-add
+     during a round. Backend unreachable → keep local balance. */
+  useEffect(() => {
+    if (gameState !== "IDLE") return;
+    let cancelled = false;
+    getBalance(getAccessToken)
+      .then((res) => {
+        if (cancelled) return;
+        setBalance(res.usdc_balance);
+      })
+      .catch((e) => {
+        console.warn("[balance] getBalance failed — keeping local balance:", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameState, getAccessToken]);
 
   /* first-launch help overlay */
   useEffect(() => {
@@ -145,7 +166,7 @@ export default function Home() {
         setGameState={setGameState}
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
-        pnlReadout={<PnLReadout pnlDollars={gameState === "LIVE" ? pnl : null} />}
+        pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
       <Controls
