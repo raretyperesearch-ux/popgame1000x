@@ -26,6 +26,13 @@ export default function Home() {
   const [pnl, setPnl] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTradeError = useCallback((msg: string) => {
+    setTradeError(msg);
+    if (tradeErrorTimerRef.current) clearTimeout(tradeErrorTimerRef.current);
+    tradeErrorTimerRef.current = setTimeout(() => setTradeError(null), 6000);
+  }, []);
   /* Auth is required when we're talking to a real backend, not for mock or
      localhost. Without this the auth gate fires login() on every jump in
      local dev and the character never flies. */
@@ -111,24 +118,41 @@ export default function Home() {
       try {
         let entryPrice = 0;
         let liquidationPrice = 0;
+        let tradeOk = true;
         try {
           const trade = await openTrade(leverage, wager, getAccessToken, walletAddress);
           entryPrice = trade.entry_price;
           liquidationPrice = trade.liquidation_price;
         } catch (e) {
-          // Backend unreachable / 503 / network error. Don't strand the
-          // player on click — fall through to the jump animation with
-          // entry=0/liq=0; startJump's `pendingEntry > 0 ? ... : a.price`
-          // ternary uses the live chart price and the 1/lev formula as a
-          // graceful fallback. Logging so the dev console makes it clear
-          // the on-chain leg didn't execute.
-          console.warn(
-            "[trade] openTrade failed — game will run in optimistic-only mode for this round:",
-            e,
-          );
+          tradeOk = false;
+          // apiFetch's "API <status>: <body>" format — pull the JSON
+          // detail out so we can show something readable.
+          const raw = e instanceof Error ? e.message : String(e);
+          const statusMatch = raw.match(/^API (\d+):/);
+          const status = statusMatch ? Number(statusMatch[1]) : 0;
+          let detail = raw;
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
+              if (parsed.detail) detail = parsed.detail;
+            } catch { /* fall through */ }
+          }
+          if (status === 402) {
+            // Gas pre-flight. The backend message is already actionable;
+            // surface it verbatim.
+            showTradeError(detail);
+          } else if (status === 409) {
+            showTradeError("You already have an open trade on Avantis. Close it first.");
+          } else {
+            showTradeError(`Trade didn't land: ${detail.slice(0, 140)}`);
+          }
+          console.warn("[trade] openTrade failed:", e);
         }
-        setBalance((prev) => prev - wager);
-        gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice);
+        if (tradeOk) {
+          setBalance((prev) => prev - wager);
+          gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice);
+        }
       } finally {
         setOpenInFlight(false);
       }
@@ -183,6 +207,11 @@ export default function Home() {
         onAction={handleAction}
       />
       <HelpOverlay show={showHelp} onClose={handleCloseHelp} />
+      {tradeError && (
+        <div className="trade-error-banner" role="alert" onClick={() => setTradeError(null)}>
+          {tradeError}
+        </div>
+      )}
     </div>
   );
 }

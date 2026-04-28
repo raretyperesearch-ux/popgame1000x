@@ -21,6 +21,11 @@ from eth_utils import function_signature_to_4byte_selector
 USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 USDC_DECIMALS = 6
 BASE_CHAIN_ID = 8453
+# Conservative floor for "can probably cover an approval + an open + a
+# close on Base". An Avantis open is ~250-400k gas at ~0.01-0.05 gwei
+# on Base (very cheap), so 0.0005 ETH is plenty of cushion. Tune up if
+# users start hitting the gate.
+MIN_GAS_ETH_WEI = int(0.0005 * 10**18)
 
 
 def _to_checksum(addr: str) -> str:
