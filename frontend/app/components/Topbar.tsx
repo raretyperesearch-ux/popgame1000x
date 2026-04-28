@@ -29,6 +29,11 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [delegating, setDelegating] = useState(false);
+  // Set to true after addSigners returns ok in the same session, in
+  // case Privy's user.linkedAccounts hasn't refreshed yet — the
+  // wallet's `delegated: boolean` field is the OLD delegateAction
+  // signal and may not flip for the new useSigners flow.
+  const [locallyDelegated, setLocallyDelegated] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMuted(sounds.isMuted()); }, []);
@@ -52,10 +57,13 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
     ? walletAddress.slice(2, 4).toUpperCase()
     : "•";
 
-  /* `delegated: true` lives on the linked-account wallet entry once the
-     user has approved the addSigners / delegateWallet flow. We use this
-     to know whether the backend can sign trades on their behalf. */
-  const isDelegated = Boolean(
+  /* `delegated: true` is the LEGACY delegateAction flag — it's not set
+     by the new useSigners session-signer flow on TEE wallets. We treat
+     it as one signal among others: a true value here means definitively
+     delegated; a false value is inconclusive, so we fall back to the
+     locallyDelegated flag set in onDelegate after a successful
+     addSigners call. */
+  const linkedSaysDelegated = Boolean(
     user?.linkedAccounts?.some(
       (a) =>
         a.type === "wallet" &&
@@ -65,6 +73,7 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
         (a as unknown as { delegated?: boolean }).delegated === true,
     ),
   );
+  const isDelegated = linkedSaysDelegated || locallyDelegated;
 
   /* One-time delegation prompt after login. Fires only when:
      - user is authenticated
@@ -135,7 +144,7 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
       // popup. If it hangs past 15s, something's wrong (signerId not
       // recognized server-side, wallet proxy not initialized, etc.) —
       // race against a timeout so the UI can't get stuck on "waiting".
-      await Promise.race([
+      const result = await Promise.race([
         addSigners({
           address: walletAddress,
           signers: [{ signerId: PRIVY_SIGNER_ID }],
@@ -147,7 +156,12 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
           ),
         ),
       ]);
-      onError?.("Trading delegated. Try opening a trade now.");
+      // Dump the result so we can verify in DevTools console exactly
+      // which signer Privy registered. Pinpoints SIGNER_ID env mismatch
+      // vs other failure modes from one click.
+      console.log("[delegate] addSigners ok. signerId we sent:", PRIVY_SIGNER_ID, "result:", result);
+      setLocallyDelegated(true);
+      onError?.(`Trading delegated. Signer: ${PRIVY_SIGNER_ID.slice(0, 8)}…`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("[delegate] failed:", e);
