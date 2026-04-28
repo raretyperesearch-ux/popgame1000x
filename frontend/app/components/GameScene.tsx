@@ -49,11 +49,11 @@ const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
 const GRASS_SLICE_W = 16;
-const WATER_SHELF_TOP_PCT = 0.8;
+const WATER_SHELF_TOP_PCT = 0.68;
 const WATER_SURFACE_SRC_PCT = 0.34;
-const WATER_SURFACE_DRAW_PCT = 0.42;
+const WATER_SURFACE_DRAW_PCT = 0.3;
 // foam crests extend a few px up into the cliff for a wet-edge blend
-const WATER_FOAM_OVERLAP = 4;
+const WATER_FOAM_OVERLAP = 6;
 const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
@@ -946,6 +946,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
+        const waterBack = ctx.createLinearGradient(0, shelfTop - WATER_FOAM_OVERLAP, 0, h);
+        waterBack.addColorStop(0, "#073845");
+        waterBack.addColorStop(0.34, "#062a35");
+        waterBack.addColorStop(1, "#03141c");
+        ctx.fillStyle = waterBack;
+        ctx.fillRect(0, Math.round(shelfTop - WATER_FOAM_OVERLAP), w, Math.ceil(shelfH + WATER_FOAM_OVERLAP + 2));
         for (let x = -drift - tileW; x < w + tileW; x += tileW) {
           ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
         }

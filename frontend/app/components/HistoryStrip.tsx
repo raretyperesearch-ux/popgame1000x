@@ -18,7 +18,7 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
       {slots.map((h, i) => {
         if (!h) {
           return (
-            <span key={i} className="h-tag">
+            <span key={i} className="h-tag empty">
               &mdash;
             </span>
           );

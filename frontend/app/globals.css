@@ -203,11 +203,24 @@ body::before {
   letter-spacing: 1px;
 }
 .h-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 36px;
+  height: 28px;
   font-size: 14px;
-  padding: 2px 6px;
+  padding: 0 7px;
   border: 1px solid var(--border);
   color: var(--muted);
   letter-spacing: 1px;
+  line-height: 1;
+  transform: none;
+}
+.h-tag.empty {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
 }
 .h-tag.win {
   color: var(--green);
