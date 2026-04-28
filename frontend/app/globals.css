@@ -444,6 +444,33 @@ body::before {
   box-shadow: 0 0 30px rgba(255,95,86,0.4);
 }
 
+/* Trade error toast — clickable to dismiss, auto-clears after ~6s.
+   Pinned to the top of the cabinet so it's visible immediately on
+   trade failure (gas missing, allowance, etc). */
+.trade-error-banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-body);
+  border: 2px solid var(--red);
+  color: var(--red);
+  padding: 10px 14px;
+  max-width: 88%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(255,95,86,0.35);
+  cursor: pointer;
+  z-index: 20;
+  animation: trade-error-in 0.18s ease-out;
+}
+@keyframes trade-error-in {
+  from { transform: translate(-50%, -8px); opacity: 0; }
+  to   { transform: translate(-50%, 0); opacity: 1; }
+}
+
 /* ============ CONTROLS ============ */
 .controls {
   padding: 4px 12px 5px;

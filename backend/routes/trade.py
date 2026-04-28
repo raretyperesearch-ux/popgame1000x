@@ -32,7 +32,7 @@ from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 import auth
 from auth import AuthedUser, require_user
 from privy_send import send_via_privy
-from usdc_approval import build_usdc_approval_tx, get_avantis_trading_address
+from usdc_approval import build_usdc_approval_tx, get_avantis_trading_address, MIN_GAS_ETH_WEI
 from models import (
     OpenTradeRequest,
     OpenTradeResponse,
@@ -164,6 +164,28 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
             409,
             f"trade already open (index {existing[0].trade.trade_index}) — close first",
         )
+
+    # Pre-flight: embedded wallet must have ETH on Base for gas. Without
+    # it the Privy eth_sendTransaction below would fail with an opaque
+    # Privy error and the user wouldn't know why their trade silently
+    # didn't execute (balance reverts after settle is the only tell).
+    # Skip for legacy single-wallet — that signer pays its own gas and
+    # is a dev concern, not user-facing.
+    if not _is_legacy_user(user):
+        try:
+            eth_wei = await client.async_web3.eth.get_balance(user.address)
+        except Exception:  # noqa: BLE001
+            try:
+                eth_wei = client.web3.eth.get_balance(user.address)
+            except Exception:  # noqa: BLE001
+                eth_wei = MIN_GAS_ETH_WEI  # fail open — let Privy try
+        if eth_wei < MIN_GAS_ETH_WEI:
+            raise HTTPException(
+                402,
+                "Embedded wallet needs ETH on Base for gas. "
+                "Open Fund -> ETH (gas) and add a small amount (~$0.50 worth) "
+                "before trading.",
+            )
 
     house_fee = calculate_house_fee(body.wager_usdc)
     collateral = round(body.wager_usdc - house_fee, 4)
