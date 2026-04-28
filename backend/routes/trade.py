@@ -150,11 +150,37 @@ async def _poll_for_trade(client: TraderClient, address: str, *, expect_present:
     return trades
 
 
+_PRIVY_SEND_TIMEOUT_S = 20.0
+
+
 async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
-    """Route an Avantis-built tx through Privy for user-scoped signing."""
+    """Route an Avantis-built tx through Privy for user-scoped signing.
+
+    Bounded with a hard timeout — Privy's RPC has been seen to hang
+    indefinitely in some edge cases (delegation not propagated, signer
+    quorum not ready, Privy backend slow). Without the bound, the
+    request would sit past Railway's edge timeout and the browser sees
+    the connection drop as a generic "Failed to fetch" with no
+    actionable detail."""
     if auth._privy_client is None:
         raise HTTPException(503, "Privy client not initialized for user-scoped trades")
-    return await send_via_privy(auth._privy_client, user.wallet_id, raw_tx)
+    try:
+        return await asyncio.wait_for(
+            send_via_privy(auth._privy_client, user.wallet_id, raw_tx),
+            timeout=_PRIVY_SEND_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            504,
+            "Privy signer didn't respond in 20s. Most common cause: the wallet "
+            "hasn't been delegated yet — open the avatar menu and accept the "
+            "delegation prompt, then retry.",
+        )
+    except Exception as e:  # noqa: BLE001
+        # Privy errors carry useful messages (e.g. "insufficient funds for
+        # gas") that the user can act on. Surface them verbatim under a
+        # 502 so the frontend toast shows something specific.
+        raise HTTPException(502, f"Privy signer rejected the tx: {e}")
 
 
 @router.post("/open", response_model=OpenTradeResponse)
