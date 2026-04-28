@@ -1519,6 +1519,20 @@ body::before {
   background: rgba(255, 95, 86, 0.12);
   color: #ff8a82;
 }
+.user-menu-item.primary {
+  color: #ffd47e;
+  background: rgba(255, 153, 51, 0.08);
+  border: 1px solid rgba(255, 153, 51, 0.35);
+  margin: 4px 0;
+}
+.user-menu-item.primary:hover {
+  background: rgba(255, 153, 51, 0.16);
+  color: #ffe7b8;
+}
+.user-menu-item.primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 
 /* ============ MUTE TOGGLE ============ */
 .mute-btn {

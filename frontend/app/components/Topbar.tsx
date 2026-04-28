@@ -116,6 +116,31 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     };
   }, [menuOpen]);
 
+  const onDelegate = async () => {
+    if (!walletAddress) {
+      console.warn("[delegate] no embedded wallet to delegate");
+      return;
+    }
+    if (!PRIVY_SIGNER_ID) {
+      console.warn(
+        "[delegate] NEXT_PUBLIC_PRIVY_SIGNER_ID not set — backend can't sign trades on the user's behalf",
+      );
+      return;
+    }
+    setMenuOpen(false);
+    setDelegating(true);
+    try {
+      await addSigners({
+        address: walletAddress,
+        signers: [{ signerId: PRIVY_SIGNER_ID }],
+      });
+    } catch (e) {
+      console.warn("[delegate] retry declined or failed:", e);
+    } finally {
+      setDelegating(false);
+    }
+  };
+
   const copyAddress = async () => {
     if (!walletAddress) return;
     try { await navigator.clipboard.writeText(walletAddress); } catch { /* noop */ }
@@ -199,6 +224,16 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
                       {isDelegated ? "trading delegated ✓" : "delegation pending"}
                     </div>
                   </div>
+                  {!isDelegated && (
+                    <button
+                      className="user-menu-item primary"
+                      role="menuitem"
+                      onClick={() => { sounds.play("ui-click"); onDelegate(); }}
+                      disabled={delegating}
+                    >
+                      {delegating ? "waiting for popup…" : "enable trading"}
+                    </button>
+                  )}
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
                   </button>
