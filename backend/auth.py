@@ -29,6 +29,23 @@ _PRIVY_APP_ID = os.getenv("PRIVY_APP_ID", "")
 _PRIVY_APP_SECRET = os.getenv("PRIVY_APP_SECRET", "")
 _PRIVY_AUTH_PRIVATE_KEY = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
 _PRIVY_VERIFICATION_KEY = os.getenv("PRIVY_VERIFICATION_KEY", "")  # JWKS PEM
+
+
+def _normalize_pem(key: str) -> str:
+    """Accept the verification key in any of the forms Privy/Railway hands out:
+    real PEM with newlines, PEM with literal `\\n`, or the bare base64 SPKI
+    body with no headers. Returns a PEM string PyJWT can load."""
+    if not key:
+        return key
+    k = key.strip().replace("\\n", "\n")
+    if "-----BEGIN" in k:
+        return k
+    body = "".join(k.split())
+    wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"-----BEGIN PUBLIC KEY-----\n{wrapped}\n-----END PUBLIC KEY-----\n"
+
+
+_PRIVY_VERIFICATION_KEY = _normalize_pem(_PRIVY_VERIFICATION_KEY)
 _AUTH_DISABLE = os.getenv("AUTH_DISABLE", "").lower() in ("1", "true", "yes")
 
 _JWT_AUDIENCE = _PRIVY_APP_ID

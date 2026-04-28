@@ -44,8 +44,10 @@ Before deploying, configure the Privy app for delegated signing:
 2. **App secret** — Privy → App Settings → API Keys → "App Secret".
    Copy this; you'll paste it into Railway as `PRIVY_APP_SECRET`.
 3. **Verification key** — Privy → App Settings → JWKS / Verification Key.
-   Copy the PEM-formatted public key. This is what the backend uses to
-   verify access tokens. Paste into Railway as `PRIVY_VERIFICATION_KEY`.
+   Copy the public key. The backend accepts either the full PEM
+   (`-----BEGIN PUBLIC KEY-----` …) or just the inner base64 body — both
+   work, so don't worry if Railway's env UI strips the header lines.
+   Paste into Railway as `PRIVY_VERIFICATION_KEY`.
 4. **Embedded wallets** — Privy → Embedded Wallets → set "Create wallets"
    to **"all users"** (matches frontend `createOnLogin: "all-users"`).
 5. **Authorization key** — generate locally with:
