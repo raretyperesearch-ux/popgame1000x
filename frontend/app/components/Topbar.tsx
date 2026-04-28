@@ -21,7 +21,7 @@ interface TopbarProps {
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
 
 export default function Topbar({ balance, onHelpClick }: TopbarProps) {
-  const { login, logout, authenticated, user } = usePrivy();
+  const { login, logout, authenticated, user, ready } = usePrivy();
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
      The Privy modal handles consent UX; the user can decline and
      try again later via the menu. */
   useEffect(() => {
-    if (!authenticated || !walletAddress) return;
+    if (!ready || !authenticated || !walletAddress) return;
     if (isDelegated) return;
     if (delegating) return;
     if (!PRIVY_SIGNER_ID) {
@@ -89,7 +89,7 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, walletAddress, isDelegated, addSigners, delegating]);
+  }, [ready, authenticated, walletAddress, isDelegated, addSigners, delegating]);
 
   useEffect(() => {
     if (!menuOpen) return;
