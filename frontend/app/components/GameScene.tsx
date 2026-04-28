@@ -202,6 +202,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     price: 3500,
     renderPrice: 3500,
     prevPrice: 3500,
+    lastPriceShown: 0, // last value pushed to setPriceDisplay; gates re-render
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
     terrainSeed: Math.random() * Math.PI * 2,
@@ -1286,8 +1287,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
       }
 
-      /* update price display (throttled) */
-      if (a.frame % 4 === 0) setPriceDisplay("ETH $" + a.price.toFixed(2));
+      /* update price display — refresh every frame so the topbar text
+         and the canvas's per-frame chart price label can't drift apart
+         visually (the old `frame % 4` throttle made the two numbers
+         disagree by a few cents during fast moves, which looked like
+         the PnL math was glitching). */
+      if (a.lastPriceShown !== a.price) {
+        setPriceDisplay("ETH $" + a.price.toFixed(2));
+        a.lastPriceShown = a.price;
+      }
 
       /* compute figScreenX and pointSpacing */
       const figScreenX = a.stageW * FIG_X_PCT;
@@ -1628,13 +1636,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
         }
 
-        /* position figure */
+        /* position figure — clamp the rendered Y to terrain so the
+           sprite never clips below the chart line. We don't touch
+           a.figPrice (PnL math reads a.price vs a.entry, never
+           figPrice), so this is purely visual. */
         if (priceToY) {
-          const figY = priceToY(a.figPrice);
+          const groundYNow = getTerrainY(figWorldX);
+          const rawFigY = priceToY(a.figPrice);
+          const figY = Math.min(rawFigY, groundYNow - 4);
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
-          const groundY = getTerrainY(figWorldX);
+          const groundY = groundYNow;
           // Ground contact during LIVE: pin the character to the chart
           // line and zero downward velocity so gravity doesn't keep it
           // below terrain frame after frame. The trade STAYS LIVE — it
