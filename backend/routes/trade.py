@@ -32,7 +32,12 @@ from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 import auth
 from auth import AuthedUser, require_user
 from privy_send import send_via_privy
-from usdc_approval import build_usdc_approval_tx, get_avantis_trading_address, MIN_GAS_ETH_WEI
+from usdc_approval import (
+    build_usdc_approval_tx,
+    get_avantis_trading_address,
+    get_eth_balance_wei,
+    MIN_GAS_ETH_WEI,
+)
 from models import (
     OpenTradeRequest,
     OpenTradeResponse,
@@ -49,7 +54,8 @@ _TREASURY_ADDRESS = os.getenv("TREASURY_ADDRESS")
 _PAIR = "ETH/USD"
 _USDC_APPROVAL_AMOUNT = 1000.0
 _RECEIPT_POLL_INTERVAL = 1.0
-_RECEIPT_POLL_MAX_TRIES = 30  # ~30 s max wait for tx confirmation
+_RECEIPT_POLL_MAX_TRIES = 20  # ~20 s; Railway's request timeout is 60s, must
+                              # leave headroom for approval + open + this poll
 
 _trader_client: Optional[TraderClient] = None
 _eth_pair_index: Optional[int] = None
@@ -167,18 +173,17 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
 
     # Pre-flight: embedded wallet must have ETH on Base for gas. Without
     # it the Privy eth_sendTransaction below would fail with an opaque
-    # Privy error and the user wouldn't know why their trade silently
-    # didn't execute (balance reverts after settle is the only tell).
-    # Skip for legacy single-wallet — that signer pays its own gas and
-    # is a dev concern, not user-facing.
+    # Privy error after a long delay (often as a "Failed to fetch" if
+    # the timeout exceeds Railway's 60s window). Direct JSON-RPC call
+    # so we don't depend on the SDK's web3 attribute path. Skip for
+    # legacy single-wallet — that signer pays its own gas and is a dev
+    # concern, not user-facing.
     if not _is_legacy_user(user):
         try:
-            eth_wei = await client.async_web3.eth.get_balance(user.address)
-        except Exception:  # noqa: BLE001
-            try:
-                eth_wei = client.web3.eth.get_balance(user.address)
-            except Exception:  # noqa: BLE001
-                eth_wei = MIN_GAS_ETH_WEI  # fail open — let Privy try
+            eth_wei = await get_eth_balance_wei(user.address)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trade] gas pre-flight RPC failed, allowing through: {e}")
+            eth_wei = MIN_GAS_ETH_WEI
         if eth_wei < MIN_GAS_ETH_WEI:
             raise HTTPException(
                 402,

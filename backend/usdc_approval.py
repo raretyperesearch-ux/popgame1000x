@@ -12,8 +12,10 @@ USDC on Base mainnet (chain id 8453) is the canonical 6-decimal token
 at 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913.
 """
 
+import os
 from typing import Any
 
+import httpx
 from eth_abi import encode
 from eth_utils import function_signature_to_4byte_selector
 
@@ -32,6 +34,29 @@ def _to_checksum(addr: str) -> str:
     """eth_utils.to_checksum_address without importing it directly to keep
     deps slim — Privy/web3 accept lowercase too, so we just normalize."""
     return addr if addr.startswith("0x") else f"0x{addr}"
+
+
+async def get_eth_balance_wei(address: str) -> int:
+    """Read native ETH balance for an address on Base via direct JSON-RPC.
+
+    Bypasses the Avantis SDK because its web3 attribute path varies across
+    versions and we'd rather fail loud than fail-open on a critical
+    pre-flight check. BASE_RPC_URL is the same env the SDK reads."""
+    rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getBalance",
+        "params": [_to_checksum(address), "latest"],
+    }
+    async with httpx.AsyncClient(timeout=5.0) as ax:
+        r = await ax.post(rpc_url, json=payload)
+        r.raise_for_status()
+        body = r.json()
+    result = body.get("result")
+    if not isinstance(result, str) or not result.startswith("0x"):
+        raise RuntimeError(f"unexpected eth_getBalance response: {body}")
+    return int(result, 16)
 
 
 def get_avantis_trading_address(client: Any) -> str:
