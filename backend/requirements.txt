@@ -7,6 +7,10 @@ avantis-trader-sdk
 privy-client
 httpx
 pyjwt[crypto]>=2.9,<3
+# pulled in transitively via web3 inside avantis-trader-sdk, listed
+# here because usdc_approval.py imports them directly.
+eth-abi
+eth-utils
 
 # P3 additions:
 # supabase

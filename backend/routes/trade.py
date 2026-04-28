@@ -32,6 +32,7 @@ from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 import auth
 from auth import AuthedUser, require_user
 from privy_send import send_via_privy
+from usdc_approval import build_usdc_approval_tx, get_avantis_trading_address
 from models import (
     OpenTradeRequest,
     OpenTradeResponse,
@@ -172,29 +173,30 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
     allowance = await client.get_usdc_allowance_for_trading(user.address)
     if allowance < collateral:
         # Approve via the user's wallet — same Privy relay path as the
-        # trade itself. One-time per user (or until they revoke / their
-        # allowance is consumed).
-        approval_tx = await client.build_usdc_approval_tx_for_trading(
-            user.address, _USDC_APPROVAL_AMOUNT
-        ) if hasattr(client, "build_usdc_approval_tx_for_trading") else None
-        if approval_tx is None:
-            # SDK doesn't expose the build helper publicly — fall back
-            # to its mutating method only valid under legacy single-wallet.
-            if _is_legacy_user(user):
-                await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
+        # trade itself. One-time per user (or until their allowance is
+        # consumed). The SDK's build_*_approval_tx helper isn't public,
+        # so for multi-user we construct the ERC-20 approve(spender,
+        # amount) calldata manually; legacy single-wallet keeps the
+        # SDK's mutating helper.
+        if _is_legacy_user(user):
+            await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
+        else:
+            spender = get_avantis_trading_address(client)
+            approval_tx = build_usdc_approval_tx(spender, _USDC_APPROVAL_AMOUNT)
+            _ = await _send_user_tx(user, approval_tx)
+            # Wait for the approval to land before opening — otherwise
+            # build_trade_open_tx would simulate against pre-approval
+            # state and revert. Poll allowance instead of fixed sleep so
+            # we don't burn time on fast networks or under-wait on slow.
+            for _ in range(15):
+                await asyncio.sleep(1.0)
+                if (await client.get_usdc_allowance_for_trading(user.address)) >= collateral:
+                    break
             else:
                 raise HTTPException(
-                    501,
-                    "USDC approval helper unavailable in SDK; user must approve via frontend",
+                    504,
+                    "USDC approval tx broadcast but allowance didn't land in 15s",
                 )
-        else:
-            if _is_legacy_user(user):
-                receipt = await client.sign_and_get_receipt(approval_tx)
-                _ = _tx_hash_str(receipt)
-            else:
-                _ = await _send_user_tx(user, approval_tx)
-                # Allow a moment for the approval to land before opening.
-                await asyncio.sleep(1.0)
 
     trade_input = TradeInput(
         trader=user.address,
