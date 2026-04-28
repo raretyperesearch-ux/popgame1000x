@@ -1558,11 +1558,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        // Air when ascending or hovering, fall when clearly losing altitude.
-        // Threshold sits below zero so price-jitter wobble around 0 doesn't
-        // flicker the sprite frame-by-frame.
+        // While airborne: air when ascending/hovering, fall when clearly
+        // losing altitude. Threshold sits below zero so price-jitter
+        // wobble around 0 doesn't flicker the sprite frame-by-frame.
+        // While grounded on the chart line: land sprite (its frames hold
+        // on the last crouched pose, so it reads as "perched" not
+        // "looping").
         setSpriteState(
-          a.figPriceVel < FALL_VEL_THRESHOLD ? "fall" : "air",
+          loco.grounded
+            ? "land"
+            : a.figPriceVel < FALL_VEL_THRESHOLD
+              ? "fall"
+              : "air",
           time,
         );
         a.curBobY = 0;
@@ -1571,16 +1578,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const priceDelta = a.price - a.prevPrice;
         a.smoothDelta = lerp(a.smoothDelta, priceDelta, VELOCITY_LERP * dtNorm);
 
-        /* physics */
+        /* physics — gated on grounded so a sticky landing on the chart
+           line doesn't keep accumulating downward velocity each frame.
+           Thrust still applies while grounded (positive price delta can
+           lift the character off), but gravity does not. */
         const thrust = clamp(a.smoothDelta * THRUST_MULT, -0.08, 0.12);
-        if (a.smoothDelta > 0.001) {
+        if (loco.grounded) {
+          if (a.smoothDelta > 0.001) {
+            a.figPriceVel += thrust * 0.6 * dtNorm;
+          }
+        } else if (a.smoothDelta > 0.001) {
           a.figPriceVel += thrust * 0.6 * dtNorm;
         } else if (Math.abs(a.smoothDelta) <= 0.0015) {
           a.figPriceVel += (-GRAVITY_P * 0.25) * dtNorm;
         } else {
           a.figPriceVel += (thrust * 0.25 - GRAVITY_P * 1.15) * dtNorm;
         }
-        a.figPriceVel -= GRAVITY_P * dtNorm;
+        if (!loco.grounded) {
+          a.figPriceVel -= GRAVITY_P * dtNorm;
+        }
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
@@ -1619,6 +1635,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.smoothAlt = lerp(a.smoothAlt, alt, BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
           const groundY = getTerrainY(figWorldX);
+          // Ground contact during LIVE: pin the character to the chart
+          // line and zero downward velocity so gravity doesn't keep it
+          // below terrain frame after frame. The trade STAYS LIVE — it
+          // closes only via stopTrade() (user click) or splat()
+          // (liquidation). The previous code flipped state back to
+          // RUNNING here, which re-entered PREPARE -> JUMPING and
+          // overwrote the trade's entry/liq prices mid-trade — looked
+          // like the trade had auto-closed.
           if (figY >= groundY - 4 && a.figPriceVel < 0) {
             loco.grounded = true;
             loco.bodyX = figWorldX;
@@ -1627,9 +1651,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             loco.rightFoot = { x: figWorldX + 1.2, y: getTerrainY(figWorldX + 1.2), planted: true };
             loco.plantedFoot = "left";
             loco.squash = 2.5;
-            a.state = "RUNNING";
-            setGameState("RUNNING");
-            a.runStartTime = time - RUN_DURATION * 0.72;
+            // Kill downward velocity. Upward thrust on the next price
+            // uptick can still push figPriceVel positive and lift the
+            // character off — see _do_ground_check below.
+            a.figPriceVel = 0;
+          } else {
+            loco.grounded = false;
           }
         }
 
