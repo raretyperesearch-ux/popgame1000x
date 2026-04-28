@@ -69,15 +69,25 @@ async def _broadcast(payload: dict) -> None:
         _subscribers.discard(ws)
 
 
-async def _handle_price_update(data):
-    """FeedClient callback. Async per the SDK example so we can await sends."""
+def _handle_price_update(data):
+    """FeedClient callback. SYNC (not async) because the Avantis SDK
+    invokes it directly without awaiting (see avantis_trader_sdk
+    feed_client.py:363 `callback(price_response)`). An `async def`
+    callback would return a coroutine that's silently dropped, so we
+    schedule the actual broadcast on the running event loop instead."""
     global _latest_price, _latest_ts_ms
     for feed in data.price_feeds:
         if feed.price_feed_id != _ETH_LAZER_FEED_ID:
             continue
         _latest_price = float(feed.converted_price)
         _latest_ts_ms = data.timestamp_ms
-        await _broadcast(_build_payload())
+        try:
+            asyncio.create_task(_broadcast(_build_payload()))
+        except RuntimeError:
+            # No running loop — happens if FeedClient calls the
+            # callback from a non-asyncio thread. Subscribers will pick
+            # up the price on their next reconnect / heartbeat.
+            pass
         return
 
 

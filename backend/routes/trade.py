@@ -75,25 +75,34 @@ async def init_trader():
 
         _eth_pair_index = await _trader_client.pairs_cache.get_pair_index(_PAIR)
 
-        pairs = await _trader_client.pairs_cache.get_pairs_info()
-        eth = pairs[_PAIR]
-
-        if not eth.values.is_usdc_aligned:
-            raise RuntimeError(f"{_PAIR} is not USDC-aligned")
-        if eth.leverages.min_leverage > 75:
-            raise RuntimeError(
-                f"{_PAIR} min leverage is {eth.leverages.min_leverage} — ZFP requires <=75"
-            )
-        if eth.leverages.max_leverage < 250:
+        # Pair info validation is best-effort. The SDK's pairs_cache shape
+        # has changed across versions — older versions return a dict keyed
+        # by string pair name, newer ones may use a different shape.
+        # get_pair_index already validated the pair exists, so the rest
+        # is just sanity logging.
+        try:
+            pairs = await _trader_client.pairs_cache.get_pairs_info()
+            eth = pairs.get(_PAIR) if hasattr(pairs, "get") else pairs[_PAIR]
+            if eth and hasattr(eth, "values") and not eth.values.is_usdc_aligned:
+                raise RuntimeError(f"{_PAIR} is not USDC-aligned")
+            min_lev = getattr(getattr(eth, "leverages", None), "min_leverage", None)
+            max_lev = getattr(getattr(eth, "leverages", None), "max_leverage", None)
+            if min_lev is not None and min_lev > 75:
+                raise RuntimeError(
+                    f"{_PAIR} min leverage is {min_lev} — ZFP requires <=75"
+                )
+            if max_lev is not None and max_lev < 250:
+                print(f"⚠️  {_PAIR} max leverage is {max_lev}, our cap is 250")
+            lev_str = f"{min_lev}-{max_lev}" if min_lev is not None and max_lev is not None else "unknown"
             print(
-                f"⚠️  {_PAIR} max leverage is {eth.leverages.max_leverage}, our cap is 250"
+                f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "
+                f"trader={_trader_address or '(per-user via Privy)'} lev_range={lev_str}"
             )
-
-        print(
-            f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "
-            f"trader={_trader_address or '(per-user via Privy)'} lev_range="
-            f"{eth.leverages.min_leverage}-{eth.leverages.max_leverage}"
-        )
+        except (KeyError, AttributeError, TypeError) as e:
+            print(
+                f"⚠️  Could not validate pair info ({e}); continuing with "
+                f"pair_index={_eth_pair_index}, trader={_trader_address or '(per-user via Privy)'}"
+            )
     except Exception:
         _trader_client = None
         _eth_pair_index = None

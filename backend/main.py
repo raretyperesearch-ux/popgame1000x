@@ -19,20 +19,21 @@ from routes import trade, price, balance
 
 def _init_privy_client():
     """Best-effort Privy client init. None if env not configured —
-    routes that need it will 503 with a clear message via auth.require_user."""
+    routes that need it will 503 with a clear message via auth.require_user.
+
+    Uses AsyncPrivyAPI (the async variant of the privy-client SDK) since
+    /trade/* handlers await the wallets.rpc calls. The authorization
+    private key is NOT a constructor arg in this SDK version — it's
+    used per-request to sign the privy-authorization-signature header
+    for delegated wallet actions; that wiring lives in privy_send.py."""
     app_id = os.getenv("PRIVY_APP_ID", "")
     app_secret = os.getenv("PRIVY_APP_SECRET", "")
-    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "") or None
     if not app_id or not app_secret:
         print("• Privy not configured (PRIVY_APP_ID / PRIVY_APP_SECRET missing) — running in single-wallet legacy mode")
         return None
     try:
-        from privy import PrivyAPI  # type: ignore
-        client = PrivyAPI(
-            app_id=app_id,
-            app_secret=app_secret,
-            authorization_private_key=auth_key,
-        ) if auth_key else PrivyAPI(app_id=app_id, app_secret=app_secret)
+        from privy import AsyncPrivyAPI  # type: ignore
+        client = AsyncPrivyAPI(app_id=app_id, app_secret=app_secret)
         print(f"✓ Privy client initialized for app {app_id}")
         return client
     except Exception as e:
