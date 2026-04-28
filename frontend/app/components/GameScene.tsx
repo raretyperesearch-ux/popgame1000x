@@ -932,9 +932,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.restore();
       }
 
-      /* generated pixel-art water hazard fills the lower gap beneath the cliff */
+      /* shelfTop hugs the deepest cliff bottom (max terrain y + the grass
+         tile's dirt-extent) so water meets the rocks with no plain-brown
+         gradient gap. -4 px overlap so foam crests poke up into the cliff
+         base for a wet-edge blend. WATER_SHELF_TOP_PCT is the fallback
+         when pts isn't ready yet (initial frames). */
       const waterImg = waterImageRef.current;
-      const shelfTop = h * WATER_SHELF_TOP_PCT;
+      const shelfTop = pts.length > 0
+        ? Math.max(...pts.map((p) => p.y)) + GRASS_TILE_H - GRASS_SURFACE_Y - 4
+        : h * WATER_SHELF_TOP_PCT;
       const shelfH = h - shelfTop;
       if (waterImg && waterImageReadyRef.current) {
         const tileW = Math.max(w, shelfH * (WATER_SRC_W / WATER_SRC_H));
