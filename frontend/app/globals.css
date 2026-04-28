@@ -792,6 +792,9 @@ body::before {
   letter-spacing: 3px;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
   transition: background 0.12s, box-shadow 0.12s, color 0.12s, transform 0.1s, border-color 0.12s;
   transform: rotate(-0.8deg);
   display: grid;

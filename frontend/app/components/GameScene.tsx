@@ -49,11 +49,11 @@ const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
 const GRASS_SLICE_W = 16;
-const WATER_SHELF_TOP_PCT = 0.68;
+const WATER_SHELF_TOP_PCT = 0.8;
 const WATER_SURFACE_SRC_PCT = 0.34;
-const WATER_SURFACE_DRAW_PCT = 0.3;
+const WATER_SURFACE_DRAW_PCT = 0.42;
 // foam crests extend a few px up into the cliff for a wet-edge blend
-const WATER_FOAM_OVERLAP = 6;
+const WATER_FOAM_OVERLAP = 4;
 const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;

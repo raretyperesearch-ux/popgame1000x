@@ -6,6 +6,7 @@ interface ControlsProps {
   leverage: number;
   wager: number;
   balance: number;
+  busy?: boolean;
   state: GameState;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
@@ -18,24 +19,33 @@ export default function Controls({
   leverage,
   wager,
   balance,
+  busy = false,
   state,
   onLeverageChange,
   onWagerChange,
   onAction,
 }: ControlsProps) {
-  const disabled = state !== "IDLE";
+  const opening = busy && state === "IDLE";
+  const disabled = state !== "IDLE" || opening;
   const wagerMax = Math.max(1, Math.floor(balance));
 
   let actionLabel = "jump";
   let actionClass = "action";
+  let actionLocked = false;
   if (state === "LIVE") {
     actionLabel = "stop";
     actionClass = "action stop";
+  } else if (opening) {
+    actionLabel = "opening";
+    actionClass = "action disabled";
+    actionLocked = true;
   } else if (balance < 1 && state === "IDLE") {
     actionLabel = "out";
     actionClass = "action disabled";
+    actionLocked = true;
   } else if (disabled) {
     actionClass = "action disabled";
+    actionLocked = true;
   }
 
   return (
@@ -79,7 +89,7 @@ export default function Controls({
         />
         <div className="slider-value">${wager}</div>
       </div>
-      <button className={actionClass} onClick={onAction}>
+      <button type="button" className={actionClass} disabled={actionLocked} onClick={onAction}>
         <span className="action-boss-pack left" aria-hidden="true">
           <span className="boss-sprite v1" />
           <span className="boss-sprite v2" />

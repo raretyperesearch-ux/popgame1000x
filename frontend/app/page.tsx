@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import Topbar from "./components/Topbar";
 import HistoryStrip, { type HistoryEntry } from "./components/HistoryStrip";
 import GameScene, { type GameSceneHandle } from "./components/GameScene";
@@ -13,6 +14,7 @@ import { sounds } from "@/lib/sounds";
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
+  const { authenticated, getAccessToken, login } = usePrivy();
   const [balance, setBalance] = useState(100);
   const [leverage, setLeverage] = useState(100);
   const [wager, setWager] = useState(5);
@@ -21,6 +23,7 @@ export default function Home() {
   const [pnl, setPnl] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
+  const needsAuthForTrades = Boolean(process.env.NEXT_PUBLIC_API_URL);
 
   const gameRef = useRef<GameSceneHandle>(null);
 
@@ -70,9 +73,13 @@ export default function Home() {
 
   const handleAction = useCallback(async () => {
     if (gameState === "IDLE" && balance >= wager && !openInFlight) {
+      if (needsAuthForTrades && !authenticated) {
+        login();
+        return;
+      }
       setOpenInFlight(true);
       try {
-        const trade = await openTrade(leverage, wager);
+        const trade = await openTrade(leverage, wager, getAccessToken);
         setBalance((prev) => prev - wager);
         gameRef.current?.startJump(
           leverage,
@@ -90,7 +97,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, openInFlight]);
+  }, [gameState, balance, wager, leverage, openInFlight, needsAuthForTrades, authenticated, login, getAccessToken]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -131,6 +138,7 @@ export default function Home() {
         leverage={leverage}
         wager={wager}
         balance={balance}
+        busy={openInFlight}
         state={gameState}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
