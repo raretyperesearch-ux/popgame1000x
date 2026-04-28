@@ -946,12 +946,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
-        const waterBack = ctx.createLinearGradient(0, shelfTop - WATER_FOAM_OVERLAP, 0, h);
-        waterBack.addColorStop(0, "#073845");
-        waterBack.addColorStop(0.34, "#062a35");
-        waterBack.addColorStop(1, "#03141c");
-        ctx.fillStyle = waterBack;
-        ctx.fillRect(0, Math.round(shelfTop - WATER_FOAM_OVERLAP), w, Math.ceil(shelfH + WATER_FOAM_OVERLAP + 2));
+        // No solid backing rect — the asset's top rows are alpha=0 for the
+        // foam-against-sky region (see the load-time pre-process), so the
+        // dirt cliff shows through the gaps between wave crests for a
+        // natural water-meets-cliff blend instead of a hard horizontal line.
         for (let x = -drift - tileW; x < w + tileW; x += tileW) {
           ctx.drawImage(waterImg, Math.round(x), Math.round(shelfTop + waveBob), Math.round(tileW), Math.round(shelfH));
         }
