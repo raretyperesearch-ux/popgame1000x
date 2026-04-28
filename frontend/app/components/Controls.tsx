@@ -80,16 +80,18 @@ export default function Controls({
         <div className="slider-value">${wager}</div>
       </div>
       <button className={actionClass} onClick={onAction}>
-        <span className="action-mini-strip action-mini-strip--left" aria-hidden="true">
-          <span className="action-mini" />
-          <span className="action-mini" />
-          <span className="action-mini" />
+        <span className="action-boss-pack left" aria-hidden="true">
+          <span className="boss-sprite v1" />
+          <span className="boss-sprite v2" />
+          <span className="boss-sprite v3" />
+          <span className="boss-sprite v4" />
         </span>
         <span className="action-label">{actionLabel}</span>
-        <span className="action-mini-strip action-mini-strip--right" aria-hidden="true">
-          <span className="action-mini" />
-          <span className="action-mini" />
-          <span className="action-mini" />
+        <span className="action-boss-pack right" aria-hidden="true">
+          <span className="boss-sprite v5" />
+          <span className="boss-sprite v6" />
+          <span className="boss-sprite v1" />
+          <span className="boss-sprite v3" />
         </span>
       </button>
     </div>

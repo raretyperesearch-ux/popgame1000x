@@ -13,6 +13,7 @@ export interface EndOfGameData {
   exit: number | null;  // null on liquidation
   boost: number;        // leverage multiplier, displayed as "Nx LONG ETH"
   wager: number;
+  durationSeconds: number;
 }
 
 interface Props {
@@ -57,6 +58,11 @@ function fmtPrice(n: number): string {
   return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function fmtDuration(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  return safe + "s";
+}
+
 function BadgeIcon({ kind }: { kind: EndOfGameKind }) {
   if (kind === "win") {
     return (
@@ -97,15 +103,26 @@ function UsdcCoin({ broken = false }: { broken?: boolean }) {
     return (
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
         <defs>
+          <linearGradient id={`${id}-edge`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#c84242" />
+            <stop offset="45%" stopColor="#3a0808" />
+            <stop offset="100%" stopColor="#050000" />
+          </linearGradient>
           <radialGradient id={`${id}-face`} cx="35%" cy="30%" r="75%">
-            <stop offset="0%" stopColor="#7a2020" />
-            <stop offset="55%" stopColor="#3a0808" />
+            <stop offset="0%" stopColor="#b53838" />
+            <stop offset="48%" stopColor="#5a1515" />
             <stop offset="100%" stopColor="#180202" />
           </radialGradient>
+          <radialGradient id={`${id}-shine`} cx="32%" cy="24%" r="44%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.42)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
         </defs>
-        <circle cx="16" cy="16" r="14.5" fill="#000" opacity="0.6" />
-        <circle cx="16" cy="16" r="14" fill={`url(#${id}-face)`} />
-        <circle cx="16" cy="16" r="13" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.6" />
+        <ellipse cx="16.8" cy="18" rx="14.4" ry="13.2" fill="#000" opacity="0.55" />
+        <circle cx="16" cy="16.8" r="14" fill={`url(#${id}-edge)`} />
+        <circle cx="15.4" cy="15.2" r="13.1" fill={`url(#${id}-face)`} />
+        <circle cx="15.4" cy="15.2" r="12.1" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.7" />
+        <ellipse cx="11" cy="9.2" rx="5.8" ry="3" fill={`url(#${id}-shine)`} />
         <path d="M10 10 L22 22 M22 10 L10 22" stroke="#ff5f56" strokeWidth="3" strokeLinecap="round" />
       </svg>
     );
@@ -114,24 +131,36 @@ function UsdcCoin({ broken = false }: { broken?: boolean }) {
   return (
     <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
       <defs>
+        <linearGradient id={`${id}-edge`} x1="12%" y1="8%" x2="88%" y2="94%">
+          <stop offset="0%" stopColor="#bfe9ff" />
+          <stop offset="22%" stopColor="#5aa7e8" />
+          <stop offset="62%" stopColor="#185a9d" />
+          <stop offset="100%" stopColor="#071a35" />
+        </linearGradient>
         <radialGradient id={`${id}-face`} cx="32%" cy="28%" r="78%">
-          <stop offset="0%" stopColor="#7eb6f0" />
-          <stop offset="45%" stopColor="#3a86d4" />
-          <stop offset="80%" stopColor="#2775ca" />
-          <stop offset="100%" stopColor="#143966" />
+          <stop offset="0%" stopColor="#e6fbff" />
+          <stop offset="18%" stopColor="#9bd5ff" />
+          <stop offset="46%" stopColor="#3a93e8" />
+          <stop offset="78%" stopColor="#2775ca" />
+          <stop offset="100%" stopColor="#10315c" />
         </radialGradient>
         <radialGradient id={`${id}-shine`} cx="35%" cy="25%" r="40%">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.55)" />
+          <stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
+          <stop offset="38%" stopColor="rgba(255,255,255,0.42)" />
           <stop offset="100%" stopColor="rgba(255,255,255,0)" />
         </radialGradient>
+        <linearGradient id={`${id}-slash`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0)" />
+          <stop offset="50%" stopColor="rgba(255,255,255,0.42)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+        </linearGradient>
       </defs>
-      {/* dark rim/shadow halo */}
-      <circle cx="16" cy="16.4" r="14.2" fill="#000" opacity="0.55" />
-      {/* coin face with radial gradient for top-left light */}
-      <circle cx="16" cy="16" r="14" fill={`url(#${id}-face)`} />
-      {/* inner stroke groove */}
-      <circle cx="16" cy="16" r="13.1" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
-      <circle cx="16" cy="16" r="12.4" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="0.5" />
+      <ellipse cx="17.2" cy="18.1" rx="14.4" ry="13.1" fill="#000" opacity="0.52" />
+      <circle cx="16.4" cy="16.8" r="14.1" fill={`url(#${id}-edge)`} />
+      <circle cx="15.5" cy="15.2" r="13.1" fill={`url(#${id}-face)`} />
+      <path d="M4.3 17.8 C7 21.5 12 24.1 18.2 23.5 C23.5 23 27.1 19.6 28.2 15.4" fill="none" stroke="rgba(0,0,0,0.28)" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="15.5" cy="15.2" r="12" fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="0.8" />
+      <circle cx="15.5" cy="15.2" r="10.8" fill="none" stroke="rgba(0,0,0,0.22)" strokeWidth="0.5" />
       {/* USDC mark — left parenthesis (3 segments) */}
       <path d="M 11.5 7.6 A 9.6 9.6 0 0 0 8.0 11.6" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       <path d="M 6.6 13.7 A 9.6 9.6 0 0 0 6.6 18.3" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
@@ -142,16 +171,16 @@ function UsdcCoin({ broken = false }: { broken?: boolean }) {
       <path d="M 24.0 20.4 A 9.6 9.6 0 0 1 20.5 24.4" fill="none" stroke="#fff" strokeWidth={arcStroke} strokeLinecap="round" />
       {/* center $ */}
       <text
-        x="16"
-        y="22.2"
+        x="15.5"
+        y="21.2"
         textAnchor="middle"
         fontFamily="'Arial Black', 'Helvetica Neue', sans-serif"
         fontWeight={900}
         fontSize="13"
         fill="#fff"
       >$</text>
-      {/* top-left specular highlight crescent on top of everything */}
-      <ellipse cx="11" cy="9.5" rx="6" ry="3.2" fill={`url(#${id}-shine)`} opacity="0.7" />
+      <ellipse cx="10.6" cy="8.6" rx="6.6" ry="3.1" fill={`url(#${id}-shine)`} opacity="0.92" />
+      <path d="M8 5.5 L24.5 22" stroke={`url(#${id}-slash)`} strokeWidth="2.2" strokeLinecap="round" opacity="0.72" />
     </svg>
   );
 }
@@ -417,10 +446,11 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
     { label: "ENTRY", value: fmtPrice(data.entry), sub: "" },
     { label: "EXIT", value: data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback, sub: "" },
     { label: "BOOST", value: data.boost + "x", sub: "LONG ETH" },
+    { label: "TIME", value: fmtDuration(data.durationSeconds), sub: "IN TRADE" },
   ];
   ctx.textAlign = "center";
   statCols.forEach((s, i) => {
-    const cx = 80 + (W - 160) * (i + 0.5) / 3;
+    const cx = 80 + (W - 160) * (i + 0.5) / statCols.length;
     ctx.fillStyle = "#6e6e75";
     ctx.font = '18px "Press Start 2P", monospace';
     ctx.fillText(s.label, cx, statsY - 10);
@@ -532,16 +562,19 @@ export default function EndOfGameModal({ data, onClose }: Props) {
             <div className="eog-stat-label">ENTRY</div>
             <div className="eog-stat-value">{fmtPrice(data.entry)}</div>
           </div>
-          <div className="eog-stat-divider" />
           <div className="eog-stat">
             <div className="eog-stat-label">EXIT</div>
             <div className="eog-stat-value">{data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback}</div>
           </div>
-          <div className="eog-stat-divider" />
           <div className="eog-stat">
             <div className="eog-stat-label">BOOST</div>
             <div className="eog-stat-value">{data.boost}x</div>
             <div className="eog-stat-sub">LONG ETH</div>
+          </div>
+          <div className="eog-stat">
+            <div className="eog-stat-label">TIME</div>
+            <div className="eog-stat-value">{fmtDuration(data.durationSeconds)}</div>
+            <div className="eog-stat-sub">IN TRADE</div>
           </div>
         </div>
 

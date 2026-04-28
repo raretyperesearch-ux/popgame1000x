@@ -230,6 +230,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     runStartTime: 0, // timestamp when RUNNING began
     prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
+    tradeStartTime: 0, // timestamp when LIVE trade begins
     idleStartTime: 0, // timestamp when IDLE began (sprite-only)
     prevStepHalf: 0, // tracks half-cycle for dust spawn
     spriteState: "idle" as SpriteState,
@@ -268,6 +269,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
   const [endOfGame, setEndOfGame] = useState<EndOfGameData | null>(null);
+
+  const getTradeDurationSeconds = useCallback(() => {
+    const start = anim.current.tradeStartTime;
+    if (!start) return 0;
+    return Math.max(1, Math.round((performance.now() - start) / 1000));
+  }, []);
 
   /* stars (generated once for atmosphere) */
   const [stars] = useState(() =>
@@ -1019,6 +1026,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.runStartTime = 0;
     a.prepareStartTime = 0;
     a.jumpStartTime = 0;
+    a.tradeStartTime = 0;
     a.idleStartTime = 0;
     a.spriteJumpStart = 0;
     a.spriteAirStart = 0;
@@ -1048,6 +1056,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         console.log("forceCloseTrade settled:", res.net_pnl_usdc, res.tx_hash),
       )
       .catch((e) => console.error("forceCloseTrade failed:", e));
+    const durationSeconds = getTradeDurationSeconds();
     // brief pause so the splat animation reads, then show modal
     setTimeout(() => {
       setEndOfGame({
@@ -1058,9 +1067,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         exit: null,
         boost: a.positionLev,
         wager: a.positionWager,
+        durationSeconds,
       });
     }, 900);
-  }, [setGameState, setSpriteState, onHistoryPush]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -1085,6 +1095,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setSpriteState("land");
     onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
     const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
+    const durationSeconds = getTradeDurationSeconds();
     // wait for parachute descent to settle before showing modal
     setTimeout(() => {
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
@@ -1096,9 +1107,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         exit: a.price,
         boost: a.positionLev,
         wager: a.positionWager,
+        durationSeconds,
       });
     }, 900);
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
 
   const closeEndOfGame = useCallback(() => {
     setEndOfGame(null);
@@ -1122,6 +1134,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.runStartTime = 0; // set on first tick
       a.prepareStartTime = 0;
       a.jumpStartTime = 0;
+      a.tradeStartTime = 0;
       a.spriteJumpStart = 0;
       a.spriteAirStart = 0;
       a.spriteLandStart = 0;
@@ -1435,6 +1448,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             a.pendingLiqPrice > 0
               ? a.pendingLiqPrice
               : a.entry - a.entry / a.positionLev;
+          a.tradeStartTime = time;
           a.figPrice = a.price;
           a.figPriceVel = 0.08;
           a.smoothDelta = 0;
