@@ -91,24 +91,38 @@ def _handle_price_update(data):
         return
 
 
-async def start_feed_client() -> None:
-    """Initialize the Avantis FeedClient and kick off the stream task.
-    Called once from main.py's lifespan after init_trader."""
-    global _feed_client, _stream_task
-    if _DISABLE_FEED:
-        print("• PRICE_FEED_DISABLE set — Avantis FeedClient skipped")
-        return
-    try:
-        _feed_client = FeedClient(on_error=_on_feed_error, on_close=_on_feed_error)
-        _stream_task = asyncio.create_task(
-            _feed_client.listen_for_lazer_price_updates(
+async def _run_feed_supervised() -> None:
+    """Run the Avantis Lazer feed in a restart loop. The SDK closes the
+    underlying WebSocket on transient network blips and the
+    listen_* coroutine returns silently — without a supervisor the
+    stream stays dead until the pod restarts. Backoff caps at 60s."""
+    global _feed_client
+    backoff = 1.0
+    while True:
+        try:
+            _feed_client = FeedClient(on_error=_on_feed_error, on_close=_on_feed_error)
+            await _feed_client.listen_for_lazer_price_updates(
                 lazer_feed_ids=[_ETH_LAZER_FEED_ID],
                 callback=_handle_price_update,
             )
-        )
-        print(f"✓ Avantis FeedClient started (lazer feed id={_ETH_LAZER_FEED_ID})")
-    except Exception as e:
-        print(f"⚠️  Failed to start FeedClient: {e}")
+            print("⚠️  Avantis FeedClient stream returned; reconnecting…")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️  FeedClient crashed, reconnecting in {backoff:.0f}s: {e}")
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 2, 60.0)
+
+
+async def start_feed_client() -> None:
+    """Spawn the supervised feed task. Called once from main.py's lifespan
+    after init_trader."""
+    global _stream_task
+    if _DISABLE_FEED:
+        print("• PRICE_FEED_DISABLE set — Avantis FeedClient skipped")
+        return
+    _stream_task = asyncio.create_task(_run_feed_supervised())
+    print(f"✓ Avantis FeedClient supervisor started (lazer feed id={_ETH_LAZER_FEED_ID})")
 
 
 async def stop_feed_client() -> None:
