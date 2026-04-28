@@ -8,6 +8,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
@@ -178,6 +179,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   },
   ref,
 ) {
+  const { getAccessToken, user } = usePrivy();
+  const walletAddress = user?.wallet?.address;
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const figRef = useRef<HTMLDivElement>(null);
@@ -1102,7 +1105,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // PnL (or a clear fallback if the backend is unreachable).
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     Promise.all([
-      forceCloseTrade()
+      forceCloseTrade(getAccessToken, walletAddress)
         .then((res) => ({ ok: true as const, res }))
         .catch((e) => {
           console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
@@ -1120,7 +1123,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -1171,7 +1174,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // local calc when backend is unreachable.
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     Promise.all([
-      closeTrade()
+      closeTrade(getAccessToken, walletAddress)
         .then((res) => ({ ok: true as const, res }))
         .catch((e) => {
           console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
@@ -1189,7 +1192,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         settleAndShow(pnlDollarsOptimistic, pnlPctOptimistic, entry, exitOptimistic);
       }
     });
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress]);
 
   const closeEndOfGame = useCallback(() => {
     setEndOfGame(null);

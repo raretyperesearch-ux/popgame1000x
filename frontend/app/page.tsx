@@ -14,7 +14,8 @@ import { sounds } from "@/lib/sounds";
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
-  const { authenticated, getAccessToken, login } = usePrivy();
+  const { authenticated, getAccessToken, login, user } = usePrivy();
+  const walletAddress = user?.wallet?.address;
   const [balance, setBalance] = useState(100);
   const [leverage, setLeverage] = useState(100);
   const [wager, setWager] = useState(5);
@@ -41,7 +42,7 @@ export default function Home() {
   useEffect(() => {
     if (gameState !== "IDLE") return;
     let cancelled = false;
-    getBalance(getAccessToken)
+    getBalance(getAccessToken, walletAddress)
       .then((res) => {
         if (cancelled) return;
         setBalance(res.usdc_balance);
@@ -52,7 +53,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [gameState, getAccessToken]);
+  }, [gameState, getAccessToken, walletAddress]);
 
   /* first-launch help overlay */
   useEffect(() => {
@@ -109,7 +110,7 @@ export default function Home() {
         let entryPrice = 0;
         let liquidationPrice = 0;
         try {
-          const trade = await openTrade(leverage, wager, getAccessToken);
+          const trade = await openTrade(leverage, wager, getAccessToken, walletAddress);
           entryPrice = trade.entry_price;
           liquidationPrice = trade.liquidation_price;
         } catch (e) {

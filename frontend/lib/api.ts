@@ -54,6 +54,7 @@ async function apiFetch<T>(
   path: string,
   options?: RequestInit,
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -62,6 +63,10 @@ async function apiFetch<T>(
     const token = await getAccessToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
+  // Privy users can carry multiple embedded wallets; the topbar/funding
+  // flow targets user.wallet.address. Forwarding it pins the backend to
+  // the same wallet for balance reads and trade signing.
+  if (walletAddress) headers["X-Wallet-Address"] = walletAddress;
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
@@ -71,6 +76,7 @@ export async function openTrade(
   leverage: number,
   wager: number,
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<OpenTradeResponse> {
   if (isMock()) {
     const entry_price = 3500;
@@ -111,11 +117,13 @@ export async function openTrade(
       body: JSON.stringify({ leverage, wager_usdc: wager }),
     },
     getAccessToken,
+    walletAddress,
   );
 }
 
 export async function closeTrade(
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<CloseTradeResponse> {
   if (isMock()) {
     const entry_price = mockTradeState?.entry_price ?? 3500;
@@ -140,33 +148,39 @@ export async function closeTrade(
     "/trade/close",
     { method: "POST" },
     getAccessToken,
+    walletAddress,
   );
 }
 
 export async function forceCloseTrade(
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<CloseTradeResponse> {
-  if (isMock()) return closeTrade(getAccessToken);
+  if (isMock()) return closeTrade(getAccessToken, walletAddress);
   return apiFetch<CloseTradeResponse>(
     "/trade/force-close",
     { method: "POST" },
     getAccessToken,
+    walletAddress,
   );
 }
 
 export async function getActiveTrade(
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<ActiveTrade | null> {
   if (isMock()) return mockTradeState;
   return apiFetch<ActiveTrade | null>(
     "/trade/active",
     { method: "GET" },
     getAccessToken,
+    walletAddress,
   );
 }
 
 export async function getBalance(
   getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
 ): Promise<BalanceResponse> {
   if (isMock()) {
     return { usdc_balance: 100, wallet_address: "0xstub" };
@@ -175,5 +189,6 @@ export async function getBalance(
     "/balance",
     { method: "GET" },
     getAccessToken,
+    walletAddress,
   );
 }
