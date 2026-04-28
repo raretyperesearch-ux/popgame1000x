@@ -138,14 +138,22 @@ export default function Home() {
               if (parsed.detail) detail = parsed.detail;
             } catch { /* fall through */ }
           }
-          if (status === 402) {
-            // Gas pre-flight. The backend message is already actionable;
-            // surface it verbatim.
-            showTradeError(detail);
-          } else if (status === 409) {
-            showTradeError("You already have an open trade on Avantis. Close it first.");
+          if (status === 402 || status === 409 || status === 504 || status === 502) {
+            // 402: needs ETH for gas. 409: already has open trade.
+            // 504: Privy signer timeout (delegation usually). 502: Privy
+            // returned an error (insufficient funds, bad signature, etc).
+            // All four backend messages are user-readable; surface
+            // verbatim. Truncate just to keep the banner from blowing up.
+            showTradeError(detail.slice(0, 240));
+          } else if (status === 0) {
+            // No HTTP status — fetch itself failed (CORS, server reset,
+            // browser closed connection). Tell the user to retry rather
+            // than the unhelpful raw "Failed to fetch".
+            showTradeError(
+              "Lost connection to the trade server. Try again in a moment.",
+            );
           } else {
-            showTradeError(`Trade didn't land: ${detail.slice(0, 140)}`);
+            showTradeError(`Trade didn't land (${status}): ${detail.slice(0, 200)}`);
           }
           console.warn("[trade] openTrade failed:", e);
         }
