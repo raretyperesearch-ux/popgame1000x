@@ -23,18 +23,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 import jwt
+from jwt import PyJWKClient
 from fastapi import Header, HTTPException
 
 _PRIVY_APP_ID = os.getenv("PRIVY_APP_ID", "")
 _PRIVY_APP_SECRET = os.getenv("PRIVY_APP_SECRET", "")
 _PRIVY_AUTH_PRIVATE_KEY = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
-_PRIVY_VERIFICATION_KEY = os.getenv("PRIVY_VERIFICATION_KEY", "")  # JWKS PEM
+_PRIVY_VERIFICATION_KEY = os.getenv("PRIVY_VERIFICATION_KEY", "")  # legacy fallback
 
 
 def _normalize_pem(key: str) -> str:
-    """Accept the verification key in any of the forms Privy/Railway hands out:
-    real PEM with newlines, PEM with literal `\\n`, or the bare base64 SPKI
-    body with no headers. Returns a PEM string PyJWT can load."""
+    """Wrap a bare base64 SPKI body with PEM headers if missing.
+    Used only when falling back to the static PRIVY_VERIFICATION_KEY env."""
     if not key:
         return key
     k = key.strip().replace("\\n", "\n")
@@ -50,6 +50,19 @@ _AUTH_DISABLE = os.getenv("AUTH_DISABLE", "").lower() in ("1", "true", "yes")
 
 _JWT_AUDIENCE = _PRIVY_APP_ID
 _JWT_ISSUER = "privy.io"
+
+# Privy publishes its JWKS at this URL; PyJWKClient caches the keys
+# and pyjwt picks the right one off the JWT's `kid` header. More robust
+# than a hand-pasted PEM env var, which Railway's UI tends to mangle on
+# embedded newlines.
+_PRIVY_JWKS_URL = (
+    f"https://auth.privy.io/api/v1/apps/{_PRIVY_APP_ID}/jwks.json"
+    if _PRIVY_APP_ID
+    else ""
+)
+_jwks_client: Optional[PyJWKClient] = (
+    PyJWKClient(_PRIVY_JWKS_URL, cache_keys=True) if _PRIVY_JWKS_URL else None
+)
 
 
 @dataclass
@@ -72,18 +85,32 @@ def is_privy_configured() -> bool:
     return bool(_PRIVY_APP_ID and _PRIVY_APP_SECRET)
 
 
+def _resolve_signing_key(token: str):
+    """Pick the signing key for a Privy JWT. Prefers the live JWKS endpoint
+    (auto-rotates, no env-var formatting traps). Falls back to the static
+    PRIVY_VERIFICATION_KEY env if JWKS is unreachable or unconfigured."""
+    if _jwks_client is not None:
+        try:
+            return _jwks_client.get_signing_key_from_jwt(token).key
+        except Exception:  # noqa: BLE001 — fall through to PEM env
+            pass
+    if _PRIVY_VERIFICATION_KEY:
+        return _PRIVY_VERIFICATION_KEY
+    raise HTTPException(
+        500,
+        "Privy JWT verification not configured: set PRIVY_APP_ID (for JWKS) "
+        "or PRIVY_VERIFICATION_KEY (static PEM fallback).",
+    )
+
+
 def _verify_jwt(token: str) -> str:
     """Verify a Privy access token JWT and return the user DID (`sub`).
     Raises HTTPException(401) on invalid token."""
-    if not _PRIVY_VERIFICATION_KEY:
-        raise HTTPException(
-            500,
-            "PRIVY_VERIFICATION_KEY env var not set — cannot verify JWTs",
-        )
+    key = _resolve_signing_key(token)
     try:
         decoded = jwt.decode(
             token,
-            _PRIVY_VERIFICATION_KEY,
+            key,
             algorithms=["ES256"],
             audience=_JWT_AUDIENCE,
             issuer=_JWT_ISSUER,
