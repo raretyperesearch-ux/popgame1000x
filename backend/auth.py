@@ -123,16 +123,18 @@ def _verify_jwt(token: str) -> str:
     return sub
 
 
-async def _resolve_user_wallet(user_did: str) -> tuple[str, str]:
-    """Look up the user's Privy embedded Ethereum wallet.
+async def _resolve_user_wallet(
+    user_did: str,
+    preferred_address: Optional[str] = None,
+) -> tuple[str, str]:
+    """Look up the user's Privy Ethereum wallet.
 
-    Linked accounts can include both embedded (Privy-managed) and external
-    wallets (Rabby/MetaMask/etc). The backend signs trades via the
-    embedded one — addSigners() delegated to PRIVY_AUTH_PRIVATE_KEY, and
-    that authorization only attaches to the embedded wallet — so balance
-    and trade calls must target the same address. Prefer wallet entries
-    where wallet_client_type == "privy"; fall back to the first ethereum
-    wallet only if no embedded one is found (legacy users)."""
+    Users can carry multiple embedded wallets (older + newer rotations) and
+    optional external connections. The frontend's topbar/funding flow uses
+    one specific address (user.wallet.address), so it forwards that as
+    X-Wallet-Address — we honor it after confirming it belongs to the JWT
+    subject. Without a hint, prefer Privy embedded over external; if there
+    are several embedded entries, take the first."""
     if _privy_client is None:
         raise HTTPException(503, "Privy client not initialized")
     try:
@@ -140,6 +142,8 @@ async def _resolve_user_wallet(user_did: str) -> tuple[str, str]:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(404, f"Privy user lookup failed: {e}")
 
+    pref = preferred_address.lower() if preferred_address else None
+    matched: Optional[tuple[str, str]] = None
     embedded: Optional[tuple[str, str]] = None
     fallback: Optional[tuple[str, str]] = None
     for acc in getattr(user, "linked_accounts", []) or []:
@@ -158,24 +162,34 @@ async def _resolve_user_wallet(user_did: str) -> tuple[str, str]:
             or (acc.get("wallet_client") if isinstance(acc, dict) else None)
         )
         entry = (str(wallet_id), str(address))
-        if client_type == "privy":
-            embedded = entry
+        if pref and address.lower() == pref:
+            matched = entry
             break
+        if client_type == "privy" and embedded is None:
+            embedded = entry
         if fallback is None:
             fallback = entry
 
-    chosen = embedded or fallback
+    chosen = matched or embedded or fallback
     if chosen is None:
         raise HTTPException(409, "User has no Ethereum embedded wallet — login first")
-    print(
-        f"[auth] resolved wallet for {user_did}: {chosen[1]} "
-        f"({'embedded' if embedded else 'external-fallback'})"
+    if pref and matched is None:
+        # Frontend hinted an address, but it isn't on the user's account.
+        # Fail closed so we don't read someone else's balance.
+        raise HTTPException(
+            403,
+            f"X-Wallet-Address {preferred_address} not linked to authenticated user",
+        )
+    source = (
+        "header-match" if matched else "embedded-default" if embedded else "external-fallback"
     )
+    print(f"[auth] resolved wallet for {user_did}: {chosen[1]} ({source})")
     return chosen
 
 
 async def require_user(
     authorization: Optional[str] = Header(default=None),
+    x_wallet_address: Optional[str] = Header(default=None),
 ) -> AuthedUser:
     """FastAPI dependency: validates `Authorization: Bearer <jwt>` and
     returns the authed user with their Privy wallet metadata.
@@ -203,5 +217,5 @@ async def require_user(
         raise HTTPException(401, "missing Bearer token")
     token = authorization.split(" ", 1)[1].strip()
     did = _verify_jwt(token)
-    wallet_id, address = await _resolve_user_wallet(did)
+    wallet_id, address = await _resolve_user_wallet(did, x_wallet_address)
     return AuthedUser(did=did, wallet_id=wallet_id, address=address)
