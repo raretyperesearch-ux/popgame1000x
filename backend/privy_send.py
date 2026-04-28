@@ -62,8 +62,11 @@ def _normalize_tx(raw: Any) -> dict:
         out["data"] = _to_hex(src["data"])
     if "value" in src:
         out["value"] = _to_hex(src["value"])
-    if "chainId" in src:
-        out["chainId"] = _to_hex(src["chainId"])
+    # NOTE: don't forward chainId. Privy's wallets.rpc takes the chain
+    # via the top-level `caip2` field (BASE_CAIP2 = "eip155:8453"), and
+    # passing chainId inside params.transaction is rejected with
+    # `Unrecognized key(s) in object: 'chainId'`. Same applies to nonce,
+    # gas, gasPrice, maxFeePerGas etc — Privy auto-fills them.
     return out
 
 
