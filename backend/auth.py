@@ -124,25 +124,54 @@ def _verify_jwt(token: str) -> str:
 
 
 async def _resolve_user_wallet(user_did: str) -> tuple[str, str]:
-    """Look up the user's first Ethereum embedded wallet via Privy."""
+    """Look up the user's Privy embedded Ethereum wallet.
+
+    Linked accounts can include both embedded (Privy-managed) and external
+    wallets (Rabby/MetaMask/etc). The backend signs trades via the
+    embedded one — addSigners() delegated to PRIVY_AUTH_PRIVATE_KEY, and
+    that authorization only attaches to the embedded wallet — so balance
+    and trade calls must target the same address. Prefer wallet entries
+    where wallet_client_type == "privy"; fall back to the first ethereum
+    wallet only if no embedded one is found (legacy users)."""
     if _privy_client is None:
         raise HTTPException(503, "Privy client not initialized")
     try:
         user = await _privy_client.users.get(user_did)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(404, f"Privy user lookup failed: {e}")
-    # linked_accounts is a list of dicts with type field. Filter for
-    # Ethereum embedded wallets.
+
+    embedded: Optional[tuple[str, str]] = None
+    fallback: Optional[tuple[str, str]] = None
     for acc in getattr(user, "linked_accounts", []) or []:
-        # The Privy SDK returns objects; access via getattr to be tolerant.
         acc_type = getattr(acc, "type", None) or (acc.get("type") if isinstance(acc, dict) else None)
         chain = getattr(acc, "chain_type", None) or (acc.get("chain_type") if isinstance(acc, dict) else None)
-        if acc_type == "wallet" and chain == "ethereum":
-            wallet_id = getattr(acc, "id", None) or (acc.get("id") if isinstance(acc, dict) else None)
-            address = getattr(acc, "address", None) or (acc.get("address") if isinstance(acc, dict) else None)
-            if wallet_id and address:
-                return str(wallet_id), str(address)
-    raise HTTPException(409, "User has no Ethereum embedded wallet — login first")
+        if acc_type != "wallet" or chain != "ethereum":
+            continue
+        wallet_id = getattr(acc, "id", None) or (acc.get("id") if isinstance(acc, dict) else None)
+        address = getattr(acc, "address", None) or (acc.get("address") if isinstance(acc, dict) else None)
+        if not (wallet_id and address):
+            continue
+        client_type = (
+            getattr(acc, "wallet_client_type", None)
+            or (acc.get("wallet_client_type") if isinstance(acc, dict) else None)
+            or getattr(acc, "wallet_client", None)
+            or (acc.get("wallet_client") if isinstance(acc, dict) else None)
+        )
+        entry = (str(wallet_id), str(address))
+        if client_type == "privy":
+            embedded = entry
+            break
+        if fallback is None:
+            fallback = entry
+
+    chosen = embedded or fallback
+    if chosen is None:
+        raise HTTPException(409, "User has no Ethereum embedded wallet — login first")
+    print(
+        f"[auth] resolved wallet for {user_did}: {chosen[1]} "
+        f"({'embedded' if embedded else 'external-fallback'})"
+    )
+    return chosen
 
 
 async def require_user(
