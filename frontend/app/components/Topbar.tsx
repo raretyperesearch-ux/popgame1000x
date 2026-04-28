@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import {
   usePrivy,
+  useWallets,
   useSigners,
   useFundWallet,
+  getEmbeddedConnectedWallet,
 } from "@privy-io/react-auth";
 import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
@@ -22,6 +24,7 @@ const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
 
 export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   const { login, logout, authenticated, user, ready } = usePrivy();
+  const { wallets } = useWallets();
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -36,7 +39,14 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     if (!m) sounds.play("ui-click");
   };
 
-  const walletAddress = user?.wallet?.address;
+  /* This is the in-game wallet — always the Privy embedded one, never
+     a connected external wallet (Rabby/MetaMask/etc). The embedded
+     wallet is what addSigners delegates to, so it's the only wallet
+     the backend can sign trades on behalf of. The avatar, balance,
+     funding flow, and X-Wallet-Address header all key off this. The
+     external login wallet (if any) is just for auth identity. */
+  const embeddedWallet = getEmbeddedConnectedWallet(wallets);
+  const walletAddress = embeddedWallet?.address;
   const truncated = walletAddress
     ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
     : null;

@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import {
+  usePrivy,
+  useWallets,
+  getEmbeddedConnectedWallet,
+} from "@privy-io/react-auth";
 import Topbar from "./components/Topbar";
 import HistoryStrip, { type HistoryEntry } from "./components/HistoryStrip";
 import GameScene, { type GameSceneHandle } from "./components/GameScene";
@@ -14,8 +18,10 @@ import { sounds } from "@/lib/sounds";
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
-  const { authenticated, getAccessToken, login, user } = usePrivy();
-  const walletAddress = user?.wallet?.address;
+  const { authenticated, getAccessToken, login } = usePrivy();
+  const { wallets } = useWallets();
+  // Always the embedded wallet — see Topbar.tsx for rationale.
+  const walletAddress = getEmbeddedConnectedWallet(wallets)?.address;
   const [balance, setBalance] = useState(100);
   const [leverage, setLeverage] = useState(100);
   const [wager, setWager] = useState(5);
