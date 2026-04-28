@@ -41,10 +41,37 @@ def _init_privy_client():
             "⚠️  PRIVY_AUTH_PRIVATE_KEY missing — delegated tx signing will fail. "
             "Set the PEM/base64 private key on Railway."
         )
+    else:
+        # Derive and log the PUBLIC key so the operator can verify it
+        # matches what's registered in the Privy dashboard's
+        # Authorization Keys panel. Privy returns 401 "No valid
+        # authorization keys" when the env private key doesn't pair
+        # with any registered public key for the app.
+        try:
+            from privy_send import _normalize_auth_key
+            from cryptography.hazmat.primitives import serialization
+            body = _normalize_auth_key(auth_key)
+            pem = (
+                f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----"
+            )
+            priv = serialization.load_pem_private_key(pem.encode(), password=None)
+            pub_pem = priv.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode()
+            print(
+                "✓ PRIVY_AUTH_PRIVATE_KEY loaded. Public key (paste this into "
+                "Privy dashboard -> App Settings -> Authorization Keys if you "
+                "haven't already; the Signer ID it assigns is what you set as "
+                "NEXT_PUBLIC_PRIVY_SIGNER_ID on Vercel):\n"
+                + pub_pem
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️  Could not derive public key from PRIVY_AUTH_PRIVATE_KEY: {e}")
     try:
         from privy import AsyncPrivyAPI  # type: ignore
         client = AsyncPrivyAPI(app_id=app_id, app_secret=app_secret)
-        print(f"✓ Privy client initialized for app {app_id} (auth_key={'set' if auth_key else 'MISSING'})")
+        print(f"✓ Privy client initialized for app {app_id}")
         return client
     except Exception as e:
         print(f"⚠️  Privy client init failed: {e}")
