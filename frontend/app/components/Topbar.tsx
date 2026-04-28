@@ -124,7 +124,6 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
         chain: base,
         asset: "USDC",
         amount: "5",
-        defaultFundingMethod: "card",
         card: { preferredProvider: "coinbase" },
       },
     }).catch((e) => console.warn("[fund] USDC fund flow declined:", e));
@@ -139,7 +138,6 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
         chain: base,
         asset: "native-currency",
         amount: "0.001",
-        defaultFundingMethod: "card",
         card: { preferredProvider: "coinbase" },
       },
     }).catch((e) => console.warn("[fund] ETH fund flow declined:", e));
