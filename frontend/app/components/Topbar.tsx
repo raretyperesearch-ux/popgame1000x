@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import {
+  usePrivy,
+  useDelegatedActions,
+  useFundWallet,
+} from "@privy-io/react-auth";
+import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 
 interface TopbarProps {
@@ -11,8 +16,11 @@ interface TopbarProps {
 
 export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   const { login, logout, authenticated, user } = usePrivy();
+  const { delegateWallet, revokeWallets } = useDelegatedActions();
+  const { fundWallet } = useFundWallet();
   const [menuOpen, setMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [delegating, setDelegating] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMuted(sounds.isMuted()); }, []);
@@ -29,6 +37,42 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
   const initials = walletAddress
     ? walletAddress.slice(2, 4).toUpperCase()
     : "•";
+
+  /* `delegated: true` lives on the linked-account wallet entry once the
+     user has approved the addSigners / delegateWallet flow. We use this
+     to know whether the backend can sign trades on their behalf. */
+  const isDelegated = Boolean(
+    user?.linkedAccounts?.some(
+      (a) =>
+        a.type === "wallet" &&
+        "address" in a &&
+        a.address === walletAddress &&
+        "delegated" in a &&
+        (a as unknown as { delegated?: boolean }).delegated === true,
+    ),
+  );
+
+  /* One-time delegation prompt after login. Fires only when:
+     - user is authenticated
+     - they have an embedded Ethereum wallet
+     - delegation hasn't been granted yet
+     The Privy modal handles consent UX; the user can decline and
+     try again later via the menu. */
+  useEffect(() => {
+    if (!authenticated || !walletAddress) return;
+    if (isDelegated) return;
+    if (delegating) return;
+    let cancelled = false;
+    setDelegating(true);
+    delegateWallet({ address: walletAddress, chainType: "ethereum" })
+      .catch((e) => console.warn("[delegate] declined or failed:", e))
+      .finally(() => {
+        if (!cancelled) setDelegating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, walletAddress, isDelegated, delegateWallet, delegating]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -52,6 +96,33 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
     if (!walletAddress) return;
     try { await navigator.clipboard.writeText(walletAddress); } catch { /* noop */ }
     setMenuOpen(false);
+  };
+
+  const onFundUSDC = () => {
+    if (!walletAddress) return;
+    setMenuOpen(false);
+    fundWallet({
+      address: walletAddress,
+      options: { chain: base, asset: "USDC", amount: "5" },
+    }).catch((e) => console.warn("[fund] USDC fund flow declined:", e));
+  };
+
+  const onFundETH = () => {
+    if (!walletAddress) return;
+    setMenuOpen(false);
+    fundWallet({
+      address: walletAddress,
+      options: { chain: base, asset: "native-currency", amount: "0.001" },
+    }).catch((e) => console.warn("[fund] ETH fund flow declined:", e));
+  };
+
+  const onRevoke = async () => {
+    setMenuOpen(false);
+    try {
+      await revokeWallets();
+    } catch (e) {
+      console.warn("[delegate] revoke failed:", e);
+    }
   };
 
   return (
@@ -89,6 +160,9 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
                   <div className="user-menu-header">
                     <div className="user-menu-label">wallet</div>
                     <div className="user-menu-addr">{truncated}</div>
+                    <div className={`user-menu-tag ${isDelegated ? "ok" : "warn"}`}>
+                      {isDelegated ? "trading delegated ✓" : "delegation pending"}
+                    </div>
                   </div>
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
@@ -96,10 +170,26 @@ export default function Topbar({ balance, onHelpClick }: TopbarProps) {
                   <button
                     className="user-menu-item"
                     role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); setMenuOpen(false); login(); }}
+                    onClick={() => { sounds.play("ui-click"); onFundUSDC(); }}
                   >
-                    deposit / fund
+                    fund USDC (collateral)
                   </button>
+                  <button
+                    className="user-menu-item"
+                    role="menuitem"
+                    onClick={() => { sounds.play("ui-click"); onFundETH(); }}
+                  >
+                    fund ETH (gas)
+                  </button>
+                  {isDelegated && (
+                    <button
+                      className="user-menu-item"
+                      role="menuitem"
+                      onClick={() => { sounds.play("ui-click"); onRevoke(); }}
+                    >
+                      revoke trading delegation
+                    </button>
+                  )}
                   <button
                     className="user-menu-item danger"
                     role="menuitem"

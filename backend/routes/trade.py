@@ -1,8 +1,14 @@
 """
-/trade/* endpoints — real Avantis SDK calls.
+/trade/* endpoints — Avantis SDK calls scoped per Privy user.
 
-Single-wallet test mode: backend uses ONE private key (from .env) and the same
-wallet acts as both trader and treasury. Multi-user comes in P3 with Privy.
+Multi-user mode (default in prod): every /trade/* request requires a
+valid Privy access token. The auth.require_user dependency resolves
+the JWT to the user's embedded-wallet id + address, and trades are
+executed against THAT wallet via Privy's eth_sendTransaction RPC.
+
+Legacy single-wallet mode (AUTH_DISABLE=1 or no Privy env): the env
+PRIVATE_KEY signs every trade and the existing
+TraderClient.sign_and_get_receipt path is used. Only safe for local dev.
 
 Endpoints:
   POST /trade/open         — open a ZFP long on ETH/USD
@@ -10,7 +16,7 @@ Endpoints:
   POST /trade/force-close  — close with was_liquidated=True (figure hit water)
   GET  /trade/active       — get the currently open trade or null
 
-SDK call sites match canonical examples at https://sdk.avantisfi.com/trade.html
+SDK call sites match canonical examples at https://sdk.avantisfi.com/trade.html.
 """
 
 import asyncio
@@ -18,11 +24,14 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from avantis_trader_sdk import TraderClient
 from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 
+import auth
+from auth import AuthedUser, require_user
+from privy_send import send_via_privy
 from models import (
     OpenTradeRequest,
     OpenTradeResponse,
@@ -38,27 +47,31 @@ _PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 _TREASURY_ADDRESS = os.getenv("TREASURY_ADDRESS")
 _PAIR = "ETH/USD"
 _USDC_APPROVAL_AMOUNT = 1000.0
+_RECEIPT_POLL_INTERVAL = 1.0
+_RECEIPT_POLL_MAX_TRIES = 30  # ~30 s max wait for tx confirmation
 
 _trader_client: Optional[TraderClient] = None
 _eth_pair_index: Optional[int] = None
-_trader_address: Optional[str] = None
+_trader_address: Optional[str] = None  # legacy env wallet (single-wallet fallback only)
 
 
 async def init_trader():
-    """Initialize the Avantis trader client. On any failure, leaves
-    _trader_client = None so /trade/* will return 503 via _require_trader
-    until the env is fixed and init succeeds on a future restart."""
+    """Initialize a SHARED TraderClient used for read-only ops (pair info,
+    get_trades, get_usdc_balance) AND legacy single-wallet signing when
+    AUTH_DISABLE is set. On any failure, leaves _trader_client = None
+    so /trade/* will return 503 via _require_trader until the env is
+    fixed and init succeeds on a future restart."""
     global _trader_client, _eth_pair_index, _trader_address
 
     try:
-        if not _PRIVATE_KEY:
-            raise RuntimeError("PRIVATE_KEY env var is required")
-        if not _TREASURY_ADDRESS:
-            raise RuntimeError("TREASURY_ADDRESS env var is required")
-
         _trader_client = TraderClient(_PROVIDER_URL)
-        _trader_client.set_local_signer(_PRIVATE_KEY)
-        _trader_address = _trader_client.get_signer().get_ethereum_address()
+
+        # Set local signer only if a key is present — single-wallet
+        # legacy fallback. In multi-user prod (no PRIVATE_KEY env),
+        # mutating ops go via Privy and don't need a local signer.
+        if _PRIVATE_KEY:
+            _trader_client.set_local_signer(_PRIVATE_KEY)
+            _trader_address = _trader_client.get_signer().get_ethereum_address()
 
         _eth_pair_index = await _trader_client.pairs_cache.get_pair_index(_PAIR)
 
@@ -78,11 +91,10 @@ async def init_trader():
 
         print(
             f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "
-            f"trader={_trader_address} lev_range="
+            f"trader={_trader_address or '(per-user via Privy)'} lev_range="
             f"{eth.leverages.min_leverage}-{eth.leverages.max_leverage}"
         )
     except Exception:
-        # Reset partial state so _require_trader cleanly returns 503.
         _trader_client = None
         _eth_pair_index = None
         _trader_address = None
@@ -95,6 +107,10 @@ def _require_trader() -> TraderClient:
     return _trader_client
 
 
+def _is_legacy_user(user: AuthedUser) -> bool:
+    return user.wallet_id == "local-dev"
+
+
 def _tx_hash_str(receipt) -> str:
     th = getattr(receipt, "transactionHash", None)
     if th is None:
@@ -104,11 +120,35 @@ def _tx_hash_str(receipt) -> str:
     return str(th)
 
 
-@router.post("/open", response_model=OpenTradeResponse)
-async def open_trade(body: OpenTradeRequest):
-    client = _require_trader()
+async def _poll_for_trade(client: TraderClient, address: str, *, expect_present: bool, retries: int = _RECEIPT_POLL_MAX_TRIES):
+    """Poll get_trades until the trade list reaches the expected state.
+    Returns the latest trades list."""
+    trades = []
+    for _ in range(retries):
+        trades, _info = await client.trade.get_trades(address)
+        if expect_present and trades:
+            return trades
+        if not expect_present and not trades:
+            return trades
+        await asyncio.sleep(_RECEIPT_POLL_INTERVAL)
+    return trades
 
-    existing, _ = await client.trade.get_trades(_trader_address)
+
+async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
+    """Route an Avantis-built tx through Privy for user-scoped signing."""
+    if auth._privy_client is None:
+        raise HTTPException(503, "Privy client not initialized for user-scoped trades")
+    return await send_via_privy(auth._privy_client, user.wallet_id, raw_tx)
+
+
+@router.post("/open", response_model=OpenTradeResponse)
+async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_user)):
+    client = _require_trader()
+    pair_index = _eth_pair_index
+    if pair_index is None:
+        raise HTTPException(503, "pair index not initialized")
+
+    existing, _ = await client.trade.get_trades(user.address)
     if existing:
         raise HTTPException(
             409,
@@ -120,20 +160,37 @@ async def open_trade(body: OpenTradeRequest):
     if collateral <= 0:
         raise HTTPException(400, "wager too small after house fee")
 
-    allowance = await client.get_usdc_allowance_for_trading(_trader_address)
+    allowance = await client.get_usdc_allowance_for_trading(user.address)
     if allowance < collateral:
-        print(
-            f"  approving {_USDC_APPROVAL_AMOUNT} USDC for trading "
-            f"(current allowance {allowance})..."
-        )
-        await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
-
-    # TODO P3: USDC.transfer(TREASURY_ADDRESS, house_fee) multicalled with the open
+        # Approve via the user's wallet — same Privy relay path as the
+        # trade itself. One-time per user (or until they revoke / their
+        # allowance is consumed).
+        approval_tx = await client.build_usdc_approval_tx_for_trading(
+            user.address, _USDC_APPROVAL_AMOUNT
+        ) if hasattr(client, "build_usdc_approval_tx_for_trading") else None
+        if approval_tx is None:
+            # SDK doesn't expose the build helper publicly — fall back
+            # to its mutating method only valid under legacy single-wallet.
+            if _is_legacy_user(user):
+                await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
+            else:
+                raise HTTPException(
+                    501,
+                    "USDC approval helper unavailable in SDK; user must approve via frontend",
+                )
+        else:
+            if _is_legacy_user(user):
+                receipt = await client.sign_and_get_receipt(approval_tx)
+                _ = _tx_hash_str(receipt)
+            else:
+                _ = await _send_user_tx(user, approval_tx)
+                # Allow a moment for the approval to land before opening.
+                await asyncio.sleep(1.0)
 
     trade_input = TradeInput(
-        trader=_trader_address,
+        trader=user.address,
         open_price=None,
-        pair_index=_eth_pair_index,
+        pair_index=pair_index,
         collateral_in_trade=collateral,
         is_long=True,
         leverage=body.leverage,
@@ -142,29 +199,29 @@ async def open_trade(body: OpenTradeRequest):
         sl=0,
         timestamp=0,
     )
-
     open_tx = await client.trade.build_trade_open_tx(
         trade_input,
         TradeInputOrderType.MARKET_ZERO_FEE,
         slippage_percentage=1,
     )
-    receipt = await client.sign_and_get_receipt(open_tx)
 
-    trades, _ = await client.trade.get_trades(_trader_address)
+    if _is_legacy_user(user):
+        receipt = await client.sign_and_get_receipt(open_tx)
+        tx_hash = _tx_hash_str(receipt)
+    else:
+        tx_hash = await _send_user_tx(user, open_tx)
+
+    trades = await _poll_for_trade(client, user.address, expect_present=True)
     if not trades:
-        await asyncio.sleep(1.0)
-        trades, _ = await client.trade.get_trades(_trader_address)
-        if not trades:
-            raise HTTPException(
-                500,
-                f"trade tx confirmed ({_tx_hash_str(receipt)}) but get_trades returned empty after retry",
-            )
-
+        raise HTTPException(
+            500,
+            f"open tx broadcast ({tx_hash}) but trade did not appear after polling",
+        )
     new_trade = trades[0]
 
     return OpenTradeResponse(
         trade_index=new_trade.trade.trade_index,
-        avantis_pair_index=_eth_pair_index,
+        avantis_pair_index=pair_index,
         leverage=body.leverage,
         wager_usdc=body.wager_usdc,
         house_fee_usdc=house_fee,
@@ -172,31 +229,35 @@ async def open_trade(body: OpenTradeRequest):
         entry_price=new_trade.trade.open_price,
         liquidation_price=new_trade.liquidation_price,
         opened_at=datetime.now(timezone.utc),
-        tx_hash=_tx_hash_str(receipt),
+        tx_hash=tx_hash,
     )
 
 
-async def _close_active_trade(was_liquidated: bool) -> CloseTradeResponse:
+async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTradeResponse:
     client = _require_trader()
-
-    trades, _ = await client.trade.get_trades(_trader_address)
+    trades, _ = await client.trade.get_trades(user.address)
     if not trades:
         raise HTTPException(404, "no open trade")
     target = trades[0]
 
-    balance_before = await client.get_usdc_balance(_trader_address)
+    balance_before = await client.get_usdc_balance(user.address)
 
     close_tx = await client.trade.build_trade_close_tx(
         pair_index=target.trade.pair_index,
         trade_index=target.trade.trade_index,
         collateral_to_close=target.trade.open_collateral,
-        trader=_trader_address,
+        trader=user.address,
     )
-    receipt = await client.sign_and_get_receipt(close_tx)
+
+    if _is_legacy_user(user):
+        receipt = await client.sign_and_get_receipt(close_tx)
+        tx_hash = _tx_hash_str(receipt)
+    else:
+        tx_hash = await _send_user_tx(user, close_tx)
 
     balance_after = balance_before
     for _ in range(5):
-        balance_after = await client.get_usdc_balance(_trader_address)
+        balance_after = await client.get_usdc_balance(user.address)
         if balance_after != balance_before:
             break
         await asyncio.sleep(1.0)
@@ -220,30 +281,28 @@ async def _close_active_trade(was_liquidated: bool) -> CloseTradeResponse:
         net_pnl_usdc=net_pnl,
         was_liquidated=was_liquidated,
         closed_at=datetime.now(timezone.utc),
-        tx_hash=_tx_hash_str(receipt),
+        tx_hash=tx_hash,
     )
 
 
 @router.post("/close", response_model=CloseTradeResponse)
-async def close_trade():
-    return await _close_active_trade(was_liquidated=False)
+async def close_trade(user: AuthedUser = Depends(require_user)):
+    return await _close_active_trade(user, was_liquidated=False)
 
 
 @router.post("/force-close", response_model=CloseTradeResponse)
-async def force_close_trade():
-    return await _close_active_trade(was_liquidated=True)
+async def force_close_trade(user: AuthedUser = Depends(require_user)):
+    return await _close_active_trade(user, was_liquidated=True)
 
 
 @router.get("/active", response_model=Optional[ActiveTrade])
-async def get_active_trade():
+async def get_active_trade(user: AuthedUser = Depends(require_user)):
     client = _require_trader()
-
-    trades, _ = await client.trade.get_trades(_trader_address)
+    trades, _ = await client.trade.get_trades(user.address)
     if not trades:
         return None
 
     t = trades[0]
-
     return ActiveTrade(
         trade_index=t.trade.trade_index,
         avantis_pair_index=t.trade.pair_index,
