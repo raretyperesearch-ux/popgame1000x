@@ -71,7 +71,6 @@ async def send_via_privy(
     privy_client: Any,
     wallet_id: str,
     raw_tx: Any,
-    sponsor: bool = False,
 ) -> str:
     """Send a built Avantis transaction via Privy. Returns the tx hash."""
     transaction = _normalize_tx(raw_tx)
@@ -80,7 +79,6 @@ async def send_via_privy(
         method="eth_sendTransaction",
         caip2=BASE_CAIP2,
         params={"transaction": transaction},
-        sponsor=sponsor,
     )
     # Response shape per docs:
     #   { "method": "eth_sendTransaction", "data": { "hash": "0x...", "caip2": "..." } }
