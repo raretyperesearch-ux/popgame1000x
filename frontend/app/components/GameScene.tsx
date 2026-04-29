@@ -1336,8 +1336,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
          last delivered so the chart smooths between discrete ticks. */
       a.renderPrice = lerp(a.renderPrice, a.price, 0.08 * dtNorm);
 
-      /* chart scroll speed based on state */
-      let speed = CHART_SPEED_IDLE;
+      /* chart scroll speed based on state. Keep the world frozen during
+         the idle hold and after a crash so the sprite never appears to
+         glide against moving ground. */
+      let speed = 0;
       if (a.state === "RUNNING" || a.state === "PREPARE" || a.state === "JUMPING") speed = CHART_SPEED_RUN;
       else if (a.state === "IDLE" && a.idleStartTime > 0 && time - a.idleStartTime >= 800) speed = CHART_SPEED_RUN;
       else if (a.state === "LIVE") speed = CHART_SPEED_LIVE;
