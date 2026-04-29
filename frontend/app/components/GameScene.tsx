@@ -81,9 +81,12 @@ const FALL_FRAMES = [12, 13];
 const FALL_FRAME_MS = 130;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
-const LIVE_LAND_HOLD_MS = LAND_FRAME_MS * LAND_FRAMES.length;
-type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "fall" | "land" | "fail";
-const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land">, number> = {
+const PARACHUTE_FRAMES = [23, 24, 25, 26];
+const PARACHUTE_FRAME_MS = 130;
+const LIVE_MIN_AIR_GAP_PX = 70;
+const PARACHUTE_MIN_AIR_GAP_PX = 48;
+type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "fall" | "land" | "parachute" | "fail";
+const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land" | "parachute">, number> = {
   idle: 5,
   crouch: 6,
   charge: 6,
@@ -261,7 +264,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteAirStart: 0,
     spriteFallStart: 0,
     spriteLandStart: 0,
-    liveLandUntil: 0,
+    spriteParachuteStart: 0,
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
@@ -359,6 +362,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (state === "air") a.spriteAirStart = time ?? performance.now();
         if (state === "fall") a.spriteFallStart = time ?? performance.now();
         if (state === "land") a.spriteLandStart = time ?? performance.now();
+        if (state === "parachute") a.spriteParachuteStart = time ?? performance.now();
       }
     },
     [],
@@ -404,6 +408,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     } else if (a.spriteState === "land") {
       const elapsed = time - (a.spriteLandStart || time);
       frameIdx = LAND_FRAMES[Math.min(LAND_FRAMES.length - 1, Math.floor(elapsed / LAND_FRAME_MS))];
+    } else if (a.spriteState === "parachute") {
+      const elapsed = time - (a.spriteParachuteStart || time);
+      const frames = safeFrames(PARACHUTE_FRAMES, AIR_FRAMES);
+      frameIdx = frames[Math.floor(elapsed / PARACHUTE_FRAME_MS) % frames.length];
     } else {
       frameIdx = SPRITE_FRAME[a.spriteState];
     }
@@ -1088,7 +1096,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.spriteJumpStart = 0;
     a.spriteAirStart = 0;
     a.spriteLandStart = 0;
-    a.liveLandUntil = 0;
+    a.spriteParachuteStart = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
     a.loco.grounded = true;
@@ -1171,8 +1179,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.state = "STOPPED";
     setGameState("STOPPED");
     sounds.play("deploy-chute");
-    if (parachuteRef.current) parachuteRef.current.classList.add("deployed");
-    setSpriteState("land");
+    if (parachuteRef.current) parachuteRef.current.classList.remove("deployed");
+    setSpriteState("parachute");
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
@@ -1266,7 +1274,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteJumpStart = 0;
       a.spriteAirStart = 0;
       a.spriteLandStart = 0;
-      a.liveLandUntil = 0;
+      a.spriteParachuteStart = 0;
       a.dustParticles.length = 0;
       a.loco.grounded = true;
       a.loco.stepPhase = 0;
@@ -1613,32 +1621,24 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        const wasGrounded = loco.grounded;
+        loco.grounded = false;
         a.curBobY = 0;
 
         /* price delta for physics */
         const priceDelta = a.price - a.prevPrice;
         a.smoothDelta = lerp(a.smoothDelta, priceDelta, VELOCITY_LERP * dtNorm);
 
-        /* physics — gated on grounded so a sticky landing on the chart
-           line doesn't keep accumulating downward velocity each frame.
-           Thrust still applies while grounded (positive price delta can
-           lift the character off), but gravity does not. */
+        /* Open trades stay airborne. The character can lose altitude,
+           but only liquidation is allowed to hit the ground. */
         const thrust = clamp(a.smoothDelta * THRUST_MULT, -0.08, 0.12);
-        if (loco.grounded) {
-          if (a.smoothDelta > 0.001) {
-            a.figPriceVel += thrust * 0.6 * dtNorm;
-          }
-        } else if (a.smoothDelta > 0.001) {
+        if (a.smoothDelta > 0.001) {
           a.figPriceVel += thrust * 0.6 * dtNorm;
         } else if (Math.abs(a.smoothDelta) <= 0.0015) {
           a.figPriceVel += (-GRAVITY_P * 0.25) * dtNorm;
         } else {
           a.figPriceVel += (thrust * 0.25 - GRAVITY_P * 1.15) * dtNorm;
         }
-        if (!loco.grounded) {
-          a.figPriceVel -= GRAVITY_P * dtNorm;
-        }
+        a.figPriceVel -= GRAVITY_P * dtNorm;
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
@@ -1670,54 +1670,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
         }
 
-        /* position figure — clamp the rendered Y to terrain so the
-           sprite never clips below the chart line. We don't touch
-           a.figPrice (PnL math reads a.price vs a.entry, never
-           figPrice), so this is purely visual. */
+        /* Position figure above the terrain floor. We don't touch
+           a.figPrice (PnL math reads a.price vs a.entry, never figPrice),
+           so the air floor is purely visual and liquidation remains the
+           only ground impact. */
         if (priceToY) {
           const groundYNow = getTerrainY(figWorldX);
           const rawFigY = priceToY(a.figPrice);
-          const figY = Math.min(rawFigY, groundYNow - 4);
+          const figY = Math.min(rawFigY, groundYNow - LIVE_MIN_AIR_GAP_PX);
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
-          const groundY = groundYNow;
-          // Ground contact during LIVE: pin the character to the chart
-          // line and zero downward velocity so gravity doesn't keep it
-          // below terrain frame after frame. The trade STAYS LIVE — it
-          // closes only via stopTrade() (user click) or splat()
-          // (liquidation). The previous code flipped state back to
-          // RUNNING here, which re-entered PREPARE -> JUMPING and
-          // overwrote the trade's entry/liq prices mid-trade — looked
-          // like the trade had auto-closed.
-          if (figY >= groundY - 4 && a.figPriceVel < 0) {
-            loco.grounded = true;
-            if (!wasGrounded) a.liveLandUntil = time + LIVE_LAND_HOLD_MS;
-            loco.bodyX = figWorldX;
-            loco.bodyY = groundY - BODY_HEIGHT_PX;
-            loco.leftFoot = { x: figWorldX - 1.2, y: getTerrainY(figWorldX - 1.2), planted: true };
-            loco.rightFoot = { x: figWorldX + 1.2, y: getTerrainY(figWorldX + 1.2), planted: true };
-            loco.plantedFoot = "left";
-            loco.squash = 2.5;
-            // Kill downward velocity. Upward thrust on the next price
-            // uptick can still push figPriceVel positive and lift the
-            // character off — see _do_ground_check below.
-            a.figPriceVel = 0;
-          } else {
-            loco.grounded = false;
-          }
         }
 
-        // Pick the pose after ground contact is resolved, so touchdown
-        // never renders a one-frame falling pose at chart level.
         setSpriteState(
-          loco.grounded
-            ? time < a.liveLandUntil
-              ? "land"
-              : "run"
-            : a.figPriceVel < FALL_VEL_THRESHOLD
-              ? "fall"
-              : "air",
+          a.figPriceVel < FALL_VEL_THRESHOLD ? "fall" : "air",
           time,
         );
 
@@ -1733,26 +1700,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
       } else if (a.state === "STOPPED") {
-        /* parachute descent: lerp figPrice toward chart price and land softly */
+        /* parachute descent: drift toward the chart, but stay airborne;
+           liquidation is the only state that impacts the ground. */
         a.figPrice = lerp(a.figPrice, priceAtFig, 0.02 * dtNorm);
         if (priceToY) {
-          const figY = priceToY(a.figPrice);
+          const groundY = getTerrainY(figWorldX);
+          const figY = Math.min(priceToY(a.figPrice), groundY - PARACHUTE_MIN_AIR_GAP_PX);
           const alt = a.stageH - figY;
           a.smoothRot = lerp(a.smoothRot, 0, 0.05 * dtNorm);
           setFig(figScreenX, alt, a.smoothRot);
-          const groundY = getTerrainY(figWorldX);
-          if (figY >= groundY - 3) {
-            const loco = a.loco;
-            loco.grounded = true;
-            loco.bodyX = figWorldX;
-            loco.bodyY = groundY - BODY_HEIGHT_PX;
-            loco.leftFoot = { x: figWorldX - 1.1, y: getTerrainY(figWorldX - 1.1), planted: true };
-            loco.rightFoot = { x: figWorldX + 1.1, y: getTerrainY(figWorldX + 1.1), planted: true };
-            loco.squash = lerp(loco.squash, 2.2, 0.5);
-            setSpriteState("land", time);
-          } else {
-            setSpriteState("air", time);
-          }
+          a.loco.grounded = false;
+          setSpriteState("parachute", time);
         }
 
       } else if (a.state === "DEAD") {
