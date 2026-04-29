@@ -543,22 +543,29 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.closePath();
         ctx.clip();
         ctx.imageSmoothingEnabled = false;
-        for (let i = 4; i < pts.length; i += 7) {
-          const n = featureNoise(i * 6.71);
-          if (n < 0.34) continue;
-          const x = pts[i].x + (featureNoise(i * 3.19) - 0.5) * 22;
-          const y = pts[i].y + 42 + featureNoise(i * 4.83) * 62;
-          const size = Math.round(13 + featureNoise(i * 5.41) * 11);
-          const spritePick = n > 0.86
-            ? [2, 5, 6, 7][Math.floor(featureNoise(i * 2.23) * 4) % 4]
-            : [0, 1, 3, 4, 8, 13, 14][Math.floor(featureNoise(i * 2.91) * 7) % 7];
+        const propSpacing = 92;
+        const propScroll = ((anim.current.groundScrollAcc * TERRAIN_SCROLL_PX) % propSpacing + propSpacing) % propSpacing;
+        for (let x = -propSpacing - propScroll; x < w + propSpacing; x += propSpacing) {
+          const propId = Math.floor((x + propScroll) / propSpacing) + Math.floor(anim.current.groundScrollAcc * TERRAIN_SCROLL_PX / propSpacing);
+          const n = featureNoise(propId * 6.71);
+          if (n < 0.28) continue;
+          const isGrassProp = featureNoise(propId * 7.43) > 0.62;
+          const groundY = groundYAt(x);
+          const size = Math.round((isGrassProp ? 10 : 13) + featureNoise(propId * 5.41) * (isGrassProp ? 5 : 9));
+          const dx = Math.round(x + (featureNoise(propId * 3.19) - 0.5) * 24 - size / 2);
+          const dy = Math.round(
+            isGrassProp
+              ? groundY - size * 0.7 + featureNoise(propId * 4.83) * 4
+              : groundY + 38 + featureNoise(propId * 4.83) * 54 - size / 2,
+          );
+          const spritePick = n > 0.84
+            ? [2, 5, 6, 7][Math.floor(featureNoise(propId * 2.23) * 4) % 4]
+            : [0, 1, 3, 4, 8, 13, 14][Math.floor(featureNoise(propId * 2.91) * 7) % 7];
           const sx = (spritePick % MONEY_PROP_COLS) * MONEY_PROP_CELL;
           const sy = Math.floor(spritePick / MONEY_PROP_COLS) * MONEY_PROP_CELL;
-          const dx = Math.round(x - size / 2);
-          const dy = Math.round(y - size / 2);
-          ctx.globalAlpha = 0.88;
+          ctx.globalAlpha = isGrassProp ? 0.94 : 0.86;
           ctx.drawImage(moneyImg, sx, sy, MONEY_PROP_CELL, MONEY_PROP_CELL, dx, dy, size, size);
-          if (featureNoise(i * 8.77) > 0.58) {
+          if (!isGrassProp && featureNoise(propId * 8.77) > 0.5) {
             ctx.globalAlpha = 0.68;
             ctx.fillStyle = "rgba(24,18,13,0.88)";
             ctx.fillRect(dx - 1, dy + Math.floor(size * 0.66), size + 2, Math.ceil(size * 0.36));
@@ -1109,20 +1116,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             Math.round(x), Math.round(shelfTop - waveBob - WATER_FOAM_OVERLAP),
             Math.round(tileW), surfaceH,
           );
-        }
-        const moneyImg = moneyPropsImageRef.current;
-        if (moneyImg && moneyPropsImageReadyRef.current) {
-          ctx.globalAlpha = groundAlpha * 0.42;
-          for (let i = 0; i < 9; i++) {
-            const n = featureNoise((i + startIdx) * 9.37);
-            const spritePick = [0, 2, 4, 5, 7, 11, 13][Math.floor(n * 7) % 7];
-            const sx = (spritePick % MONEY_PROP_COLS) * MONEY_PROP_CELL;
-            const sy = Math.floor(spritePick / MONEY_PROP_COLS) * MONEY_PROP_CELL;
-            const size = Math.round(10 + featureNoise(i * 4.19 + startIdx) * 8);
-            const dx = Math.round(((i * 97 - drift * 0.42) % (w + 140)) - 70);
-            const dy = Math.round(shelfTop + 58 + featureNoise(i * 6.13 + startIdx) * Math.max(24, shelfH * 0.38));
-            ctx.drawImage(moneyImg, sx, sy, MONEY_PROP_CELL, MONEY_PROP_CELL, dx, dy, size, size);
-          }
         }
         ctx.restore();
       }
