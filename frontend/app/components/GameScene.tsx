@@ -984,7 +984,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.fillStyle = "rgba(244,236,216,0.35)";
         ctx.font = '9px "Press Start 2P", monospace';
         ctx.textAlign = "right";
-        ctx.fillText("LAUNCH", w - 6, ey - 5);
+        ctx.fillText("ENTRY", w - 6, ey - 5);
         ctx.textAlign = "start";
       }
 

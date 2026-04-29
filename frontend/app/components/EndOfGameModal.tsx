@@ -35,7 +35,7 @@ const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; sprite
     exitFallback: "—",
   },
   rekt: {
-    subtitle: "YOU CAME. YOU LAUNCHED. YOU CRASHED.",
+    subtitle: "YOU CAME. YOU ENTERED. YOU CRASHED.",
     badge: "CRASHED",
     spriteFrame: 16,
     exitFallback: "CRASHED",
@@ -443,7 +443,7 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   ctx.strokeRect(80, statsY - 60, W - 160, 160);
 
   const statCols = [
-    { label: "LAUNCH", value: fmtPrice(data.entry), sub: "" },
+    { label: "ENTRY", value: fmtPrice(data.entry), sub: "" },
     { label: "LANDING", value: data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback, sub: "" },
     { label: "BOOST", value: data.boost + "x", sub: "ETH" },
     { label: "TIME", value: fmtDuration(data.durationSeconds), sub: "IN FLIGHT" },
@@ -559,7 +559,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
         <div className="eog-stats">
           <div className="eog-stat">
-            <div className="eog-stat-label">LAUNCH</div>
+            <div className="eog-stat-label">ENTRY</div>
             <div className="eog-stat-value">{fmtPrice(data.entry)}</div>
           </div>
           <div className="eog-stat">

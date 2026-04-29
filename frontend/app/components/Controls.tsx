@@ -36,7 +36,7 @@ export default function Controls({
     actionLabel = "pull chute";
     actionClass = "action stop";
   } else if (opening) {
-    actionLabel = "launching";
+    actionLabel = "entering";
     actionClass = "action disabled";
     actionLocked = true;
   } else if (balance < 1 && state === "IDLE") {

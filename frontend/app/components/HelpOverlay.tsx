@@ -28,7 +28,7 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
         <div className="help-title">how this works</div>
         <ul className="help-list">
           <li>pick boost (75&ndash;250&times;) and wager</li>
-          <li>tap jump &rarr; launch the run</li>
+          <li>tap jump &rarr; enter the run</li>
           <li>price up &rarr; flames fire, you rise</li>
           <li>price down &rarr; no flames, you fall</li>
           <li>hit the crash line &rarr; run over</li>
