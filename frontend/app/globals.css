@@ -1543,6 +1543,34 @@ body::before {
   background: var(--ink);
   opacity: 0.5;
 }
+.gas-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1.5px dashed rgba(244, 236, 216, 0.28);
+  border-radius: 999px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: var(--muted);
+  background: rgba(0,0,0,0.18);
+}
+.gas-pill.ok {
+  color: var(--green);
+  border-color: rgba(93,211,158,0.48);
+}
+.gas-pill.warn {
+  color: var(--red);
+  border-color: rgba(255,95,86,0.68);
+  box-shadow: 0 0 14px rgba(255,95,86,0.18);
+}
+.gas-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
 .user-wrap {
   position: relative;
 }
@@ -1707,6 +1735,7 @@ body::before {
   .topbar { padding: 8px 14px 6px; }
   .brand { font-size: 20px; }
   .deposit-btn, .balance-pill { font-size: 16px; padding: 3px 10px; }
+  .gas-pill { font-size: 5px; padding: 2px 6px; }
   .help-btn, .mute-btn, .avatar-btn { width: 22px; height: 22px; font-size: 14px; }
   .history-row { padding: 4px 14px; min-height: 24px; font-size: 14px; }
   .history-row .label { font-size: 7px; }

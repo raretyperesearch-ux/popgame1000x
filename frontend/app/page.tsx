@@ -19,6 +19,8 @@ export default function Home() {
   // Always the embedded wallet — see Topbar.tsx for rationale.
   const walletAddress = getEmbeddedEthereumAddress(user);
   const [balance, setBalance] = useState(100);
+  const [ethBalance, setEthBalance] = useState<number | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const [leverage, setLeverage] = useState(100);
   const [wager, setWager] = useState(5);
   const [gameState, setGameState] = useState<GameState>("IDLE");
@@ -52,14 +54,24 @@ export default function Home() {
   useEffect(() => {
     if (gameState !== "IDLE") return;
     let cancelled = false;
-    if (paperMode) return;
+    if (paperMode) {
+      setEthBalance(0.01);
+      setBalanceLoading(false);
+      return;
+    }
+    setBalanceLoading(true);
     getBalance(getAccessToken, walletAddress)
       .then((res) => {
         if (cancelled) return;
         setBalance(res.usdc_balance);
+        setEthBalance(res.eth_balance ?? 0);
       })
       .catch((e) => {
         console.warn("[balance] getBalance failed — keeping local balance:", e);
+        if (!cancelled) setEthBalance(null);
+      })
+      .finally(() => {
+        if (!cancelled) setBalanceLoading(false);
       });
     return () => {
       cancelled = true;
@@ -189,6 +201,8 @@ export default function Home() {
     <div className="cabinet">
       <Topbar
         balance={balance}
+        ethBalance={ethBalance}
+        balanceLoading={balanceLoading}
         onHelpClick={() => setShowHelp(true)}
         onError={showTradeError}
       />

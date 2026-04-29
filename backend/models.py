@@ -63,6 +63,7 @@ class PriceStreamMessage(BaseModel):
 
 class BalanceResponse(BaseModel):
     usdc_balance: float
+    eth_balance: float = 0.0
     wallet_address: str
 
 

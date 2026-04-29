@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import AuthedUser, require_user
 from models import BalanceResponse
 from routes import trade as trade_module
+from usdc_approval import get_eth_balance_wei
 
 router = APIRouter()
 
@@ -25,7 +26,13 @@ async def get_balance(user: AuthedUser = Depends(require_user)):
     if client is None:
         raise HTTPException(503, "trader client not initialized")
     usdc = await client.get_usdc_balance(user.address)
+    eth_balance = 0.0
+    try:
+        eth_balance = await get_eth_balance_wei(user.address) / 10**18
+    except Exception as e:  # noqa: BLE001
+        print(f"[balance] ETH gas balance read failed for {user.address}: {e}")
     return BalanceResponse(
         usdc_balance=float(usdc),
+        eth_balance=eth_balance,
         wallet_address=user.address,
     )

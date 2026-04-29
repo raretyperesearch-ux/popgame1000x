@@ -12,6 +12,8 @@ import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 
 interface TopbarProps {
   balance: number;
+  ethBalance: number | null;
+  balanceLoading?: boolean;
   onHelpClick: () => void;
   onError?: (msg: string) => void;
 }
@@ -22,7 +24,7 @@ interface TopbarProps {
    PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
 
-export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
+export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
   const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
@@ -59,6 +61,10 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
     ? walletAddress.slice(2, 4).toUpperCase()
     : "•";
 
+  useEffect(() => {
+    setLocallyDelegated(false);
+  }, [walletAddress]);
+
   /* `delegated: true` is the LEGACY delegateAction flag — it's not set
      by the new useSigners session-signer flow on TEE wallets. We treat
      it as one signal among others: a true value here means definitively
@@ -76,6 +82,7 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
     ),
   );
   const isDelegated = linkedSaysDelegated || locallyDelegated;
+  const hasGas = ethBalance === null || ethBalance >= 0.0005;
 
   /* One-time delegation prompt after login. Fires only when:
      - user is authenticated
@@ -99,8 +106,12 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
     setDelegating(true);
     addSigners({
       address: walletAddress,
-      signers: [{ signerId: PRIVY_SIGNER_ID }],
+      signers: [{ signerId: PRIVY_SIGNER_ID, policyIds: [] }],
     })
+      .then((result) => {
+        console.log("[delegate] addSigners ok. signerId we sent:", PRIVY_SIGNER_ID, "result:", result);
+        setLocallyDelegated(true);
+      })
       .catch((e) => console.warn("[delegate] declined or failed:", e))
       .finally(() => {
         if (!cancelled) setDelegating(false);
@@ -245,6 +256,7 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
     if (!walletAddress) return;
     try {
       await removeSigners({ address: walletAddress });
+      setLocallyDelegated(false);
     } catch (e) {
       console.warn("[delegate] revoke failed:", e);
     }
@@ -269,7 +281,14 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
           <>
             <div className="balance-pill" title="USDC balance">
               <span className="balance-icon" aria-hidden="true" />
-              <span>${balance.toFixed(2)}</span>
+              <span>{balanceLoading ? "syncing…" : `$${balance.toFixed(2)}`}</span>
+            </div>
+            <div
+              className={`gas-pill ${hasGas ? "ok" : "warn"}`}
+              title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
+            >
+              <span className="gas-dot" aria-hidden="true" />
+              <span>{ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
             </div>
             <div className="user-wrap" ref={wrapRef}>
               <button
@@ -285,6 +304,13 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
                   <div className="user-menu-header">
                     <div className="user-menu-label">wallet</div>
                     <div className="user-menu-addr">{truncated}</div>
+                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
+                      {ethBalance === null
+                        ? "gas checking…"
+                        : hasGas
+                          ? `${ethBalance.toFixed(5)} ETH gas`
+                          : "needs ETH gas"}
+                    </div>
                     <div className={`user-menu-tag ${isDelegated ? "ok" : "warn"}`}>
                       {isDelegated ? "trading delegated ✓" : "delegation pending"}
                     </div>
