@@ -176,7 +176,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+def _parse_allowed_origins() -> list[str]:
+    """Parse ALLOWED_ORIGINS env into a list. Wildcard ("*") is rejected
+    here because allow_credentials=True is required for the
+    Authorization + X-Wallet-Address headers, and the CORS spec forbids
+    that combination — browsers silently drop the response. When unset,
+    fall back to the standard local-dev origins so `npm run dev` and
+    `next dev` work out of the box without CORS friction."""
+    raw = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        print(
+            "⚠️  ALLOWED_ORIGINS unset — defaulting to localhost dev origins. "
+            "Set ALLOWED_ORIGINS to your Vercel URL in prod."
+        )
+        return [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
+    parsed = [o.strip() for o in raw.split(",") if o.strip()]
+    if "*" in parsed:
+        print(
+            "⚠️  ALLOWED_ORIGINS=* is unsafe with credentialed requests. "
+            "Replace with explicit origins (Vercel URL, localhost). "
+            "Falling back to localhost defaults for safety."
+        )
+        return [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
+    return parsed
+
+
+allowed_origins = _parse_allowed_origins()
 
 app.add_middleware(
     CORSMiddleware,
