@@ -282,6 +282,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const [priceDisplay, setPriceDisplay] = useState("ETH $3500.00");
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
+  const [impactFx, setImpactFx] = useState<"" | "crash" | "win" | "loss">("");
   const [endOfGame, setEndOfGame] = useState<EndOfGameData | null>(null);
 
   const getTradeDurationSeconds = useCallback(() => {
@@ -300,6 +301,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       size: Math.random() > 0.85 ? 2.5 : 1.5,
     })),
   );
+  const slowMoUntilRef = useRef(0);
 
   /* ============ CANVAS SETUP ============ */
   const resizeCanvas = useCallback(() => {
@@ -1065,6 +1067,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.loco.stepPhase = 0;
     a.loco.plantedFoot = "left";
     a.loco.squash = 0;
+    slowMoUntilRef.current = 0;
+    setImpactFx("");
   }, [setGameState, setSpriteState, onPnlChange]);
 
   /* ============ SPLAT (liquidation) ============ */
@@ -1075,6 +1079,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("DEAD");
     setSpriteState("fail");
     sounds.play("rekt-crash");
+    slowMoUntilRef.current = performance.now() + 320;
+    setImpactFx("crash");
+    setTimeout(() => setImpactFx(""), 420);
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
@@ -1160,6 +1167,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
+      if (kind === "win") {
+        setImpactFx("win");
+        setTimeout(() => setImpactFx(""), 360);
+      } else {
+        setImpactFx("loss");
+        setTimeout(() => setImpactFx(""), 300);
+      }
       setEndOfGame({
         kind,
         pnlDollars,
@@ -1247,7 +1261,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const tick = (time: number) => {
       const dt = lastTime ? Math.min(time - lastTime, 33.33) : 16.67;
       lastTime = time;
-      const dtNorm = dt / 16.67;
+      const slowMo = time < slowMoUntilRef.current ? 0.42 : 1;
+      const dtNorm = (dt / 16.67) * slowMo;
       const a = anim.current;
 
       /* a.price is set by the /price/stream WS subscription (see PRICE
@@ -1815,7 +1830,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   }, [gameState]);
 
   return (
-    <div className="stage" ref={stageRef}>
+    <div className={`stage${impactFx ? ` impact-${impactFx}` : ""}`} ref={stageRef}>
       {/* Chart canvas */}
       <canvas
         ref={canvasRef}
@@ -1887,6 +1902,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         />
       </div>
       <div className="banner" ref={bannerRef} />
+      <div className={`impact-overlay${impactFx ? ` ${impactFx}` : ""}`} />
       <EndOfGameModal data={endOfGame} onClose={closeEndOfGame} />
     </div>
   );
