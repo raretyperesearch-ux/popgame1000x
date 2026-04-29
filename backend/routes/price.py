@@ -45,6 +45,18 @@ def _on_feed_error(e):
     print(f"⚠️  FeedClient error/close: {e}")
 
 
+def get_latest_price() -> Optional[float]:
+    """Latest ETH/USD price from the Avantis Lazer feed, or None if the
+    feed hasn't ticked yet. Used by /trade/active and /trade/close to
+    populate current_price / exit_price without a separate RPC call."""
+    return _latest_price
+
+
+def get_latest_ts_ms() -> Optional[int]:
+    """Lazer timestamp (ms) of the most recent price tick, or None."""
+    return _latest_ts_ms
+
+
 def _build_payload() -> dict:
     return {
         "eth_price": round(_latest_price, 2) if _latest_price is not None else 0.0,

@@ -9,7 +9,7 @@ import GameScene, { type GameSceneHandle } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
@@ -29,12 +29,55 @@ export default function Home() {
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTradeError = useCallback((msg: string) => {
     setTradeError(msg);
+    setStuckTradeRecovery(false);
     if (tradeErrorTimerRef.current) clearTimeout(tradeErrorTimerRef.current);
     tradeErrorTimerRef.current = setTimeout(() => setTradeError(null), 6000);
   }, []);
+  /* When the backend reports an existing open trade, surface a recovery
+     CTA instead of just an error toast. Player has no other path to
+     unstick the position from the UI — the alternative is a manual
+     curl. The banner sticks until the user clicks Close stuck trade
+     or dismisses, so it doesn't auto-fade like other errors. */
+  const showStuckTradeError = useCallback((msg: string) => {
+    setTradeError(msg);
+    setStuckTradeRecovery(true);
+    if (tradeErrorTimerRef.current) {
+      clearTimeout(tradeErrorTimerRef.current);
+      tradeErrorTimerRef.current = null;
+    }
+  }, []);
+  const dismissTradeError = useCallback(() => {
+    setTradeError(null);
+    setStuckTradeRecovery(false);
+    if (tradeErrorTimerRef.current) {
+      clearTimeout(tradeErrorTimerRef.current);
+      tradeErrorTimerRef.current = null;
+    }
+  }, []);
+  const recoverStuckTrade = useCallback(async () => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      // force-close on the backend resolves the open trade from
+      // get_trades(user.address), so it works even though the local
+      // game state never observed the orphan. Net PnL is real but we
+      // don't display it — the player just wants to be unblocked.
+      await forceCloseTrade(getAccessToken, walletAddress);
+      dismissTradeError();
+      setTradeError("Stuck trade closed. Try jumping again.");
+      tradeErrorTimerRef.current = setTimeout(() => setTradeError(null), 4000);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      showTradeError(`Couldn't close stuck trade: ${raw.slice(0, 200)}`);
+    } finally {
+      setRecovering(false);
+    }
+  }, [recovering, getAccessToken, walletAddress, dismissTradeError, showTradeError]);
   /* Auth is required when we're talking to a real backend, not for mock or
      localhost. Without this the auth gate fires login() on every jump in
      local dev and the character never flies. */
@@ -149,11 +192,16 @@ export default function Home() {
               if (parsed.detail) detail = parsed.detail;
             } catch { /* fall through */ }
           }
-          if (status === 402 || status === 409 || status === 504 || status === 502) {
-            // 402: needs ETH for gas. 409: already has open trade.
+          if (status === 409) {
+            // Existing open trade — common when a previous round's
+            // close didn't land cleanly (network blip, browser closed
+            // mid-settle). Pin the banner with a recovery button.
+            showStuckTradeError(detail.slice(0, 240));
+          } else if (status === 402 || status === 504 || status === 502) {
+            // 402: needs ETH for gas.
             // 504: Privy signer timeout (delegation usually). 502: Privy
             // returned an error (insufficient funds, bad signature, etc).
-            // All four backend messages are user-readable; surface
+            // All three backend messages are user-readable; surface
             // verbatim. Truncate just to keep the banner from blowing up.
             showTradeError(detail.slice(0, 240));
           } else if (status === 0) {
@@ -179,7 +227,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError]);
+  }, [gameState, balance, wager, leverage, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -233,8 +281,36 @@ export default function Home() {
       />
       <HelpOverlay show={showHelp} onClose={handleCloseHelp} />
       {tradeError && (
-        <div className="trade-error-banner" role="alert" onClick={() => setTradeError(null)}>
-          {tradeError}
+        <div className="trade-error-banner" role="alert">
+          <span className="trade-error-text">{tradeError}</span>
+          {stuckTradeRecovery ? (
+            <span className="trade-error-actions">
+              <button
+                type="button"
+                className="trade-error-btn primary"
+                onClick={recoverStuckTrade}
+                disabled={recovering}
+              >
+                {recovering ? "closing…" : "close stuck trade"}
+              </button>
+              <button
+                type="button"
+                className="trade-error-btn"
+                onClick={dismissTradeError}
+              >
+                dismiss
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="trade-error-btn dismiss"
+              onClick={dismissTradeError}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
       {paperMode && (

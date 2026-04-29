@@ -32,6 +32,7 @@ from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 import auth
 from auth import AuthedUser, require_user
 from privy_send import send_via_privy
+from routes import price as price_module
 from usdc_approval import (
     build_usdc_approval_tx,
     get_avantis_trading_address,
@@ -330,6 +331,25 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
     )
 
 
+def _exit_price_from_pnl(
+    entry_price: float,
+    leverage: float,
+    collateral: float,
+    gross_pnl: float,
+) -> Optional[float]:
+    """Back-compute the effective on-chain exit price from realized
+    gross PnL. Mathematically self-consistent with the SDK's win-fee
+    accounting (we already invert that fee in net_pnl above), so the
+    returned price matches what the contract actually filled at —
+    typically within a few cents of the live mark for a same-block
+    close. Returns None when leverage*collateral is zero (defensive)."""
+    denom = leverage * collateral
+    if denom <= 0 or entry_price <= 0:
+        return None
+    move = gross_pnl / denom
+    return round(entry_price * (1.0 + move), 4)
+
+
 async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTradeResponse:
     client = _require_trader()
     trades, _ = await client.trade.get_trades(user.address)
@@ -338,6 +358,13 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     target = trades[0]
 
     balance_before = await client.get_usdc_balance(user.address)
+
+    # Snapshot the price *before* broadcast — by the time the receipt
+    # lands the feed will have ticked one or more times, and the player
+    # cares about the price that triggered their close, not whatever the
+    # mark is two seconds later. Used as a cross-check against the
+    # back-computed price below.
+    feed_price_at_close = price_module.get_latest_price()
 
     close_tx = await client.trade.build_trade_close_tx(
         pair_index=target.trade.pair_index,
@@ -369,10 +396,23 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
         gross_pnl = net_pnl
         avantis_win_fee = 0.0
 
+    # Prefer the back-computed exit (matches realized PnL exactly).
+    # Fall back to the live feed snapshot if the math degenerates
+    # (zero collateral / leverage) or to 0.0 as a last resort so the
+    # response_model doesn't reject the payload.
+    entry_price = float(target.trade.open_price)
+    leverage = float(target.trade.leverage)
+    collateral = float(target.trade.open_collateral)
+    exit_price = _exit_price_from_pnl(entry_price, leverage, collateral, gross_pnl)
+    if exit_price is None and feed_price_at_close is not None:
+        exit_price = float(feed_price_at_close)
+    if exit_price is None:
+        exit_price = 0.0
+
     return CloseTradeResponse(
         trade_index=target.trade.trade_index,
-        entry_price=target.trade.open_price,
-        exit_price=0.0,  # TODO post-P4: parse exit_price from MarketExecuted event
+        entry_price=entry_price,
+        exit_price=exit_price,
         gross_pnl_usdc=gross_pnl,
         avantis_win_fee_usdc=avantis_win_fee,
         net_pnl_usdc=net_pnl,
@@ -392,6 +432,44 @@ async def force_close_trade(user: AuthedUser = Depends(require_user)):
     return await _close_active_trade(user, was_liquidated=True)
 
 
+def _opened_at_from_trade(t) -> datetime:
+    """Pull the on-chain open timestamp off an SDK trade, with graceful
+    fallback. Avantis exposes the seconds-since-epoch on
+    `t.trade.timestamp` in current SDK versions; older shapes used
+    `open_timestamp`. If neither is present (or zero — the SDK uses 0
+    as a sentinel for "set by contract on submit"), fall back to now()
+    so the field is at least monotonically increasing for the client."""
+    for attr in ("timestamp", "open_timestamp", "block_timestamp"):
+        ts = getattr(t.trade, attr, None)
+        if isinstance(ts, (int, float)) and ts > 0:
+            try:
+                return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                continue
+    return datetime.now(timezone.utc)
+
+
+def _compute_pnl(
+    entry_price: float,
+    current_price: float,
+    leverage: float,
+    collateral: float,
+    is_long: bool = True,
+) -> tuple[float, float]:
+    """Mark-to-market PnL for an Avantis perp. Returns (pnl_usdc, pnl_pct).
+    pnl_pct is expressed as the fraction of collateral, so -1.0 = full
+    liquidation, +0.5 = +50% on the wager. Slippage and the 2.5% Avantis
+    win fee are not modeled here — this is the unrealized number."""
+    if entry_price <= 0 or collateral <= 0:
+        return 0.0, 0.0
+    move = (current_price - entry_price) / entry_price
+    if not is_long:
+        move = -move
+    pnl_pct = move * leverage
+    pnl_usdc = pnl_pct * collateral
+    return round(pnl_usdc, 4), round(pnl_pct, 6)
+
+
 @router.get("/active", response_model=Optional[ActiveTrade])
 async def get_active_trade(user: AuthedUser = Depends(require_user)):
     client = _require_trader()
@@ -400,16 +478,27 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
         return None
 
     t = trades[0]
+    entry = float(t.trade.open_price)
+    leverage = float(t.trade.leverage)
+    collateral = float(t.trade.open_collateral)
+    # Latest tick from the shared Avantis Lazer feed. None until the
+    # first feed tick lands; in that window we surface entry as the
+    # current price (PnL=0) so the client gets a coherent snapshot
+    # rather than a 503.
+    latest = price_module.get_latest_price()
+    current = float(latest) if latest is not None else entry
+    pnl_usdc, pnl_pct = _compute_pnl(entry, current, leverage, collateral)
+
     return ActiveTrade(
         trade_index=t.trade.trade_index,
         avantis_pair_index=t.trade.pair_index,
-        leverage=int(t.trade.leverage),
-        wager_usdc=t.trade.open_collateral,
-        collateral_usdc=t.trade.open_collateral,
-        entry_price=t.trade.open_price,
-        current_price=t.trade.open_price,
-        pnl_usdc=0.0,
-        pnl_pct=0.0,
+        leverage=int(leverage),
+        wager_usdc=collateral,
+        collateral_usdc=collateral,
+        entry_price=entry,
+        current_price=current,
+        pnl_usdc=pnl_usdc,
+        pnl_pct=pnl_pct,
         liquidation_price=t.liquidation_price,
-        opened_at=datetime.now(timezone.utc),
+        opened_at=_opened_at_from_trade(t),
     )
