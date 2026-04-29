@@ -12,7 +12,7 @@ import HelpOverlay from "./components/HelpOverlay";
 import { getBalance, openTrade, forceCloseTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
-type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "PREVIEW" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
   const { authenticated, getAccessToken, user } = usePrivy();

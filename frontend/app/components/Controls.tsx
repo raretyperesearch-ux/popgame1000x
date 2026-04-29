@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 
-type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "PREVIEW" | "LIVE" | "STOPPED" | "DEAD";
 
 interface ControlsProps {
   leverage: number;
@@ -46,6 +46,15 @@ export default function Controls({
   if (state === "LIVE") {
     actionLabel = "pull chute";
     actionClass = "action stop";
+  } else if (state === "PREVIEW") {
+    // 3-second study window before the trade goes live. Position is
+    // already open on Avantis (entry + crash were locked at /trade/open),
+    // but we don't let the player close until LIVE so the countdown
+    // can't be skipped accidentally and so the chart has a stable
+    // moment to read the entry/crash lines.
+    actionLabel = "get ready";
+    actionClass = "action disabled";
+    actionLocked = true;
   } else if (opening) {
     actionLabel = "entering";
     actionClass = "action disabled";

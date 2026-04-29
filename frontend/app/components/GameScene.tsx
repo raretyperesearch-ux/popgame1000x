@@ -109,7 +109,16 @@ const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
 const SETTLE_TIMEOUT_MS = 4500;
 
-type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "PREVIEW" | "LIVE" | "STOPPED" | "DEAD";
+
+/* PREVIEW is a 3-second hold inserted between the jump arc and live
+   flight. Chart freezes, character hovers at the entry altitude, and
+   the entry + crash lines stay drawn so the player has a moment to
+   read where their entry is and where they crash before things start
+   moving. The Avantis trade is already open during PREVIEW (we got
+   entry + liq from /trade/open before the jump fired); LIVE is just
+   the visual + PnL phase. */
+const PREVIEW_DURATION = 3000;
 
 /* ============ UTILITY ============ */
 function lerp(a: number, b: number, t: number): number {
@@ -273,6 +282,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     runStartTime: 0, // timestamp when RUNNING began
     prepareStartTime: 0,
     jumpStartTime: 0, // timestamp when JUMPING began
+    previewStartTime: 0, // timestamp when PREVIEW began (entry/crash hold)
     tradeStartTime: 0, // timestamp when LIVE trade begins
     idleStartTime: 0, // timestamp when IDLE began (sprite-only)
     prevStepHalf: 0, // tracks half-cycle for dust spawn
@@ -1088,12 +1098,62 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.stroke();
         ctx.setLineDash([]);
 
-        /* label */
+        /* label \u2014 during PREVIEW we also surface the absolute crash
+           price so the player can read both lines in dollars without
+           having to eyeball the chart axis. */
         ctx.fillStyle = `rgba(255,95,86,${0.55 + crashDanger * 0.35})`;
         ctx.font = '7px "Press Start 2P", monospace';
         ctx.textAlign = "center";
-        ctx.fillText("\u2014 CRASH LINE \u2014", w / 2, ly + 14);
+        const crashLabel = a.state === "PREVIEW"
+          ? `\u2014 CRASH $${liqPrice.toFixed(2)} \u2014`
+          : "\u2014 CRASH LINE \u2014";
+        ctx.fillText(crashLabel, w / 2, ly + 14);
         ctx.textAlign = "start";
+      }
+
+      /* PREVIEW overlay \u2014 large, centered "GET READY \u00b7 N" countdown
+         drawn over the chart while the player studies the entry +
+         crash lines. Fades in fast, fades out as PREVIEW ends. */
+      if (a.state === "PREVIEW") {
+        const elapsed = a.previewStartTime > 0
+          ? performance.now() - a.previewStartTime
+          : 0;
+        const total = PREVIEW_DURATION;
+        const remaining = Math.max(0, total - elapsed);
+        const seconds = Math.max(1, Math.ceil(remaining / 1000));
+        // fade in the first 250ms, fade out the last 350ms
+        const fadeIn = clamp(elapsed / 250, 0, 1);
+        const fadeOut = clamp(remaining / 350, 0, 1);
+        const alpha = Math.min(fadeIn, fadeOut);
+        if (alpha > 0.01) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.textAlign = "center";
+
+          // backing plate
+          const plateW = 280;
+          const plateH = 64;
+          const cx = w / 2;
+          const cy = h * 0.18;
+          ctx.fillStyle = "rgba(4,8,12,0.78)";
+          ctx.strokeStyle = "rgba(93,211,158,0.55)";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(cx - plateW / 2, cy - plateH / 2, plateW, plateH, 6);
+          ctx.fill();
+          ctx.stroke();
+
+          // small "GET READY" header
+          ctx.fillStyle = "rgba(244,236,216,0.85)";
+          ctx.font = '10px "Press Start 2P", monospace';
+          ctx.fillText("GET READY", cx, cy - 8);
+
+          // big countdown digit
+          ctx.fillStyle = "rgba(180,255,218,1)";
+          ctx.font = '20px "Press Start 2P", monospace';
+          ctx.fillText(`\u00b7 ${seconds} \u00b7`, cx, cy + 18);
+          ctx.restore();
+        }
       }
 
       /* price label on right */
@@ -1222,6 +1282,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.runStartTime = 0;
     a.prepareStartTime = 0;
     a.jumpStartTime = 0;
+    a.previewStartTime = 0;
     a.tradeStartTime = 0;
     a.idleStartTime = 0;
     a.cinematicZoom = 1;
@@ -1405,6 +1466,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.runStartTime = 0; // set on first tick
       a.prepareStartTime = 0;
       a.jumpStartTime = 0;
+      a.previewStartTime = 0;
       a.tradeStartTime = 0;
       a.cinematicZoom = 1;
       a.crashZoomUntil = 0;
@@ -1453,6 +1515,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       else if (a.state === "IDLE" && a.idleStartTime > 0 && time - a.idleStartTime >= 800) speed = CHART_SPEED_RUN;
       else if (a.state === "LIVE") speed = CHART_SPEED_LIVE;
       else if (a.state === "STOPPED") speed = CHART_SPEED_IDLE;
+      // PREVIEW freezes the world so the entry + crash lines stay
+      // anchored on screen for the full 3-second study window.
+      else if (a.state === "PREVIEW") speed = 0;
       speed *= GAME_SPEED;
 
       /* advance chart scroll */
@@ -1516,12 +1581,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
 
       /* liqPrice comes from the on-chain trade snapshotted at LIVE entry
-         (a.liquidationPrice). Visible during LIVE/STOPPED so the chart's
-         liquidation zone follows the real on-chain trigger. */
-      const liqPrice = (a.state === "LIVE" || a.state === "STOPPED")
+         (a.liquidationPrice). Visible during PREVIEW (the 3s study
+         hold) and LIVE/STOPPED so the chart's liquidation zone is
+         drawn the entire time the trade is open on Avantis. */
+      const liqPrice = (a.state === "PREVIEW" || a.state === "LIVE" || a.state === "STOPPED")
         ? a.liquidationPrice
         : null;
-      const isLive = a.state === "LIVE" || a.state === "STOPPED";
+      const isLive = a.state === "PREVIEW" || a.state === "LIVE" || a.state === "STOPPED";
 
       /* sky altitude target — climbs with PnL during LIVE, holds during STOPPED, decays otherwise */
       let skyTarget = 0;
@@ -1532,6 +1598,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         skyTarget = 0; // decay back to ground while parachuting
       } else if (a.state === "JUMPING") {
         skyTarget = 0.08; // brief lift during liftoff
+      } else if (a.state === "PREVIEW") {
+        skyTarget = 0.06; // hold a gentle altitude while studying entry/crash
       }
       a.skyAlt = lerp(a.skyAlt, skyTarget, 0.08 * dtNorm);
 
@@ -1731,21 +1799,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
         if (elapsed > JUMP_DURATION) {
-          /* enter LIVE — use the on-chain entry/liq from /trade/open if
-             present (positive value); otherwise fall back to the current
-             price for entry and the 1/lev formula for liq so the game
-             still works in pure-frontend mode. */
-          a.state = "LIVE";
-          setGameState("LIVE");
+          /* Enter PREVIEW — the 3-second hold where the chart freezes
+             and the player can read their entry + crash lines before
+             the round starts moving. Snap entry/liq into anim state
+             now so drawScene can render them during PREVIEW (the
+             trade is already open on Avantis from /trade/open). */
+          a.state = "PREVIEW";
+          setGameState("PREVIEW");
           setJumpCinematic(false);
           a.entry = a.pendingEntry > 0 ? a.pendingEntry : a.price;
           a.liquidationPrice =
             a.pendingLiqPrice > 0
               ? a.pendingLiqPrice
               : a.entry - a.entry / a.positionLev;
-          a.tradeStartTime = time;
-          a.figPrice = a.price;
-          a.figPriceVel = 0.08;
+          a.previewStartTime = time;
+          a.figPrice = a.entry; // anchor to entry so the figure sits on the line
+          a.figPriceVel = 0;
           a.smoothDelta = 0;
           a.frame = 0;
           setLevTagText(a.positionLev + "x");
@@ -1764,6 +1833,43 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
           a.figPrice = priceAtFig;
           a.frame++;
+        }
+
+      } else if (a.state === "PREVIEW") {
+        /* Hold for PREVIEW_DURATION while the player reads the entry +
+           crash lines. Chart is frozen (speed=0 above), no PnL math, no
+           crash trigger. Character hovers at the entry-price altitude
+           with a soft bob so it doesn't feel completely static. After
+           the hold, transition to LIVE — that's when tradeStartTime
+           starts ticking and the figure begins flying with PnL. */
+        if (a.previewStartTime === 0) a.previewStartTime = time;
+        const previewElapsed = time - a.previewStartTime;
+        setSpriteState("air", time);
+
+        if (priceToY) {
+          const entryY = priceToY(a.entry);
+          const groundY = getTerrainY(figWorldX);
+          const figY = Math.min(entryY, groundY - LIVE_MIN_AIR_GAP_PX);
+          const targetAlt = a.stageH - figY;
+          a.smoothAlt = lerp(a.smoothAlt, targetAlt, BODY_LERP * dtNorm);
+          // gentle hover bob, no rotation
+          const bob = Math.sin(previewElapsed * 0.005) * 2.5;
+          a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
+          setFig(figScreenX, a.smoothAlt + bob, a.smoothRot);
+        }
+        a.figPrice = a.entry;
+        a.frame++;
+
+        if (previewElapsed >= PREVIEW_DURATION) {
+          a.state = "LIVE";
+          setGameState("LIVE");
+          a.tradeStartTime = time; // round timer starts now, not at jump
+          a.figPrice = a.price;
+          a.figPriceVel = 0.08;
+          a.smoothDelta = 0;
+          a.frame = 0;
+          const fig = figRef.current;
+          if (fig) fig.style.transition = "none";
         }
 
       } else if (a.state === "LIVE") {
@@ -1917,7 +2023,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
      still catching anomalies within ~half a typical 10-30s round. */
   useEffect(() => {
     if (paperMode) return;
-    if (gameState !== "LIVE") return;
+    // Also poll during PREVIEW: the trade is already open on Avantis
+    // there, so a price move past the liq mid-countdown should still
+    // trigger a real splat as soon as reconciliation sees the position
+    // gone.
+    if (gameState !== "LIVE" && gameState !== "PREVIEW") return;
     anim.current.reconcileMissCount = 0;
     let cancelled = false;
     const tick = async () => {
@@ -1925,7 +2035,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const active = await getActiveTrade(getAccessToken, walletAddress);
         if (cancelled) return;
         const a = anim.current;
-        if (a.state !== "LIVE") return; // game state may have advanced mid-fetch
+        if (a.state !== "LIVE" && a.state !== "PREVIEW") return; // game state may have advanced mid-fetch
         if (active === null) {
           // Single null could be a transient RPC hiccup — only splat
           // after two consecutive nulls (~10s window) to avoid false
