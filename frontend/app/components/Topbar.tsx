@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import {
   usePrivy,
   useSigners,
@@ -388,7 +389,15 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   return (
     <div className="topbar">
       <div className="topbar-left">
-        <div className="brand">scalprunner</div>
+        <div className="brand" aria-label="Scalprunner">
+          <Image
+            src="/assets/scalprunner-logo.png"
+            alt="Scalprunner"
+            width={900}
+            height={409}
+            priority
+          />
+        </div>
         <button className="help-btn" onClick={() => { sounds.play("ui-click"); onHelpClick(); }} aria-label="Help">?</button>
         <button className="mute-btn" onClick={onMuteClick} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute" : "Mute"}>
           {muted ? "🔇" : "🔊"}
