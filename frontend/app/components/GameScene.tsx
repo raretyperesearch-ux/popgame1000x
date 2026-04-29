@@ -47,8 +47,9 @@ const WATER_HAZARD_SRC = "/assets/water-hazard.png";
 const MONEY_PROPS_SRC = "/assets/money-props.png";
 const WATER_SRC_W = 2172;
 const WATER_SRC_H = 350;
-const GRASS_SRC_W = 1024;
 const GRASS_SRC_H = 256;
+const GRASS_CONTENT_X = 44;
+const GRASS_CONTENT_W = 936;
 const GRASS_TILE_W = 520;
 const GRASS_TILE_H = 130;
 const GRASS_SURFACE_Y = 36;
@@ -515,9 +516,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const leftY = groundYAt(x);
         const rightY = groundYAt(x + GRASS_SLICE_W);
         const skewY = (rightY - leftY) / GRASS_SLICE_W;
-        const sourceX = Math.floor((((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W / GRASS_TILE_W * GRASS_SRC_W);
         const drawW = GRASS_SLICE_W + SLICE_OVERLAP;
-        const sourceW = Math.max(1, Math.min(GRASS_SRC_W - sourceX, Math.ceil(GRASS_SRC_W * drawW / GRASS_TILE_W)));
+        const sourceW = Math.max(1, Math.ceil(GRASS_CONTENT_W * drawW / GRASS_TILE_W));
+        const sourceX = GRASS_CONTENT_X + Math.floor(
+          (((x + scroll) % GRASS_TILE_W) + GRASS_TILE_W) % GRASS_TILE_W
+          / GRASS_TILE_W
+          * Math.max(1, GRASS_CONTENT_W - sourceW),
+        );
         ctx.save();
         // skew each slice so its top tilts to match the slope; adjacent slices meet at the exact same y
         ctx.transform(1, skewY, 0, 1, x, leftY - GRASS_SURFACE_Y);
@@ -554,7 +559,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const groundY = groundYAt(x);
           const size = Math.round(
             isGrassProp
-              ? (isBigGrassProp ? 22 : 15) + featureNoise(propId * 5.41) * (isBigGrassProp ? 12 : 7)
+              ? (isBigGrassProp ? 30 : 18) + featureNoise(propId * 5.41) * (isBigGrassProp ? 12 : 8)
               : 13 + featureNoise(propId * 5.41) * 9,
           );
           const dx = Math.round(x + (featureNoise(propId * 3.19) - 0.5) * 24 - size / 2);
@@ -563,8 +568,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
               ? groundY - size * 0.78 + featureNoise(propId * 4.83) * 4
               : groundY + 38 + featureNoise(propId * 4.83) * 54 - size / 2,
           );
-          const spritePick = n > 0.84
-            ? [2, 5, 6, 7][Math.floor(featureNoise(propId * 2.23) * 4) % 4]
+          const spritePick = isGrassProp
+            ? [4, 5, 6, 7, 0, 1, 2][Math.floor(featureNoise(propId * 2.23) * 7) % 7]
             : [0, 1, 3, 4, 8, 13, 14][Math.floor(featureNoise(propId * 2.91) * 7) % 7];
           const sx = (spritePick % MONEY_PROP_COLS) * MONEY_PROP_CELL;
           const sy = Math.floor(spritePick / MONEY_PROP_COLS) * MONEY_PROP_CELL;
