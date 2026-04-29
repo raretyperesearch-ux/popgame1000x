@@ -67,6 +67,9 @@ const SPRITE_COLS = 5;
 const RUN_FRAME_MS = 100; // 10fps run cycle
 const RUN_FRAMES = [0, 1, 2, 3, 4];
 const JUMP_FRAMES = [7, 10, 11];
+const CHARGE_FRAMES = [17, 18];
+const BREAK_FRAMES = [19, 20];
+const LAUNCH_FRAMES = [21, 22];
 // "air" = ascending / hovering. Frames 10/11 are upright torso poses.
 // "fall" = descending. Frames 12/13 are the head-first dive poses, which
 // belong on the way down — keeping them in air looked like the character
@@ -77,10 +80,12 @@ const FALL_FRAMES = [12, 13];
 const FALL_FRAME_MS = 130;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
-type SpriteState = "idle" | "run" | "crouch" | "jump" | "air" | "fall" | "land" | "fail";
+type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "fall" | "land" | "fail";
 const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land">, number> = {
   idle: 5,
   crouch: 6,
+  charge: 6,
+  break: 12,
   fail: 16,
 };
 // Velocity threshold for switching air -> fall during LIVE. Small positive
@@ -167,6 +172,7 @@ interface GameSceneProps {
   onHistoryPush: (entry: HistoryEntry) => void;
   onPnlChange: (pnl: number | null) => void;
   pnlReadout?: React.ReactNode;
+  paperMode?: boolean;
 }
 
 const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene(
@@ -177,6 +183,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     onHistoryPush,
     onPnlChange,
     pnlReadout,
+    paperMode = false,
   },
   ref,
 ) {
@@ -282,6 +289,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const [priceDisplay, setPriceDisplay] = useState("ETH $3500.00");
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
+  const [impactFx, setImpactFx] = useState<"" | "crash" | "win" | "loss">("");
+  const [jumpCinematic, setJumpCinematic] = useState(false);
   const [endOfGame, setEndOfGame] = useState<EndOfGameData | null>(null);
 
   const getTradeDurationSeconds = useCallback(() => {
@@ -300,6 +309,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       size: Math.random() > 0.85 ? 2.5 : 1.5,
     })),
   );
+  const slowMoUntilRef = useRef(0);
 
   /* ============ CANVAS SETUP ============ */
   const resizeCanvas = useCallback(() => {
@@ -360,12 +370,28 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
 
     let frameIdx: number;
+    const totalFrames = img
+      ? Math.floor(img.naturalWidth / SPRITE_FRAME_W) * Math.floor(img.naturalHeight / SPRITE_FRAME_H)
+      : 0;
+    const safeFrames = (frames: number[], fallback: number[]) => {
+      if (!img || totalFrames <= 0) return fallback;
+      return frames.every((f) => f >= 0 && f < totalFrames) ? frames : fallback;
+    };
     if (a.spriteState === "run") {
       const elapsed = time - (a.spriteRunStart || time);
       frameIdx = RUN_FRAMES[Math.floor(elapsed / RUN_FRAME_MS) % RUN_FRAMES.length];
+    } else if (a.spriteState === "charge") {
+      const elapsed = time - (a.spriteJumpStart || time);
+      const frames = safeFrames(CHARGE_FRAMES, [6, 6]);
+      frameIdx = frames[Math.floor(elapsed / 95) % frames.length];
+    } else if (a.spriteState === "break") {
+      const elapsed = time - (a.spriteJumpStart || time);
+      const frames = safeFrames(BREAK_FRAMES, [12, 13]);
+      frameIdx = frames[Math.floor(elapsed / 85) % frames.length];
     } else if (a.spriteState === "jump") {
       const elapsed = time - (a.spriteJumpStart || time);
-      frameIdx = JUMP_FRAMES[Math.min(JUMP_FRAMES.length - 1, Math.floor(elapsed / 115))];
+      const frames = safeFrames(LAUNCH_FRAMES, JUMP_FRAMES);
+      frameIdx = frames[Math.min(frames.length - 1, Math.floor(elapsed / 115))];
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
       frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
@@ -1065,6 +1091,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.loco.stepPhase = 0;
     a.loco.plantedFoot = "left";
     a.loco.squash = 0;
+    slowMoUntilRef.current = 0;
+    setImpactFx("");
+    setJumpCinematic(false);
   }, [setGameState, setSpriteState, onPnlChange]);
 
   /* ============ SPLAT (liquidation) ============ */
@@ -1075,6 +1104,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("DEAD");
     setSpriteState("fail");
     sounds.play("rekt-crash");
+    slowMoUntilRef.current = performance.now() + 320;
+    setImpactFx("crash");
+    setTimeout(() => setImpactFx(""), 420);
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
@@ -1107,15 +1139,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // modal opens only after the splat reads visually AND we have real
     // PnL (or a clear fallback if the backend is unreachable).
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    Promise.all([
-      forceCloseTrade(getAccessToken, walletAddress)
-        .then((res) => ({ ok: true as const, res }))
-        .catch((e) => {
-          console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
-          return { ok: false as const };
-        }),
-      minDelay,
-    ]).then(([result]) => {
+    const settleReq = paperMode
+      ? Promise.resolve({ ok: false as const })
+      : forceCloseTrade(getAccessToken, walletAddress)
+          .then((res) => ({ ok: true as const, res }))
+          .catch((e) => {
+            console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
+            return { ok: false as const };
+          });
+    Promise.all([settleReq, minDelay]).then(([result]) => {
       if (result.ok) {
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
@@ -1126,7 +1158,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -1160,6 +1192,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
+      if (kind === "win") {
+        setImpactFx("win");
+        setTimeout(() => setImpactFx(""), 360);
+      } else {
+        setImpactFx("loss");
+        setTimeout(() => setImpactFx(""), 300);
+      }
       setEndOfGame({
         kind,
         pnlDollars,
@@ -1176,15 +1215,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // when both finish — real net_pnl_usdc when available, optimistic
     // local calc when backend is unreachable.
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    Promise.all([
-      closeTrade(getAccessToken, walletAddress)
-        .then((res) => ({ ok: true as const, res }))
-        .catch((e) => {
-          console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
-          return { ok: false as const };
-        }),
-      minDelay,
-    ]).then(([result]) => {
+    const closeReq = paperMode
+      ? Promise.resolve({ ok: false as const })
+      : closeTrade(getAccessToken, walletAddress)
+          .then((res) => ({ ok: true as const, res }))
+          .catch((e) => {
+            console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
+            return { ok: false as const };
+          });
+    Promise.all([closeReq, minDelay]).then(([result]) => {
       if (result.ok) {
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
@@ -1195,7 +1234,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         settleAndShow(pnlDollarsOptimistic, pnlPctOptimistic, entry, exitOptimistic);
       }
     });
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
 
   const closeEndOfGame = useCallback(() => {
     setEndOfGame(null);
@@ -1247,7 +1286,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const tick = (time: number) => {
       const dt = lastTime ? Math.min(time - lastTime, 33.33) : 16.67;
       lastTime = time;
-      const dtNorm = dt / 16.67;
+      const slowMo = time < slowMoUntilRef.current ? 0.42 : 1;
+      const dtNorm = (dt / 16.67) * slowMo;
       const a = anim.current;
 
       /* a.price is set by the /price/stream WS subscription (see PRICE
@@ -1432,6 +1472,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (elapsed > RUN_DURATION) {
           a.state = "PREPARE";
           setGameState("PREPARE");
+          setJumpCinematic(true);
+          setTimeout(() => setJumpCinematic(false), 820);
           a.prepareStartTime = time;
         } else {
           const loco = a.loco;
@@ -1503,9 +1545,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "PREPARE") {
         const prepElapsed = time - (a.prepareStartTime || time);
         const t = clamp(prepElapsed / 150, 0, 1);
-        a.curBobY = Math.sin(t * Math.PI) * 4.5;
-        setSpriteState("crouch", time);
-        setFig(figScreenX, a.smoothAlt - t * 2, a.smoothRot);
+        a.curBobY = Math.sin(t * Math.PI) * 6.8;
+        setSpriteState(t < 0.62 ? "charge" : "break", time);
+        setFig(figScreenX, a.smoothAlt - t * 5.5, a.smoothRot);
         if (prepElapsed >= 150) {
           a.state = "JUMPING";
           setGameState("JUMPING");
@@ -1815,7 +1857,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   }, [gameState]);
 
   return (
-    <div className="stage" ref={stageRef}>
+    <div
+      className={`stage${impactFx ? ` impact-${impactFx}` : ""}${jumpCinematic ? " jump-cinematic" : ""}`}
+      ref={stageRef}
+    >
       {/* Chart canvas */}
       <canvas
         ref={canvasRef}
@@ -1887,6 +1932,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         />
       </div>
       <div className="banner" ref={bannerRef} />
+      <div className={`ground-crack${jumpCinematic ? " active" : ""}`} />
+      <div className={`impact-overlay${impactFx ? ` ${impactFx}` : ""}`} />
       <EndOfGameModal data={endOfGame} onClose={closeEndOfGame} />
     </div>
   );

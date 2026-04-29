@@ -177,10 +177,43 @@ async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
             "delegation prompt, then retry.",
         )
     except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if (
+            "No valid authorization keys or user signing keys available" in msg
+            and auth._privy_client is not None
+        ):
+            expected = os.getenv("PRIVY_EXPECTED_SIGNER_ID", "")
+            try:
+                w = await auth._privy_client.wallets.get(wallet_id=user.wallet_id)
+                owner_id = getattr(w, "owner_id", None)
+                additional = [
+                    getattr(s, "signer_id", None)
+                    for s in (getattr(w, "additional_signers", None) or [])
+                ]
+                additional = [a for a in additional if a]
+                delegated = bool(expected) and (
+                    expected == owner_id or expected in additional
+                )
+                hint = (
+                    " Delegation audit: "
+                    f"expected_signer={expected or '(unset)'} "
+                    f"owner_id={owner_id or '(none)'} "
+                    f"additional_signers={additional} "
+                    f"delegated_match={delegated}. "
+                    "Call GET /wallet/delegation-audit and align "
+                    "NEXT_PUBLIC_PRIVY_SIGNER_ID, PRIVY_EXPECTED_SIGNER_ID, "
+                    "and PRIVY_KEY_QUORUM_ID to the same quorum ID."
+                )
+                msg = f"{msg}.{hint}"
+            except Exception as diag_err:  # noqa: BLE001
+                msg = (
+                    f"{msg}. Delegation audit lookup failed: {diag_err}. "
+                    "Call GET /wallet/delegation-audit."
+                )
         # Privy errors carry useful messages (e.g. "insufficient funds for
         # gas") that the user can act on. Surface them verbatim under a
         # 502 so the frontend toast shows something specific.
-        raise HTTPException(502, f"Privy signer rejected the tx: {e}")
+        raise HTTPException(502, f"Privy signer rejected the tx: {msg}")
 
 
 @router.post("/open", response_model=OpenTradeResponse)
