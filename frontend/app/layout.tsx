@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "POP",
-  description: "ETH trading game — ride the price or get liquidated",
+  description: "Arcade price-runner — ride the boost or crash",
 };
 
 export default function RootLayout({

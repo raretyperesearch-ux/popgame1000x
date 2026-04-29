@@ -35,10 +35,10 @@ const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; sprite
     exitFallback: "—",
   },
   rekt: {
-    subtitle: "YOU CAME. YOU SCALPED. YOU GOT REKT.",
-    badge: "REKT",
+    subtitle: "YOU CAME. YOU LAUNCHED. YOU CRASHED.",
+    badge: "CRASHED",
     spriteFrame: 16,
-    exitFallback: "LIQUIDATED",
+    exitFallback: "CRASHED",
   },
 };
 
@@ -420,7 +420,7 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   ctx.textAlign = "center";
   ctx.fillStyle = "#f4ecd8";
   ctx.font = '32px "Press Start 2P", monospace';
-  ctx.fillText("> PNL <", 720, 360);
+  ctx.fillText("> RUN <", 720, 360);
 
   ctx.fillStyle = accent;
   ctx.font = '120px "Press Start 2P", monospace';
@@ -443,10 +443,10 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   ctx.strokeRect(80, statsY - 60, W - 160, 160);
 
   const statCols = [
-    { label: "ENTRY", value: fmtPrice(data.entry), sub: "" },
-    { label: "EXIT", value: data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback, sub: "" },
-    { label: "BOOST", value: data.boost + "x", sub: "LONG ETH" },
-    { label: "TIME", value: fmtDuration(data.durationSeconds), sub: "IN TRADE" },
+    { label: "LAUNCH", value: fmtPrice(data.entry), sub: "" },
+    { label: "LANDING", value: data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback, sub: "" },
+    { label: "BOOST", value: data.boost + "x", sub: "ETH" },
+    { label: "TIME", value: fmtDuration(data.durationSeconds), sub: "IN FLIGHT" },
   ];
   ctx.textAlign = "center";
   statCols.forEach((s, i) => {
@@ -511,10 +511,10 @@ export default function EndOfGameModal({ data, onClose }: Props) {
     if (!blob) return;
     const file = new File([blob], `popgame-${data.kind}.png`, { type: "image/png" });
     const shareText = data.kind === "win"
-      ? `Just scalped ${fmtMoney(data.pnlDollars)} on popgame1000x 🚀`
+      ? `Clean run for ${fmtMoney(data.pnlDollars)} on popgame1000x 🚀`
       : data.kind === "loss"
-      ? `Took a ${fmtMoney(data.pnlDollars)} L on popgame1000x. We move.`
-      : `Got fully rekt on popgame1000x. ${data.boost}x leverage was a choice.`;
+      ? `Pulled chute at ${fmtMoney(data.pnlDollars)} on popgame1000x. We move.`
+      : `Crashed out on popgame1000x. ${data.boost}x boost was a choice.`;
     const navAny = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (navigator.share && navAny.canShare && navAny.canShare({ files: [file] })) {
       try {
@@ -548,7 +548,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
         <div className="eog-body">
           <div className={`eog-sprite-frame f${copy.spriteFrame}`} aria-hidden="true" />
           <div className="eog-pnl-block">
-            <div className="eog-pnl-label">PNL</div>
+            <div className="eog-pnl-label">RUN</div>
             <div className="eog-pnl-amount">
               <span>{fmtMoney(data.pnlDollars)}</span>
               <span className="eog-pnl-coin"><UsdcCoin broken={data.kind === "rekt"} /></span>
@@ -559,22 +559,22 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
         <div className="eog-stats">
           <div className="eog-stat">
-            <div className="eog-stat-label">ENTRY</div>
+            <div className="eog-stat-label">LAUNCH</div>
             <div className="eog-stat-value">{fmtPrice(data.entry)}</div>
           </div>
           <div className="eog-stat">
-            <div className="eog-stat-label">EXIT</div>
+            <div className="eog-stat-label">LANDING</div>
             <div className="eog-stat-value">{data.exit !== null ? fmtPrice(data.exit) : copy.exitFallback}</div>
           </div>
           <div className="eog-stat">
             <div className="eog-stat-label">BOOST</div>
             <div className="eog-stat-value">{data.boost}x</div>
-            <div className="eog-stat-sub">LONG ETH</div>
+            <div className="eog-stat-sub">ETH</div>
           </div>
           <div className="eog-stat">
             <div className="eog-stat-label">TIME</div>
             <div className="eog-stat-value">{fmtDuration(data.durationSeconds)}</div>
-            <div className="eog-stat-sub">IN TRADE</div>
+            <div className="eog-stat-sub">IN FLIGHT</div>
           </div>
         </div>
 

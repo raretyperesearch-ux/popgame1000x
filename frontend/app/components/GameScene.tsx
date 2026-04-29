@@ -199,6 +199,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const figRef = useRef<HTMLDivElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const crashWarningRef = useRef<HTMLDivElement>(null);
   const parachuteRef = useRef<SVGSVGElement>(null);
   const raceFlagRef = useRef<HTMLDivElement>(null);
   const spriteCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -557,6 +558,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const w = a.stageW;
       const h = a.stageH;
       const dpr = window.devicePixelRatio || 1;
+      const crashSpan = entryPrice !== null && liqPrice !== null
+        ? Math.abs(entryPrice - liqPrice)
+        : 0;
+      const crashDanger = a.state === "LIVE" && entryPrice !== null && liqPrice !== null && crashSpan > 0
+        ? clamp(
+            entryPrice >= liqPrice
+              ? (entryPrice - a.price) / crashSpan
+              : (a.price - entryPrice) / crashSpan,
+            0,
+            1,
+          )
+        : 0;
+      const crashLevel = crashDanger >= 0.9 ? "red" : crashDanger >= 0.75 ? "orange" : crashDanger >= 0.5 ? "yellow" : "";
+      const crashCopy = crashDanger >= 0.9 ? "PULL UP" : crashDanger >= 0.75 ? "STALL WARNING" : crashDanger >= 0.5 ? "LOW FUEL" : "";
+      const warningEl = crashWarningRef.current;
+      if (warningEl) {
+        warningEl.className = `crash-warning${crashLevel ? ` show ${crashLevel}` : ""}`;
+        warningEl.textContent = crashCopy;
+      }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
@@ -742,6 +762,31 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.beginPath();
         ctx.arc(cx + s * 0.45, cy + 2, s * 0.38, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      if (crashDanger > 0.48) {
+        const pulse = 0.65 + Math.sin(a.frame * 0.28) * 0.35;
+        const dangerAlpha = clamp((crashDanger - 0.48) * 1.5, 0, 0.55);
+        const warnGrad = ctx.createRadialGradient(w * 0.5, h * 0.54, h * 0.12, w * 0.5, h * 0.58, h * 0.82);
+        warnGrad.addColorStop(0, "rgba(255,95,86,0)");
+        warnGrad.addColorStop(0.55, `rgba(255,95,86,${dangerAlpha * 0.14})`);
+        warnGrad.addColorStop(1, `rgba(95,0,18,${dangerAlpha * 0.48})`);
+        ctx.fillStyle = warnGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.save();
+        ctx.globalAlpha = dangerAlpha * pulse;
+        ctx.strokeStyle = crashDanger >= 0.9 ? "#ff5f56" : crashDanger >= 0.75 ? "#ff9933" : "#ffd94d";
+        ctx.lineWidth = crashDanger >= 0.9 ? 2 : 1.2;
+        for (let i = 0; i < 10; i++) {
+          const y = h * (0.18 + ((i * 0.077 + a.frame * 0.002) % 0.64));
+          const x0 = ((i * 97 + a.frame * 4) % (w + 120)) - 120;
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x0 + 34 + crashDanger * 70, y + (i % 2 ? 8 : -8));
+          ctx.stroke();
+        }
+        ctx.restore();
       }
 
       /* price-to-Y mapping */
@@ -939,21 +984,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.fillStyle = "rgba(244,236,216,0.35)";
         ctx.font = '9px "Press Start 2P", monospace';
         ctx.textAlign = "right";
-        ctx.fillText("ENTRY", w - 6, ey - 5);
+        ctx.fillText("LAUNCH", w - 6, ey - 5);
         ctx.textAlign = "start";
       }
 
-      /* liquidation line + zone */
+      /* crash line + danger zone */
       if (isLive && liqPrice !== null) {
         const ly = priceToY(liqPrice);
+        const pulse = 0.65 + Math.sin(a.frame * 0.25) * 0.35;
 
         /* zone fill */
-        ctx.fillStyle = "rgba(255,95,86,0.04)";
+        ctx.fillStyle = `rgba(255,95,86,${0.04 + crashDanger * 0.12})`;
         ctx.fillRect(0, ly, w, h - ly);
 
         /* dashed line with jitter */
-        ctx.strokeStyle = "rgba(255,95,86,0.65)";
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = `rgba(255,95,86,${0.58 + crashDanger * 0.35 * pulse})`;
+        ctx.lineWidth = 1.5 + crashDanger * 1.5;
         ctx.setLineDash([7, 4]);
         ctx.beginPath();
         for (let x = 0; x < w; x += 4) {
@@ -965,10 +1011,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.setLineDash([]);
 
         /* label */
-        ctx.fillStyle = "rgba(255,95,86,0.55)";
+        ctx.fillStyle = `rgba(255,95,86,${0.55 + crashDanger * 0.35})`;
         ctx.font = '7px "Press Start 2P", monospace';
         ctx.textAlign = "center";
-        ctx.fillText("\u2014 LIQUIDATION ZONE \u2014", w / 2, ly + 14);
+        ctx.fillText("\u2014 CRASH LINE \u2014", w / 2, ly + 14);
         ctx.textAlign = "start";
       }
 
@@ -1843,6 +1889,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         {levTagText}
       </div>
       {pnlReadout}
+      <div className="crash-warning" ref={crashWarningRef} aria-hidden="true" />
       <div className="race-flag" aria-hidden="true" ref={raceFlagRef} />
 
       {/* FIGURE */}

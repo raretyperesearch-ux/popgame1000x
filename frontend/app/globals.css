@@ -248,6 +248,9 @@ body::before {
 .stage.impact-loss {
   animation: stage-jolt 200ms ease-out 1;
 }
+.stage:has(.crash-warning.red) {
+  animation: stage-shake 220ms steps(2) infinite;
+}
 .stage.jump-cinematic {
   animation: jump-cinematic-zoom 780ms cubic-bezier(0.2, 0.8, 0.2, 1) 1;
 }
@@ -394,6 +397,45 @@ body::before {
 .pnl-readout.down {
   color: var(--red);
   text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.6), 0 0 18px rgba(255,95,86,0.45);
+}
+.crash-warning {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.92);
+  opacity: 0;
+  min-width: 150px;
+  padding: 7px 12px 6px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 1.4px;
+  text-align: center;
+  color: #ffd94d;
+  background: rgba(10,10,12,0.78);
+  border: 1px solid currentColor;
+  box-shadow: 0 0 24px rgba(255,95,86,0.24);
+  z-index: 9;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
+}
+.crash-warning.show {
+  opacity: 0.72;
+  transform: translateX(-50%) scale(1);
+}
+.crash-warning.orange {
+  color: #ff9933;
+  opacity: 0.86;
+  animation: crash-warning-blink 420ms steps(2) infinite;
+}
+.crash-warning.red {
+  color: #ff5f56;
+  opacity: 1;
+  box-shadow: 0 0 34px rgba(255,95,86,0.42);
+  animation: crash-warning-blink 220ms steps(2) infinite;
+}
+@keyframes crash-warning-blink {
+  50% { opacity: 0.42; }
 }
 .lev-tag {
   position: absolute;

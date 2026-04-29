@@ -33,10 +33,10 @@ export default function Controls({
   let actionClass = "action";
   let actionLocked = false;
   if (state === "LIVE") {
-    actionLabel = "stop";
+    actionLabel = "pull chute";
     actionClass = "action stop";
   } else if (opening) {
-    actionLabel = "opening";
+    actionLabel = "launching";
     actionClass = "action disabled";
     actionLocked = true;
   } else if (balance < 1 && state === "IDLE") {
@@ -76,7 +76,7 @@ export default function Controls({
         ))}
       </div>
       <div className="slider-row cash-row">
-        <div className="slider-label">wager</div>
+        <div className="slider-label">fuel</div>
         <input
           type="range"
           className="hand-slider"
