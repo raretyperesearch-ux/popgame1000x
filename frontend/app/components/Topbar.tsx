@@ -5,7 +5,9 @@ import {
   usePrivy,
   useSigners,
   useFundWallet,
+  useSendTransaction,
 } from "@privy-io/react-auth";
+import { encodeFunctionData, isAddress, parseEther, parseUnits } from "viem";
 import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
@@ -23,11 +25,25 @@ interface TopbarProps {
    frontend's addSigners() call with the matching backend's
    PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
+const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const USDC_TRANSFER_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
 
 export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
   const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
+  const { sendTransaction } = useSendTransaction();
   const [menuOpen, setMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [delegating, setDelegating] = useState(false);
@@ -251,6 +267,98 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     }).catch((e) => console.warn("[fund] ETH fund flow declined:", e));
   };
 
+  const promptWithdraw = (asset: "USDC" | "ETH") => {
+    if (!walletAddress) return null;
+    const to = window.prompt(`Withdraw ${asset} to what Base wallet address?`);
+    if (!to) return null;
+    const recipient = to.trim();
+    if (!isAddress(recipient)) {
+      onError?.("That withdraw address is not a valid EVM wallet address.");
+      return null;
+    }
+    const amountRaw = window.prompt(`How much ${asset} do you want to withdraw?`);
+    if (!amountRaw) return null;
+    const amount = amountRaw.trim();
+    const amountNumber = Number(amount);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      onError?.("Withdraw amount must be greater than zero.");
+      return null;
+    }
+    const ok = window.confirm(
+      `Withdraw ${amount} ${asset} from your embedded Base wallet to ${recipient}?`,
+    );
+    if (!ok) return null;
+    return { recipient, amount, amountNumber };
+  };
+
+  const onWithdrawUSDC = async () => {
+    const withdrawal = promptWithdraw("USDC");
+    if (!withdrawal || !walletAddress) return;
+    setMenuOpen(false);
+    try {
+      const value = parseUnits(withdrawal.amount, 6);
+      const hash = await sendTransaction(
+        {
+          to: USDC_BASE_ADDRESS,
+          chainId: base.id,
+          data: encodeFunctionData({
+            abi: USDC_TRANSFER_ABI,
+            functionName: "transfer",
+            args: [withdrawal.recipient, value],
+          }),
+          value: "0",
+        },
+        {
+          address: walletAddress,
+          uiOptions: {
+            description: `Withdraw ${withdrawal.amount} USDC to your wallet.`,
+            buttonText: "Withdraw USDC",
+            successHeader: "Withdrawal sent",
+            successDescription: "Your USDC transfer was submitted on Base.",
+          },
+        },
+      );
+      onError?.(`USDC withdrawal sent: ${hash.hash.slice(0, 10)}…`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[withdraw] USDC failed:", e);
+      onError?.(`USDC withdrawal failed: ${msg.slice(0, 180)}`);
+    }
+  };
+
+  const onWithdrawETH = async () => {
+    const withdrawal = promptWithdraw("ETH");
+    if (!withdrawal || !walletAddress) return;
+    if (ethBalance !== null && withdrawal.amountNumber >= ethBalance) {
+      onError?.("Leave a little ETH behind for Base gas. Try a smaller ETH withdrawal.");
+      return;
+    }
+    setMenuOpen(false);
+    try {
+      const hash = await sendTransaction(
+        {
+          to: withdrawal.recipient,
+          chainId: base.id,
+          value: parseEther(withdrawal.amount),
+        },
+        {
+          address: walletAddress,
+          uiOptions: {
+            description: `Withdraw ${withdrawal.amount} ETH to your wallet.`,
+            buttonText: "Withdraw ETH",
+            successHeader: "Withdrawal sent",
+            successDescription: "Your ETH transfer was submitted on Base.",
+          },
+        },
+      );
+      onError?.(`ETH withdrawal sent: ${hash.hash.slice(0, 10)}…`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[withdraw] ETH failed:", e);
+      onError?.(`ETH withdrawal failed: ${msg.slice(0, 180)}`);
+    }
+  };
+
   const onRevoke = async () => {
     setMenuOpen(false);
     if (!walletAddress) return;
@@ -341,6 +449,20 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                     onClick={() => { sounds.play("ui-click"); onFundETH(); }}
                   >
                     fund ETH (gas)
+                  </button>
+                  <button
+                    className="user-menu-item"
+                    role="menuitem"
+                    onClick={() => { sounds.play("ui-click"); onWithdrawUSDC(); }}
+                  >
+                    withdraw USDC
+                  </button>
+                  <button
+                    className="user-menu-item"
+                    role="menuitem"
+                    onClick={() => { sounds.play("ui-click"); onWithdrawETH(); }}
+                  >
+                    withdraw ETH
                   </button>
                   {isDelegated && (
                     <button
