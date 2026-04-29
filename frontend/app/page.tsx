@@ -15,7 +15,7 @@ import { sounds } from "@/lib/sounds";
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 export default function Home() {
-  const { authenticated, getAccessToken, login, user } = usePrivy();
+  const { authenticated, getAccessToken, user } = usePrivy();
   // Always the embedded wallet — see Topbar.tsx for rationale.
   const walletAddress = getEmbeddedEthereumAddress(user);
   const [balance, setBalance] = useState(100);
@@ -40,6 +40,7 @@ export default function Home() {
   const isLocalApi =
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
+  const paperMode = needsAuthForTrades && !authenticated;
 
   const gameRef = useRef<GameSceneHandle>(null);
 
@@ -51,6 +52,7 @@ export default function Home() {
   useEffect(() => {
     if (gameState !== "IDLE") return;
     let cancelled = false;
+    if (paperMode) return;
     getBalance(getAccessToken, walletAddress)
       .then((res) => {
         if (cancelled) return;
@@ -62,7 +64,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [gameState, getAccessToken, walletAddress]);
+  }, [gameState, getAccessToken, walletAddress, paperMode]);
 
   /* first-launch help overlay */
   useEffect(() => {
@@ -110,21 +112,18 @@ export default function Home() {
 
   const handleAction = useCallback(async () => {
     if (gameState === "IDLE" && balance >= wager && !openInFlight) {
-      if (needsAuthForTrades && !authenticated) {
-        login();
-        return;
-      }
       setOpenInFlight(true);
       try {
         let entryPrice = 0;
         let liquidationPrice = 0;
         let tradeOk = true;
-        try {
-          const trade = await openTrade(leverage, wager, getAccessToken, walletAddress);
-          entryPrice = trade.entry_price;
-          liquidationPrice = trade.liquidation_price;
-        } catch (e) {
-          tradeOk = false;
+        if (!paperMode) {
+          try {
+            const trade = await openTrade(leverage, wager, getAccessToken, walletAddress);
+            entryPrice = trade.entry_price;
+            liquidationPrice = trade.liquidation_price;
+          } catch (e) {
+            tradeOk = false;
           // apiFetch's "API <status>: <body>" format — pull the JSON
           // detail out so we can show something readable.
           const raw = e instanceof Error ? e.message : String(e);
@@ -155,7 +154,8 @@ export default function Home() {
           } else {
             showTradeError(`Trade didn't land (${status}): ${detail.slice(0, 200)}`);
           }
-          console.warn("[trade] openTrade failed:", e);
+            console.warn("[trade] openTrade failed:", e);
+          }
         }
         if (tradeOk) {
           setBalance((prev) => prev - wager);
@@ -167,7 +167,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, openInFlight, needsAuthForTrades, authenticated, login, getAccessToken]);
+  }, [gameState, balance, wager, leverage, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -202,6 +202,7 @@ export default function Home() {
         setGameState={setGameState}
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
+        paperMode={paperMode}
         pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
@@ -219,6 +220,11 @@ export default function Home() {
       {tradeError && (
         <div className="trade-error-banner" role="alert" onClick={() => setTradeError(null)}>
           {tradeError}
+        </div>
+      )}
+      {paperMode && (
+        <div className="trade-error-banner" role="status">
+          PAPER MODE: not logged in — using test balance + simulated trades.
         </div>
       )}
     </div>
