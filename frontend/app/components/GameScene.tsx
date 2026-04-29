@@ -267,6 +267,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteLandStart: 0,
     spriteParachuteStart: 0,
     spriteFrame: 5, // current sprite frame index
+    cinematicZoom: 1,
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     flagDisplayY: -1, // smoothed Y for the right-edge race flag (lerps toward priceToY); -1 = uninitialized
@@ -345,9 +346,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       // Reverses naturally when PnL drops because skyAlt lerps both directions.
       const lift = a.skyAlt * a.stageH * 0.25;
       const figScale = lerp(1, 0.4, a.skyAlt);
+      const cinematicZoom = a.cinematicZoom || 1;
       const tx = (x - SPRITE_DISPLAY_W / 2).toFixed(1);
       const ty = (SPRITE_FOOT_GAP - alt - a.curBobY - lift).toFixed(1);
-      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg) scale(${figScale.toFixed(3)})`;
+      fig.style.transform = `translate3d(${tx}px, ${ty}px, 0) rotate(${rot.toFixed(1)}deg) scale(${(figScale * cinematicZoom).toFixed(3)})`;
     },
     [],
   );
@@ -1117,6 +1119,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.jumpStartTime = 0;
     a.tradeStartTime = 0;
     a.idleStartTime = 0;
+    a.cinematicZoom = 1;
     a.spriteJumpStart = 0;
     a.spriteAirStart = 0;
     a.spriteLandStart = 0;
@@ -1295,6 +1298,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.prepareStartTime = 0;
       a.jumpStartTime = 0;
       a.tradeStartTime = 0;
+      a.cinematicZoom = 1;
       a.spriteJumpStart = 0;
       a.spriteAirStart = 0;
       a.spriteLandStart = 0;
@@ -1390,6 +1394,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const priceAtFig = lerp(a.prices[pi0] ?? a.price, a.prices[pi1] ?? a.price, iFrac);
       const figWorldX = figDataIdx;
       a.cameraWorldX = lerp(a.cameraWorldX || worldLeft, worldLeft, CAMERA_LERP * dtNorm);
+      const cinematicTarget = a.state === "PREPARE" || a.state === "JUMPING" ? 2.05 : 1;
+      a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.16 : 0.11) * dtNorm);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.style.transformOrigin = `${figScreenX.toFixed(1)}px ${(a.stageH - a.smoothAlt).toFixed(1)}px`;
+        canvas.style.transform = `scale(${a.cinematicZoom.toFixed(3)})`;
+      }
 
       /* liqPrice comes from the on-chain trade snapshotted at LIVE entry
          (a.liquidationPrice). Visible during LIVE/STOPPED so the chart's
@@ -1510,7 +1521,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.state = "PREPARE";
           setGameState("PREPARE");
           setJumpCinematic(true);
-          setTimeout(() => setJumpCinematic(false), 820);
           a.prepareStartTime = time;
         } else {
           const loco = a.loco;
@@ -1614,6 +1624,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
              still works in pure-frontend mode. */
           a.state = "LIVE";
           setGameState("LIVE");
+          setJumpCinematic(false);
           a.entry = a.pendingEntry > 0 ? a.pendingEntry : a.price;
           a.liquidationPrice =
             a.pendingLiqPrice > 0
@@ -1858,6 +1869,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           width: "100%",
           height: "100%",
           zIndex: 2,
+          willChange: "transform",
         }}
       />
 
