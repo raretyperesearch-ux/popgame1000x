@@ -147,11 +147,14 @@ export default function Topbar({ balance, onHelpClick, onError }: TopbarProps) {
       const result = await Promise.race([
         addSigners({
           address: walletAddress,
-          signers: [{ signerId: PRIVY_SIGNER_ID }],
+          // policyIds: [] is explicit per Privy docs — opts out of any
+          // mandatory policy enforcement that might otherwise reject
+          // the call when the dashboard quorum has none configured.
+          signers: [{ signerId: PRIVY_SIGNER_ID, policyIds: [] }],
         }),
         new Promise<never>((_, rej) =>
           setTimeout(
-            () => rej(new Error("addSigners timed out after 15s — Privy didn't respond. Try refreshing.")),
+            () => rej(new Error("addSigners timed out after 15s — Privy didn't respond. If your app isn't on TEE execution mode, addSigners needs UI it never opens. Migrate to TEE in Privy dashboard -> Wallets -> Advanced.")),
             15000,
           ),
         ),
