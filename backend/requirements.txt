@@ -3,14 +3,25 @@ uvicorn[standard]>=0.31,<0.32
 pydantic>=2.9,<3
 python-dotenv>=1.0,<2
 websockets>=13,<14
-avantis-trader-sdk
-privy-client
+# avantis-trader-sdk 0.8.x still uses the web3 6 api (encodeABI vs
+# encode_abi, etc). Anything that pulls in web3 7 silently breaks
+# pairs_cache.get_pairs_info at boot, so pin web3 here AND keep the
+# privy-client cap below.
+avantis-trader-sdk==0.8.17
+web3>=6.20,<7
+# privy-client 0.3+ requires web3 7 — incompatible with avantis-trader-sdk
+# above. 0.2.0 exposes the same AsyncPrivyAPI / users / wallets /
+# key_quorums surface we use, plus the get_authorization_signature
+# helper that privy_send.py imports from privy.lib. Until avantis-sdk
+# ships a web3-7 release we hold here.
+privy-client>=0.2,<0.3
 httpx
 pyjwt[crypto]>=2.9,<3
-# pulled in transitively via web3 inside avantis-trader-sdk, listed
-# here because usdc_approval.py imports them directly.
-eth-abi
-eth-utils
+# Transitively under web3 inside avantis-trader-sdk; pinned here
+# because usdc_approval.py imports them directly and the avantis sdk
+# requires eth-utils <5.
+eth-abi>=4,<6
+eth-utils>=2.1,<5
 
 # P3 additions:
 # supabase

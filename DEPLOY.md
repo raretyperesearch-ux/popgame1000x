@@ -93,7 +93,7 @@ Before deploying, configure the Privy app for delegated signing:
    | `PRIVY_VERIFICATION_KEY` | (PEM) | From step 0.3 above |
    | `PRIVY_AUTH_PRIVATE_KEY` | (PEM) | From step 0.5 above |
    | `PRIVY_POLICY_ID` | `…` | From step 0.6 if you created one |
-   | `TREASURY_ADDRESS` | `0x…` | House-fee recipient address |
+   | `TREASURY_ADDRESS` | `0x…` | **Required in Privy mode.** Receives the 0.8% house fee per trade open via on-chain `USDC.transfer`. Backend 500s on `/trade/open` if this is unset and Privy mode is active. |
    | `ETH_LAZER_FEED_ID` | `2` | Optional; only set if Avantis re-numbers |
    | `PRICE_FEED_DISABLE` | (unset) | Set to `1` to skip the FeedClient (testing only) |
    | `AUTH_DISABLE` | (unset) | Local-dev convenience. Never set in prod. |

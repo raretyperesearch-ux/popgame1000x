@@ -1,11 +1,12 @@
 """
 Privy transaction relay — direct REST call with manual signature.
 
-privy-client 0.5's AsyncPrivyAPI does not auto-sign requests with the
-authorization key (only the sync PrivyAPI does, via a custom httpx.Client
-subclass that overrides send()). For delegated wallet operations like
-eth_sendTransaction we need the `privy-authorization-signature` header
-or Privy returns 401 "No valid authorization keys".
+privy-client 0.2.x's AsyncPrivyAPI does not auto-sign requests with
+the authorization key (only the sync PrivyAPI does, via a custom
+httpx.Client subclass that overrides send()). For delegated wallet
+operations like eth_sendTransaction we need the
+`privy-authorization-signature` header or Privy returns 401 "No valid
+authorization keys".
 
 Rather than fight the SDK or pre-compute signatures and pass them via
 the rpc kwarg, we just call Privy's REST API directly with httpx:

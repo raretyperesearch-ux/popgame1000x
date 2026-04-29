@@ -224,6 +224,42 @@ def test_compute_pnl_long_losing() -> None:
     _ok("compute_pnl.long losing → -$5.00")
 
 
+def test_house_fee_transfer_calldata() -> None:
+    """USDC.transfer(treasury, fee) selector + args are byte-exact.
+    This is the tx the open path now sends to actually collect fees."""
+    from usdc_approval import build_usdc_transfer_tx, USDC_BASE_ADDRESS
+    treasury = "0xAaAaaAAaaAAaaaaaaAAAAaaAAAAAAaAaAaAaAAaA"
+    fee_usdc = 0.04
+    tx = build_usdc_transfer_tx(treasury, fee_usdc)
+    if tx["to"].lower() != USDC_BASE_ADDRESS.lower():
+        _fail("fee_transfer.to", f"expected USDC contract, got {tx['to']}")
+    if tx["value"] != 0:
+        _fail("fee_transfer.value", f"expected 0, got {tx['value']}")
+    # ERC-20 transfer(address,uint256) selector = 0xa9059cbb
+    if not tx["data"].startswith("0xa9059cbb"):
+        _fail("fee_transfer.selector", f"expected 0xa9059cbb, got {tx['data'][:10]}")
+    from eth_abi import decode
+    args = bytes.fromhex(tx["data"][10:])
+    rcpt, amt = decode(["address", "uint256"], args)
+    if rcpt.lower() != treasury.lower():
+        _fail("fee_transfer.recipient", f"got {rcpt}")
+    if amt != int(fee_usdc * 10**6):
+        _fail("fee_transfer.amount", f"got {amt}, expected {int(fee_usdc * 10**6)}")
+    _ok(f"USDC.transfer calldata exact match  selector=0xa9059cbb  amount={amt} ({amt/10**6} USDC)")
+
+
+def test_house_fee_amount_matches_bps() -> None:
+    """Sanity: $5 wager × 80 bps = $0.04 fee."""
+    from models import calculate_house_fee, HOUSE_FEE_BPS
+    if HOUSE_FEE_BPS != 80:
+        _fail("fee.bps", f"expected 80 bps, got {HOUSE_FEE_BPS}")
+    if abs(calculate_house_fee(5.0) - 0.04) > 1e-9:
+        _fail("fee.5usd", f"expected 0.04, got {calculate_house_fee(5.0)}")
+    if abs(calculate_house_fee(25.0) - 0.20) > 1e-9:
+        _fail("fee.25usd", f"expected 0.20, got {calculate_house_fee(25.0)}")
+    _ok("house_fee math: $5→$0.04, $25→$0.20  (80 bps = 0.8%)")
+
+
 async def main() -> None:
     print("Running audit-fix tests…")
     print()
@@ -239,6 +275,10 @@ async def main() -> None:
     test_exit_price_back_compute_losing_trade()
     test_exit_price_back_compute_full_liquidation()
     test_exit_price_degenerate_inputs_return_none()
+    print()
+    print("[house fee collection]")
+    test_house_fee_amount_matches_bps()
+    test_house_fee_transfer_calldata()
     print()
     print("All tests passed.")
 

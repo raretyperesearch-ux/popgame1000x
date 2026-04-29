@@ -294,23 +294,82 @@ async def main() -> None:
     ok("data/value are properly hex-encoded for Privy")
     trace("privy_payload", privy_payload)
 
-    step(7, "build trade-close tx for an existing position (skipped — no open trade)")
-    if not trades:
-        ok("no open trade to close — close path isn't exercised here, but build_trade_close_tx accepts (pair_index, trade_index, collateral_to_close, trader)")
+    step(7, "build trade-close tx (chute / force-close path)")
+    # Even with no open trade we can still exercise the build path with
+    # synthetic params — the SDK builds the calldata client-side; only
+    # broadcast would revert. This proves the close wiring works
+    # without us needing to first open a real trade.
+    if trades:
+        target = trades[0]
+        close_pair = target.trade.pair_index
+        close_idx = target.trade.trade_index
+        close_coll = target.trade.open_collateral
+        ok(f"using real open trade: pair={close_pair} idx={close_idx} coll={close_coll}")
     else:
-        try:
-            close_tx = await client.trade.build_trade_close_tx(
-                pair_index=trades[0].trade.pair_index,
-                trade_index=trades[0].trade.trade_index,
-                collateral_to_close=trades[0].trade.open_collateral,
-                trader=trader_address,
-            )
-            close_dict = _tx_to_dict(close_tx)
-            ok(f"build_trade_close_tx ok  to={close_dict.get('to')} data={str(close_dict.get('data',''))[:14]}…")
-            close_payload = _normalize_tx(close_tx)
-            ok(f"close payload through Privy normalizer: {sorted(close_payload.keys())}")
-        except Exception as e:
-            warn(f"build_trade_close_tx failed: {e}")
+        close_pair = eth_pair_index
+        close_idx = 0
+        close_coll = 4.96
+        ok(f"no open trade — using synthetic params (pair={close_pair} idx={close_idx} coll={close_coll})")
+    real_estimate_gas = client.async_web3.eth.estimate_gas
+    client.async_web3.eth.estimate_gas = _stub_estimate_gas  # type: ignore[assignment]
+    try:
+        close_tx = await client.trade.build_trade_close_tx(
+            pair_index=close_pair,
+            trade_index=close_idx,
+            collateral_to_close=close_coll,
+            trader=trader_address,
+        )
+        ok("build_trade_close_tx returned successfully (NO broadcast)")
+        close_dict = _tx_to_dict(close_tx)
+        ok(f"close_tx.to    = {close_dict.get('to')}")
+        ok(f"close_tx.data  = {str(close_dict.get('data',''))[:14]}…")
+        ok(f"close_tx.value = {close_dict.get('value')}")
+        if str(close_dict.get("to","")).lower() != sdk_trading_addr.lower():
+            warn(f"close_tx.to != Trading proxy ({sdk_trading_addr})")
+        else:
+            ok("close_tx.to matches Trading proxy")
+        close_payload = _normalize_tx(close_tx)
+        if "chainId" in close_payload:
+            fail("close payload incorrectly carries chainId")
+        if "to" not in close_payload or "data" not in close_payload:
+            fail("close payload missing to/data")
+        ok(f"close payload normalized for Privy: keys={sorted(close_payload.keys())}")
+    except Exception as e:
+        warn(f"build_trade_close_tx failed: {e}")
+    finally:
+        client.async_web3.eth.estimate_gas = real_estimate_gas  # type: ignore[assignment]
+
+    step(8, "fee flow audit — house fee is sent to TREASURY_ADDRESS on open")
+    # Verify the open path now actually builds + would send a fee transfer.
+    import inspect
+    from routes import trade as trade_route
+    src = inspect.getsource(trade_route)
+    if "build_usdc_transfer_tx" not in src:
+        fail("routes/trade.py no longer references build_usdc_transfer_tx — fee is not collected!")
+    if "TREASURY_ADDRESS" not in src:
+        fail("routes/trade.py no longer mentions TREASURY_ADDRESS")
+    ok("routes/trade.py: build_usdc_transfer_tx is wired into the open path")
+    ok("routes/trade.py: TREASURY_ADDRESS validated before fee tx (501 if unset in Privy mode)")
+
+    # Build the fee tx the same way the open path does and verify the calldata.
+    from usdc_approval import build_usdc_transfer_tx
+    treasury = "0x" + "ab" * 20
+    fee = 0.04
+    fee_tx = build_usdc_transfer_tx(treasury, fee)
+    if not fee_tx["data"].startswith("0xa9059cbb"):
+        fail(f"fee_tx selector wrong: {fee_tx['data'][:10]}")
+    from eth_abi import decode
+    rcpt, amt = decode(["address", "uint256"], bytes.fromhex(fee_tx["data"][10:]))
+    if rcpt.lower() != treasury.lower():
+        fail(f"fee recipient mismatch: {rcpt} vs {treasury}")
+    if amt != int(fee * 10**6):
+        fail(f"fee amount mismatch: {amt} vs {int(fee * 10**6)}")
+    ok(f"fee_tx.to={fee_tx['to']}  selector=0xa9059cbb  recipient={rcpt}  amount={amt} ({amt/10**6} USDC)")
+    # And run the same payload through Privy's normalizer to be sure.
+    fee_payload = _normalize_tx(fee_tx)
+    if "chainId" in fee_payload:
+        fail("fee tx Privy payload incorrectly carries chainId")
+    ok(f"fee tx normalized for Privy: keys={sorted(fee_payload.keys())}")
 
     print()
     print("═" * 72)

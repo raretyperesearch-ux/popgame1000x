@@ -21,15 +21,16 @@ def _init_privy_client():
     """Best-effort Privy client init. None if env not configured —
     routes that need it will 503 with a clear message via auth.require_user.
 
-    AsyncPrivyAPI in privy-client 0.5 does NOT accept authorization_key
-    (only the sync class does, and that subclass auto-signs requests
-    for us). Async users must compute the
-    privy-authorization-signature header per-request — that wiring
-    lives in privy_send.py and reads PRIVY_AUTH_PRIVATE_KEY directly.
+    The AsyncPrivyAPI we get from privy-client 0.2.x does NOT auto-sign
+    delegated wallet ops with the authorization key (only the sync
+    PrivyAPI's custom httpx client does that). For eth_sendTransaction
+    we compute the privy-authorization-signature header per-request —
+    that wiring lives in privy_send.py and reads PRIVY_AUTH_PRIVATE_KEY
+    directly.
 
-    All we use the AsyncPrivyAPI client for here is read-only ops
-    (users.get for wallet lookup, etc.), which only need basic auth
-    via app_id/app_secret."""
+    What we DO use AsyncPrivyAPI for: read-only ops like users.get and
+    wallets.get, which only need app_id/app_secret basic auth. That
+    surface has been stable across the 0.2.x line."""
     app_id = os.getenv("PRIVY_APP_ID", "")
     app_secret = os.getenv("PRIVY_APP_SECRET", "")
     auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")

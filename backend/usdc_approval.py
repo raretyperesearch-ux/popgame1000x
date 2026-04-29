@@ -114,3 +114,23 @@ def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
         "data": data,
         "value": 0,
     }
+
+
+def build_usdc_transfer_tx(recipient: str, amount_usdc: float) -> dict:
+    """Build a transaction dict for `USDC.transfer(recipient, amount)`
+    on Base. Used to move the per-trade house fee from the user's
+    embedded wallet to the operator's TREASURY_ADDRESS — the user
+    signs (via Privy delegated signing), USDC is debited from their
+    balance directly (no approval needed; transfer != transferFrom).
+
+    Same hex/chain-id convention as build_usdc_approval_tx so the
+    Privy adapter can route both identically."""
+    amount_raw = int(round(amount_usdc * (10**USDC_DECIMALS)))
+    selector = function_signature_to_4byte_selector("transfer(address,uint256)")
+    args = encode(["address", "uint256"], [_to_checksum(recipient), amount_raw])
+    data = "0x" + (selector + args).hex()
+    return {
+        "to": USDC_BASE_ADDRESS,
+        "data": data,
+        "value": 0,
+    }

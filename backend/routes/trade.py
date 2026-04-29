@@ -35,6 +35,7 @@ from privy_send import send_via_privy
 from routes import price as price_module
 from usdc_approval import (
     build_usdc_approval_tx,
+    build_usdc_transfer_tx,
     get_trading_storage_address,
     get_eth_balance_wei,
     MIN_GAS_ETH_WEI,
@@ -253,9 +254,61 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
             )
 
     house_fee = calculate_house_fee(body.wager_usdc)
+    # Wager = TOTAL cost to the player. Fee is taken out via a separate
+    # USDC.transfer below; the remainder is the actual trade collateral.
+    # So a $5 wager costs the user $5 total: $0.04 fee + $4.96 trade.
+    # This preserves the historical UX (a $5 click = $5 deducted) while
+    # also actually moving the fee on-chain, which the previous code
+    # never did.
     collateral = round(body.wager_usdc - house_fee, 4)
     if collateral <= 0:
         raise HTTPException(400, "wager too small after house fee")
+
+    # Pre-flight USDC balance: needs to cover the full wager (fee +
+    # collateral). Without this check, the fee tx might land but the
+    # openTrade reverts at transferFrom — user has paid the fee for
+    # no trade. Skip in legacy because the SDK signer decides for itself.
+    if not _is_legacy_user(user):
+        try:
+            usdc_bal = await client.get_usdc_balance(user.address)
+        except Exception as e:  # noqa: BLE001
+            print(f"[trade] USDC balance pre-flight failed, allowing through: {e}")
+            usdc_bal = float(body.wager_usdc)
+        if float(usdc_bal) < float(body.wager_usdc):
+            raise HTTPException(
+                402,
+                f"USDC balance ${float(usdc_bal):.2f} is less than wager "
+                f"${float(body.wager_usdc):.2f}. Fund USDC and retry.",
+            )
+
+    # Collect the house fee BEFORE the open. Sequencing matters: we
+    # must take the fee before the trade so the operator gets paid
+    # even if the user stops the round mid-flight. Failure mode: if
+    # the fee tx lands but openTrade reverts (slippage, race), the
+    # user paid $0.04 for no trade — accepted because (a) ZFP MARKET
+    # order with 1% slippage almost never reverts and (b) the fee is
+    # tiny relative to the wager. Skip in legacy mode (the legacy
+    # signer IS the operator — paying yourself is a no-op + pure
+    # gas waste).
+    if not _is_legacy_user(user) and house_fee > 0:
+        if not _TREASURY_ADDRESS:
+            raise HTTPException(
+                500,
+                "TREASURY_ADDRESS not configured — server can't collect "
+                "house fees. Set TREASURY_ADDRESS on the backend.",
+            )
+        fee_tx = build_usdc_transfer_tx(_TREASURY_ADDRESS, house_fee)
+        try:
+            _fee_hash = await _send_user_tx(user, fee_tx)
+            print(f"[trade] house fee {house_fee} USDC → {_TREASURY_ADDRESS}  tx={_fee_hash}")
+        except HTTPException as he:
+            # Surface fee-tx failures verbatim so the frontend banner
+            # shows something specific. The user can retry; no trade
+            # was opened.
+            raise HTTPException(
+                he.status_code,
+                f"House fee transfer failed: {he.detail}",
+            )
 
     allowance = await client.get_usdc_allowance_for_trading(user.address)
     if allowance < collateral:
