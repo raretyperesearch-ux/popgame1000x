@@ -125,18 +125,25 @@ export async function openTrade(
 export async function closeTrade(
   getAccessToken?: () => Promise<string | null>,
   walletAddress?: string,
+  mockExitPrice?: number,
 ): Promise<CloseTradeResponse> {
   if (isMock()) {
     const entry_price = mockTradeState?.entry_price ?? 3500;
     const wager = mockTradeState?.wager_usdc ?? 5;
-    const net_pnl_usdc = +((Math.random() - 0.4) * wager * 2).toFixed(4);
-    const gross_pnl_usdc = net_pnl_usdc > 0 ? +(net_pnl_usdc / 0.975).toFixed(4) : net_pnl_usdc;
-    const avantis_win_fee_usdc = net_pnl_usdc > 0 ? +(gross_pnl_usdc * 0.025).toFixed(4) : 0;
+    const leverage = mockTradeState?.leverage ?? 100;
+    const exit_price = mockExitPrice && mockExitPrice > 0
+      ? mockExitPrice
+      : mockTradeState?.current_price ?? entry_price;
+    const gross_pnl_usdc = +((((exit_price - entry_price) / entry_price) * leverage * wager).toFixed(4));
+    const avantis_win_fee_usdc = gross_pnl_usdc > 0 ? +(gross_pnl_usdc * 0.025).toFixed(4) : 0;
+    const net_pnl_usdc = gross_pnl_usdc > 0
+      ? +(gross_pnl_usdc - avantis_win_fee_usdc).toFixed(4)
+      : gross_pnl_usdc;
     mockTradeState = null;
     return {
       trade_index: 0,
       entry_price,
-      exit_price: entry_price + (net_pnl_usdc / wager) * (entry_price * 0.01),
+      exit_price,
       gross_pnl_usdc,
       avantis_win_fee_usdc,
       net_pnl_usdc,
@@ -156,8 +163,27 @@ export async function closeTrade(
 export async function forceCloseTrade(
   getAccessToken?: () => Promise<string | null>,
   walletAddress?: string,
+  mockExitPrice?: number,
 ): Promise<CloseTradeResponse> {
-  if (isMock()) return closeTrade(getAccessToken, walletAddress);
+  if (isMock()) {
+    const entry_price = mockTradeState?.entry_price ?? 3500;
+    const wager = mockTradeState?.wager_usdc ?? 5;
+    const exit_price = mockExitPrice && mockExitPrice > 0
+      ? mockExitPrice
+      : mockTradeState?.liquidation_price ?? entry_price;
+    mockTradeState = null;
+    return {
+      trade_index: 0,
+      entry_price,
+      exit_price,
+      gross_pnl_usdc: -wager,
+      avantis_win_fee_usdc: 0,
+      net_pnl_usdc: -wager,
+      was_liquidated: true,
+      closed_at: new Date().toISOString(),
+      tx_hash: "0xstub",
+    };
+  }
   return apiFetch<CloseTradeResponse>(
     "/trade/force-close",
     { method: "POST" },

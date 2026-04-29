@@ -1287,7 +1287,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     const settleReq = paperMode
       ? Promise.resolve({ ok: false as const })
-      : withTimeout(forceCloseTrade(getAccessToken, walletAddress), SETTLE_TIMEOUT_MS, "force close")
+      : withTimeout(forceCloseTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
             console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
@@ -1363,7 +1363,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     const closeReq = paperMode
       ? Promise.resolve({ ok: false as const })
-      : withTimeout(closeTrade(getAccessToken, walletAddress), SETTLE_TIMEOUT_MS, "close")
+      : withTimeout(closeTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
             console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
@@ -1532,6 +1532,24 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         skyTarget = 0.08; // brief lift during liftoff
       }
       a.skyAlt = lerp(a.skyAlt, skyTarget, 0.08 * dtNorm);
+
+      /* Keep the cinematic runner honest against the real trade math.
+         Positive PnL must read above ENTRY, negative PnL below ENTRY; the
+         physics layer can still ease and bounce inside those bounds. */
+      if (a.state === "LIVE" && a.entry > 0) {
+        const move = (a.price - a.entry) / a.entry;
+        const pnlPct = move * a.positionLev;
+        const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
+        if (pnlPct > 0.002 && a.price > a.entry) {
+          const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
+          if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
+          if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
+        } else if (pnlPct < -0.002 && a.price < a.entry) {
+          const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
+          if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
+          if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        }
+      }
 
       /* draw chart (returns priceToY function) */
       const priceToY = drawScene(
@@ -1808,6 +1826,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const pnlPct = move * a.positionLev;
         const pnlDollars = pnlPct * a.positionWager;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
+
+        const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
+        if (pnlPct > 0.002 && a.price > a.entry) {
+          const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
+          if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
+          if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
+        } else if (pnlPct < -0.002 && a.price < a.entry) {
+          const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
+          if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
+          if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        }
 
         /* gentle body tilt with thrust dust */
         if (a.smoothDelta > 0.001) {

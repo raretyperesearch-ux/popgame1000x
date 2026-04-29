@@ -14,7 +14,7 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
 
   return (
     <div className="history-row">
-      <span className="label">LAST 5 TRADES</span>
+      <span className="label">LAST 5 SCALPS</span>
       {slots.map((h, i) => {
         if (!h) {
           return (
