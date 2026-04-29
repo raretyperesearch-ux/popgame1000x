@@ -38,6 +38,7 @@ const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
 const DUST_MAX = 15; // max dust particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
+const PREPARE_DURATION = 300; // ms of charge + ground-break anticipation
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
 const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
@@ -80,6 +81,7 @@ const FALL_FRAMES = [12, 13];
 const FALL_FRAME_MS = 130;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
+const LIVE_LAND_HOLD_MS = LAND_FRAME_MS * LAND_FRAMES.length;
 type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "fall" | "land" | "fail";
 const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land">, number> = {
   idle: 5,
@@ -259,6 +261,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteAirStart: 0,
     spriteFallStart: 0,
     spriteLandStart: 0,
+    liveLandUntil: 0,
     spriteFrame: 5, // current sprite frame index
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
@@ -352,7 +355,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       if (a.spriteState !== state) {
         a.spriteState = state;
         if (state === "run") a.spriteRunStart = time ?? performance.now();
-        if (state === "jump") a.spriteJumpStart = time ?? performance.now();
+        if (state === "charge" || state === "break" || state === "jump") a.spriteJumpStart = time ?? performance.now();
         if (state === "air") a.spriteAirStart = time ?? performance.now();
         if (state === "fall") a.spriteFallStart = time ?? performance.now();
         if (state === "land") a.spriteLandStart = time ?? performance.now();
@@ -391,7 +394,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     } else if (a.spriteState === "jump") {
       const elapsed = time - (a.spriteJumpStart || time);
       const frames = safeFrames(LAUNCH_FRAMES, JUMP_FRAMES);
-      frameIdx = frames[Math.min(frames.length - 1, Math.floor(elapsed / 115))];
+      frameIdx = frames[Math.min(frames.length - 1, Math.floor(elapsed / (JUMP_DURATION / frames.length)))];
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
       frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
@@ -1085,6 +1088,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.spriteJumpStart = 0;
     a.spriteAirStart = 0;
     a.spriteLandStart = 0;
+    a.liveLandUntil = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
     a.loco.grounded = true;
@@ -1262,6 +1266,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteJumpStart = 0;
       a.spriteAirStart = 0;
       a.spriteLandStart = 0;
+      a.liveLandUntil = 0;
       a.dustParticles.length = 0;
       a.loco.grounded = true;
       a.loco.stepPhase = 0;
@@ -1544,11 +1549,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       } else if (a.state === "PREPARE") {
         const prepElapsed = time - (a.prepareStartTime || time);
-        const t = clamp(prepElapsed / 150, 0, 1);
+        const t = clamp(prepElapsed / PREPARE_DURATION, 0, 1);
         a.curBobY = Math.sin(t * Math.PI) * 6.8;
         setSpriteState(t < 0.62 ? "charge" : "break", time);
         setFig(figScreenX, a.smoothAlt - t * 5.5, a.smoothRot);
-        if (prepElapsed >= 150) {
+        if (prepElapsed >= PREPARE_DURATION) {
           a.state = "JUMPING";
           setGameState("JUMPING");
           a.jumpStartTime = time;
@@ -1561,7 +1566,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.jumpStartTime === 0) a.jumpStartTime = time;
         const elapsed = time - a.jumpStartTime;
         const loco = a.loco;
-        setSpriteState(elapsed > JUMP_DURATION * 0.52 ? "air" : "jump", time);
+        setSpriteState("jump", time);
         if (loco.grounded) {
           loco.grounded = false;
           const n = getTerrainNormal(loco.bodyX || figWorldX);
@@ -1608,20 +1613,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (a.state === "LIVE") {
         a.frame++;
         const loco = a.loco;
-        // Airborne: air when ascending/hovering, fall when losing
-        // altitude. Threshold sits below zero so price-jitter wobble
-        // around 0 doesn't flicker the sprite frame-by-frame.
-        // Grounded on the chart line: run, so the figure stays in
-        // motion as the chart scrolls underneath instead of looking
-        // stiff/floating in a static crouched pose.
-        setSpriteState(
-          loco.grounded
-            ? "run"
-            : a.figPriceVel < FALL_VEL_THRESHOLD
-              ? "fall"
-              : "air",
-          time,
-        );
+        const wasGrounded = loco.grounded;
         a.curBobY = 0;
 
         /* price delta for physics */
@@ -1700,6 +1692,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           // like the trade had auto-closed.
           if (figY >= groundY - 4 && a.figPriceVel < 0) {
             loco.grounded = true;
+            if (!wasGrounded) a.liveLandUntil = time + LIVE_LAND_HOLD_MS;
             loco.bodyX = figWorldX;
             loco.bodyY = groundY - BODY_HEIGHT_PX;
             loco.leftFoot = { x: figWorldX - 1.2, y: getTerrainY(figWorldX - 1.2), planted: true };
@@ -1714,6 +1707,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             loco.grounded = false;
           }
         }
+
+        // Pick the pose after ground contact is resolved, so touchdown
+        // never renders a one-frame falling pose at chart level.
+        setSpriteState(
+          loco.grounded
+            ? time < a.liveLandUntil
+              ? "land"
+              : "run"
+            : a.figPriceVel < FALL_VEL_THRESHOLD
+              ? "fall"
+              : "air",
+          time,
+        );
 
         /* liquidation check — fire only on the real market price (a.price)
            or its derived pnlPct. The previous condition also fired when
