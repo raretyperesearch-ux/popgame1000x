@@ -103,6 +103,7 @@ const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
+const SETTLE_TIMEOUT_MS = 4500;
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -130,6 +131,16 @@ function terrainAt(worldX: number, stageH: number, seed: number): number {
     + Math.sin(worldX * 0.018 + seed) * stageH * 0.012
     + Math.sin(worldX * 0.007 + seed * 1.7) * stageH * 0.018;
   return clamp(y, stageH * TERRAIN_MIN_PCT, stageH * TERRAIN_MAX_PCT);
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
 }
 
 function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
@@ -1104,6 +1115,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
     a.state = "IDLE";
     setGameState("IDLE");
+    setEndOfGame(null);
     if (parachuteRef.current)
       parachuteRef.current.classList.remove("deployed");
     setSpriteState("idle");
@@ -1185,7 +1197,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     const settleReq = paperMode
       ? Promise.resolve({ ok: false as const })
-      : forceCloseTrade(getAccessToken, walletAddress)
+      : withTimeout(forceCloseTrade(getAccessToken, walletAddress), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
             console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
@@ -1261,7 +1273,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
     const closeReq = paperMode
       ? Promise.resolve({ ok: false as const })
-      : closeTrade(getAccessToken, walletAddress)
+      : withTimeout(closeTrade(getAccessToken, walletAddress), SETTLE_TIMEOUT_MS, "close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
             console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
@@ -1281,7 +1293,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
 
   const closeEndOfGame = useCallback(() => {
-    setEndOfGame(null);
     reset();
   }, [reset]);
 
