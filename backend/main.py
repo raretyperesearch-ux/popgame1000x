@@ -86,6 +86,59 @@ def _init_privy_client():
         return None
 
 
+async def _maybe_create_key_quorum(privy_client) -> None:
+    """If PRIVY_AUTO_CREATE_QUORUM=1 is set on the env (and
+    PRIVY_KEY_QUORUM_ID is NOT already set), create a Key Quorum that
+    contains the public key derived from PRIVY_AUTH_PRIVATE_KEY, with
+    threshold 1, and print the resulting quorum ID. The operator then
+    sets PRIVY_KEY_QUORUM_ID, PRIVY_EXPECTED_SIGNER_ID, and the Vercel
+    NEXT_PUBLIC_PRIVY_SIGNER_ID to that ID, removes the AUTO_CREATE
+    flag, and the next boot is a no-op.
+
+    This exists because Privy's python SDK doesn't expose a list
+    endpoint for key quorums — there's no clean way to dedupe — so
+    we gate creation behind an explicit operator-set flag instead of
+    creating on every boot."""
+    if os.getenv("PRIVY_KEY_QUORUM_ID"):
+        return
+    if os.getenv("PRIVY_AUTO_CREATE_QUORUM", "").lower() not in ("1", "true", "yes"):
+        return
+    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
+    if not auth_key:
+        print("⚠️  AUTO_CREATE_QUORUM requested but PRIVY_AUTH_PRIVATE_KEY is unset")
+        return
+    try:
+        from privy_send import _normalize_auth_key
+        from cryptography.hazmat.primitives import serialization
+        body = _normalize_auth_key(auth_key)
+        pem = (
+            f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----"
+        )
+        priv = serialization.load_pem_private_key(pem.encode(), password=None)
+        pub_pem = priv.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode()
+        q = await privy_client.key_quorums.create(
+            public_keys=[pub_pem],
+            authorization_threshold=1,
+            display_name="popgame1000x backend signer (auto-created)",
+        )
+        print()
+        print("=" * 72)
+        print(f"✓ Created Privy Key Quorum: {q.id}")
+        print()
+        print("ACTION REQUIRED — set these env vars now and remove")
+        print("PRIVY_AUTO_CREATE_QUORUM so this doesn't run again:")
+        print(f"  Railway   PRIVY_KEY_QUORUM_ID={q.id}")
+        print(f"  Railway   PRIVY_EXPECTED_SIGNER_ID={q.id}")
+        print(f"  Vercel    NEXT_PUBLIC_PRIVY_SIGNER_ID={q.id}")
+        print("=" * 72)
+        print()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️  Key quorum auto-create failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Boot order:
@@ -101,6 +154,7 @@ async def lifespan(app: FastAPI):
     privy_client = _init_privy_client()
     if privy_client is not None:
         auth.set_privy_client(privy_client)
+        await _maybe_create_key_quorum(privy_client)
 
     try:
         await trade.init_trader()
