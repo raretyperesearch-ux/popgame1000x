@@ -808,10 +808,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         rawMax = Math.max(rawMax, p);
       }
       if (isLive) {
-        if (entryPrice !== null) {
-          rawMin = Math.min(rawMin, entryPrice);
-          rawMax = Math.max(rawMax, entryPrice);
-        }
         if (liqPrice !== null) rawMin = Math.min(rawMin, liqPrice);
         rawMin = Math.min(rawMin, a.figPrice);
         rawMax = Math.max(rawMax, a.figPrice);
@@ -968,24 +964,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           ctx.lineTo(pts[i].x + (nx / len) * 8, pts[i].y + (ny / len) * 8);
           ctx.stroke();
         }
-      }
-
-      /* entry price line */
-      if (isLive && entryPrice !== null) {
-        const ey = priceToY(entryPrice);
-        ctx.strokeStyle = "rgba(244,236,216,0.25)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, ey + (Math.random() - 0.5) * 0.6);
-        ctx.lineTo(w, ey + (Math.random() - 0.5) * 0.6);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(244,236,216,0.35)";
-        ctx.font = '9px "Press Start 2P", monospace';
-        ctx.textAlign = "right";
-        ctx.fillText("ENTRY", w - 6, ey - 5);
-        ctx.textAlign = "start";
       }
 
       /* crash line + danger zone */
