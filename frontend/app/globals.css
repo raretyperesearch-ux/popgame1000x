@@ -1599,7 +1599,7 @@ body::before {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 220px;
+  width: min(320px, calc(100vw - 24px));
   background: #0e1018;
   border: 2px solid var(--border);
   border-radius: 12px;
@@ -1692,6 +1692,104 @@ body::before {
 .user-menu-item.primary:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+.user-menu-section {
+  border-top: 1px dashed rgba(244,236,216,0.12);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.user-menu-section-title {
+  padding: 4px 10px 2px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.withdraw-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+.withdraw-tab {
+  border: 1px solid rgba(244,236,216,0.22);
+  background: rgba(244,236,216,0.04);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 7px 6px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  cursor: pointer;
+}
+.withdraw-tab.active {
+  color: var(--green);
+  border-color: rgba(93,211,158,0.62);
+  background: rgba(93,211,158,0.1);
+}
+.withdraw-panel {
+  margin: 0 8px 8px;
+  padding: 9px;
+  border: 1px solid rgba(244,236,216,0.16);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.24);
+}
+.withdraw-field {
+  display: block;
+  margin-bottom: 8px;
+}
+.withdraw-field > span {
+  display: block;
+  margin-bottom: 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: var(--muted);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.withdraw-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(244,236,216,0.22);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.38);
+  color: var(--ink);
+  font-family: 'VT323', monospace;
+  font-size: 17px;
+  letter-spacing: 0;
+  padding: 7px 8px;
+  outline: none;
+}
+.withdraw-field input:focus {
+  border-color: rgba(93,211,158,0.72);
+  box-shadow: 0 0 0 2px rgba(93,211,158,0.12);
+}
+.withdraw-amount-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.withdraw-amount-row button {
+  border: 1px solid rgba(244,236,216,0.22);
+  border-radius: 6px;
+  background: rgba(244,236,216,0.08);
+  color: var(--ink);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  padding: 0 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.withdraw-hint {
+  margin: 2px 0 8px;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.1;
+}
+.withdraw-hint.ok { color: var(--muted); }
+.withdraw-hint.warn { color: var(--orange); }
+.withdraw-submit {
+  text-align: center;
 }
 .user-menu-diag {
   white-space: pre-wrap;

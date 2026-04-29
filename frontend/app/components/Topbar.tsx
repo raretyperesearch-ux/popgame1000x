@@ -12,6 +12,8 @@ import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 
+type WithdrawAsset = "USDC" | "ETH";
+
 interface TopbarProps {
   balance: number;
   ethBalance: number | null;
@@ -49,6 +51,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const [delegating, setDelegating] = useState(false);
   const [diag, setDiag] = useState<string | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAsset, setWithdrawAsset] = useState<WithdrawAsset>("USDC");
+  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawPending, setWithdrawPending] = useState(false);
   // Set to true after addSigners returns ok in the same session, in
   // case Privy's user.linkedAccounts hasn't refreshed yet — the
   // wallet's `delegated: boolean` field is the OLD delegateAction
@@ -99,6 +106,25 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   );
   const isDelegated = linkedSaysDelegated || locallyDelegated;
   const hasGas = ethBalance === null || ethBalance >= 0.0005;
+  const withdrawAmountNumber = Number(withdrawAmount);
+  const withdrawAddressValid = withdrawAddress === "" || isAddress(withdrawAddress.trim());
+  const withdrawAvailable = withdrawAsset === "USDC" ? balance : ethBalance;
+  const withdrawNeedsGas = withdrawAsset === "USDC" && !hasGas;
+  const withdrawAmountValid =
+    Number.isFinite(withdrawAmountNumber) &&
+    withdrawAmountNumber > 0 &&
+    (withdrawAvailable === null || withdrawAmountNumber <= withdrawAvailable);
+  const withdrawLeavesGas =
+    withdrawAsset === "USDC" ||
+    ethBalance === null ||
+    withdrawAmountNumber < Math.max(0, ethBalance - 0.0002);
+  const withdrawReady =
+    Boolean(walletAddress) &&
+    isAddress(withdrawAddress.trim()) &&
+    withdrawAmountValid &&
+    withdrawLeavesGas &&
+    !withdrawNeedsGas &&
+    !withdrawPending;
 
   /* One-time delegation prompt after login. Fires only when:
      - user is authenticated
@@ -267,97 +293,77 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     }).catch((e) => console.warn("[fund] ETH fund flow declined:", e));
   };
 
-  const promptWithdraw = (asset: "USDC" | "ETH") => {
-    if (!walletAddress) return null;
-    const to = window.prompt(`Withdraw ${asset} to what Base wallet address?`);
-    if (!to) return null;
-    const recipient = to.trim();
-    if (!isAddress(recipient)) {
-      onError?.("That withdraw address is not a valid EVM wallet address.");
-      return null;
-    }
-    const amountRaw = window.prompt(`How much ${asset} do you want to withdraw?`);
-    if (!amountRaw) return null;
-    const amount = amountRaw.trim();
-    const amountNumber = Number(amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      onError?.("Withdraw amount must be greater than zero.");
-      return null;
-    }
-    const ok = window.confirm(
-      `Withdraw ${amount} ${asset} from your embedded Base wallet to ${recipient}?`,
-    );
-    if (!ok) return null;
-    return { recipient, amount, amountNumber };
+  const openWithdraw = (asset: WithdrawAsset) => {
+    setWithdrawAsset(asset);
+    setWithdrawOpen(true);
+    setDiag(null);
   };
 
-  const onWithdrawUSDC = async () => {
-    const withdrawal = promptWithdraw("USDC");
-    if (!withdrawal || !walletAddress) return;
-    setMenuOpen(false);
-    try {
-      const value = parseUnits(withdrawal.amount, 6);
-      const hash = await sendTransaction(
-        {
-          to: USDC_BASE_ADDRESS,
-          chainId: base.id,
-          data: encodeFunctionData({
-            abi: USDC_TRANSFER_ABI,
-            functionName: "transfer",
-            args: [withdrawal.recipient, value],
-          }),
-          value: "0",
-        },
-        {
-          address: walletAddress,
-          uiOptions: {
-            description: `Withdraw ${withdrawal.amount} USDC to your wallet.`,
-            buttonText: "Withdraw USDC",
-            successHeader: "Withdrawal sent",
-            successDescription: "Your USDC transfer was submitted on Base.",
-          },
-        },
-      );
-      onError?.(`USDC withdrawal sent: ${hash.hash.slice(0, 10)}…`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn("[withdraw] USDC failed:", e);
-      onError?.(`USDC withdrawal failed: ${msg.slice(0, 180)}`);
-    }
-  };
-
-  const onWithdrawETH = async () => {
-    const withdrawal = promptWithdraw("ETH");
-    if (!withdrawal || !walletAddress) return;
-    if (ethBalance !== null && withdrawal.amountNumber >= ethBalance) {
-      onError?.("Leave a little ETH behind for Base gas. Try a smaller ETH withdrawal.");
+  const setMaxWithdraw = () => {
+    if (withdrawAsset === "USDC") {
+      setWithdrawAmount(Math.max(0, balance).toFixed(2));
       return;
     }
-    setMenuOpen(false);
+    if (ethBalance === null) return;
+    const maxEth = Math.max(0, ethBalance - 0.0002);
+    setWithdrawAmount(maxEth.toFixed(6).replace(/0+$/, "").replace(/\.$/, ""));
+  };
+
+  const submitWithdraw = async () => {
+    if (!withdrawReady || !walletAddress) return;
+    const recipient = withdrawAddress.trim();
+    const recipientAddress = recipient as `0x${string}`;
+    const amount = withdrawAmount.trim();
+    setWithdrawPending(true);
     try {
-      const hash = await sendTransaction(
-        {
-          to: withdrawal.recipient,
-          chainId: base.id,
-          value: parseEther(withdrawal.amount),
+      const tx =
+        withdrawAsset === "USDC"
+          ? {
+              to: USDC_BASE_ADDRESS,
+              chainId: base.id,
+              data: encodeFunctionData({
+                abi: USDC_TRANSFER_ABI,
+                functionName: "transfer",
+                args: [recipientAddress, parseUnits(amount, 6)],
+              }),
+              value: "0",
+            }
+          : {
+              to: recipientAddress,
+              chainId: base.id,
+              value: parseEther(amount),
+            };
+      const hash = await sendTransaction(tx, {
+        address: walletAddress,
+        uiOptions: {
+          description: `Withdraw ${amount} ${withdrawAsset} to ${recipient.slice(0, 6)}...${recipient.slice(-4)}.`,
+          buttonText: `Withdraw ${withdrawAsset}`,
+          successHeader: "Withdrawal sent",
+          successDescription: `Your ${withdrawAsset} transfer was submitted on Base.`,
         },
-        {
-          address: walletAddress,
-          uiOptions: {
-            description: `Withdraw ${withdrawal.amount} ETH to your wallet.`,
-            buttonText: "Withdraw ETH",
-            successHeader: "Withdrawal sent",
-            successDescription: "Your ETH transfer was submitted on Base.",
-          },
-        },
-      );
-      onError?.(`ETH withdrawal sent: ${hash.hash.slice(0, 10)}…`);
+      });
+      onError?.(`${withdrawAsset} withdrawal sent: ${hash.hash.slice(0, 10)}...`);
+      setWithdrawOpen(false);
+      setWithdrawAmount("");
+      setWithdrawAddress("");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn("[withdraw] ETH failed:", e);
-      onError?.(`ETH withdrawal failed: ${msg.slice(0, 180)}`);
+      console.warn(`[withdraw] ${withdrawAsset} failed:`, e);
+      onError?.(`${withdrawAsset} withdrawal failed: ${msg.slice(0, 180)}`);
+    } finally {
+      setWithdrawPending(false);
     }
   };
+
+  const withdrawHint = (() => {
+    if (withdrawNeedsGas) return "Add a little ETH first so the USDC transfer can pay Base gas.";
+    if (withdrawAddress && !withdrawAddressValid) return "Enter a valid Base / EVM wallet address.";
+    if (withdrawAmount && !withdrawAmountValid) return `Amount must be between 0 and ${withdrawAvailable ?? 0} ${withdrawAsset}.`;
+    if (!withdrawLeavesGas) return "Leave at least 0.0002 ETH for future gas.";
+    return withdrawAsset === "USDC"
+      ? "USDC withdraws need ETH gas in this same wallet."
+      : "ETH withdraws are native Base transfers.";
+  })();
 
   const onRevoke = async () => {
     setMenuOpen(false);
@@ -436,34 +442,81 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
                   </button>
-                  <button
-                    className="user-menu-item"
-                    role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); onFundUSDC(); }}
-                  >
-                    fund USDC (collateral)
-                  </button>
-                  <button
-                    className="user-menu-item"
-                    role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); onFundETH(); }}
-                  >
-                    fund ETH (gas)
-                  </button>
-                  <button
-                    className="user-menu-item"
-                    role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); onWithdrawUSDC(); }}
-                  >
-                    withdraw USDC
-                  </button>
-                  <button
-                    className="user-menu-item"
-                    role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); onWithdrawETH(); }}
-                  >
-                    withdraw ETH
-                  </button>
+                  <div className="user-menu-section">
+                    <div className="user-menu-section-title">deposit</div>
+                    <button
+                      className="user-menu-item"
+                      role="menuitem"
+                      onClick={() => { sounds.play("ui-click"); onFundUSDC(); }}
+                    >
+                      fund USDC (collateral)
+                    </button>
+                    <button
+                      className="user-menu-item"
+                      role="menuitem"
+                      onClick={() => { sounds.play("ui-click"); onFundETH(); }}
+                    >
+                      fund ETH (gas)
+                    </button>
+                  </div>
+                  <div className="user-menu-section">
+                    <div className="user-menu-section-title">withdraw</div>
+                    <div className="withdraw-tabs" role="group" aria-label="Withdraw asset">
+                      {(["USDC", "ETH"] as const).map((asset) => (
+                        <button
+                          key={asset}
+                          type="button"
+                          className={`withdraw-tab ${withdrawAsset === asset ? "active" : ""}`}
+                          onClick={() => { sounds.play("ui-click"); openWithdraw(asset); }}
+                        >
+                          {asset}
+                        </button>
+                      ))}
+                    </div>
+                    {withdrawOpen && (
+                      <div className="withdraw-panel">
+                        <label className="withdraw-field">
+                          <span>send to</span>
+                          <input
+                            value={withdrawAddress}
+                            onChange={(e) => setWithdrawAddress(e.target.value)}
+                            placeholder="0x..."
+                            spellCheck={false}
+                          />
+                        </label>
+                        <label className="withdraw-field">
+                          <span>amount</span>
+                          <div className="withdraw-amount-row">
+                            <input
+                              value={withdrawAmount}
+                              onChange={(e) => setWithdrawAmount(e.target.value)}
+                              placeholder="0.00"
+                              inputMode="decimal"
+                            />
+                            <button type="button" onClick={setMaxWithdraw}>max</button>
+                          </div>
+                        </label>
+                        <div className={`withdraw-hint ${withdrawReady ? "ok" : "warn"}`}>{withdrawHint}</div>
+                        <button
+                          type="button"
+                          className="user-menu-item primary withdraw-submit"
+                          disabled={!withdrawReady}
+                          onClick={() => { sounds.play("ui-click"); submitWithdraw(); }}
+                        >
+                          {withdrawPending ? "confirming..." : `withdraw ${withdrawAsset}`}
+                        </button>
+                      </div>
+                    )}
+                    {!withdrawOpen && (
+                      <button
+                        className="user-menu-item"
+                        role="menuitem"
+                        onClick={() => { sounds.play("ui-click"); openWithdraw("USDC"); }}
+                      >
+                        open withdraw panel
+                      </button>
+                    )}
+                  </div>
                   {isDelegated && (
                     <button
                       className="user-menu-item"
