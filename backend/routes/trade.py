@@ -35,7 +35,7 @@ from privy_send import send_via_privy
 from routes import price as price_module
 from usdc_approval import (
     build_usdc_approval_tx,
-    get_avantis_trading_address,
+    get_trading_storage_address,
     get_eth_balance_wei,
     MIN_GAS_ETH_WEI,
 )
@@ -268,7 +268,12 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         if _is_legacy_user(user):
             await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
         else:
-            spender = get_avantis_trading_address(client)
+            # Spender = TradingStorage. The Trading proxy is a different
+            # address; openTrade pulls collateral via transferFrom that
+            # checks allowance against TradingStorage. Approving the
+            # wrong contract here makes every first trade revert with
+            # ERC20: insufficient allowance.
+            spender = get_trading_storage_address(client)
             approval_tx = build_usdc_approval_tx(spender, _USDC_APPROVAL_AMOUNT)
             _ = await _send_user_tx(user, approval_tx)
             # Wait for the approval to land before opening — otherwise

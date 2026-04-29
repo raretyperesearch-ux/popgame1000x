@@ -59,28 +59,41 @@ async def get_eth_balance_wei(address: str) -> int:
     return int(result, 16)
 
 
-def get_avantis_trading_address(client: Any) -> str:
-    """Find the Avantis Trading contract address from a TraderClient.
-    Tries a handful of plausible attribute paths the SDK might expose,
-    falling back to the well-known Base mainnet address."""
-    # Try the snapshot-style API first (newer SDK versions).
-    for path in (
-        ("snapshot", "contracts", "trading", "address"),
-        ("contracts", "trading", "address"),
-        ("snapshot", "trading", "address"),
-        ("trading", "contract", "address"),
-    ):
-        node: Any = client
-        ok = True
-        for attr in path:
-            node = getattr(node, attr, None)
-            if node is None:
-                ok = False
-                break
-        if ok and isinstance(node, str) and node.startswith("0x"):
-            return _to_checksum(node)
-    # Avantis Trading proxy on Base mainnet (verified via avantisfi.com).
-    return "0x5FF292d70bA9cD9e7CCb313782811b3D7120535f"
+def get_trading_storage_address(client: Any) -> str:
+    """Resolve the Avantis TradingStorage contract address — the spender
+    that USDC must be approved to. Distinct from the Trading proxy
+    (where openTrade is called); openTrade pulls user collateral via
+    transferFrom internally, and the chain checks the user's allowance
+    against TradingStorage, not Trading.
+
+    The SDK exposes this as `client.contracts["TradingStorage"].address`;
+    we read that with a getattr-style fallback in case the SDK shape
+    shifts again. The hardcoded last resort is the current Base mainnet
+    deployment, sourced from the SDK's own `approve_usdc_for_trading`.
+    """
+    contracts = getattr(client, "contracts", None)
+    if contracts is not None:
+        try:
+            ts = contracts["TradingStorage"]
+        except (KeyError, TypeError):
+            ts = None
+        if ts is not None:
+            addr = getattr(ts, "address", None)
+            if isinstance(addr, str) and addr.startswith("0x"):
+                return _to_checksum(addr)
+    # Last-resort hardcoded fallback — Base mainnet TradingStorage proxy
+    # as of 2026-04. If the SDK can no longer expose contracts[...] at
+    # all, this keeps the approval routing correct so users can still
+    # trade. Update this whenever Avantis redeploys.
+    return "0x8a311D7048c35985aa31C131B9A13e03a5f7422d"
+
+
+# Backwards-compat alias for the old name. The previous implementation
+# returned the wrong contract (Trading proxy instead of TradingStorage),
+# so any caller still using the old name would route USDC approvals to
+# the wrong spender and the trade would revert. Anything still importing
+# the old symbol now gets the corrected behavior.
+get_avantis_trading_address = get_trading_storage_address
 
 
 def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
