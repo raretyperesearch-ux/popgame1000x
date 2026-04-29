@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 import auth
-from routes import trade, price, balance
+from routes import trade, price, balance, wallet
 
 
 def _init_privy_client():
@@ -42,12 +42,14 @@ def _init_privy_client():
             "Set the PEM/base64 private key on Railway."
         )
     else:
-        # Derive and log the PUBLIC key so the operator can verify it
-        # matches what's registered in the Privy dashboard's
-        # Authorization Keys panel. Privy returns 401 "No valid
-        # authorization keys" when the env private key doesn't pair
-        # with any registered public key for the app.
+        # Derive and log the PUBLIC key + its SPKI sha256 fingerprint so
+        # the operator can verify against the Privy dashboard by
+        # fingerprint (the dashboard truncates long PEMs and "did I
+        # paste the right one" trips operators up). Privy returns 401
+        # "No valid authorization keys" when the env private key
+        # doesn't pair with any key registered in a quorum on the app.
         try:
+            import hashlib
             from privy_send import _normalize_auth_key
             from cryptography.hazmat.primitives import serialization
             body = _normalize_auth_key(auth_key)
@@ -55,15 +57,21 @@ def _init_privy_client():
                 f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----"
             )
             priv = serialization.load_pem_private_key(pem.encode(), password=None)
+            spki_der = priv.public_key().public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
             pub_pem = priv.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             ).decode()
+            fp = hashlib.sha256(spki_der).hexdigest()
             print(
-                "✓ PRIVY_AUTH_PRIVATE_KEY loaded. Public key (paste this into "
-                "Privy dashboard -> App Settings -> Authorization Keys if you "
-                "haven't already; the Signer ID it assigns is what you set as "
-                "NEXT_PUBLIC_PRIVY_SIGNER_ID on Vercel):\n"
+                "✓ PRIVY_AUTH_PRIVATE_KEY loaded.\n"
+                f"  SPKI sha256 fingerprint: {fp}\n"
+                "  Public key (paste into Privy dashboard -> Authorization Keys ->\n"
+                "  'Register key quorum instead' to make NEXT_PUBLIC_PRIVY_SIGNER_ID\n"
+                "  resolve to a quorum that contains this key):\n"
                 + pub_pem
             )
         except Exception as e:  # noqa: BLE001
@@ -127,6 +135,7 @@ app.add_middleware(
 app.include_router(trade.router, prefix="/trade", tags=["trade"])
 app.include_router(price.router, prefix="/price", tags=["price"])
 app.include_router(balance.router, prefix="/balance", tags=["balance"])
+app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 
 
 @app.get("/")

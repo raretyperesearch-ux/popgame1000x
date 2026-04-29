@@ -145,7 +145,6 @@ async def _resolve_user_wallet(
     pref = preferred_address.lower() if preferred_address else None
     matched: Optional[tuple[str, str]] = None
     embedded: Optional[tuple[str, str]] = None
-    fallback: Optional[tuple[str, str]] = None
     for acc in getattr(user, "linked_accounts", []) or []:
         acc_type = getattr(acc, "type", None) or (acc.get("type") if isinstance(acc, dict) else None)
         chain = getattr(acc, "chain_type", None) or (acc.get("chain_type") if isinstance(acc, dict) else None)
@@ -161,28 +160,36 @@ async def _resolve_user_wallet(
             or getattr(acc, "wallet_client", None)
             or (acc.get("wallet_client") if isinstance(acc, dict) else None)
         )
+        # ONLY Privy embedded wallets can be signed for via wallets.rpc.
+        # External wallets (Rabby/MetaMask/etc) have a wallet_id that
+        # references a Privy account record but no server-side signing
+        # capability — every rpc call against them returns 401. Skip
+        # them entirely so we don't silently misroute trades.
+        if client_type not in ("privy", "privy-v2"):
+            continue
         entry = (str(wallet_id), str(address))
         if pref and address.lower() == pref:
             matched = entry
             break
-        if client_type == "privy" and embedded is None:
+        if embedded is None:
             embedded = entry
-        if fallback is None:
-            fallback = entry
 
-    chosen = matched or embedded or fallback
+    chosen = matched or embedded
     if chosen is None:
-        raise HTTPException(409, "User has no Ethereum embedded wallet — login first")
+        raise HTTPException(
+            409,
+            "No Privy-embedded Ethereum wallet on this user. Log out + log in to "
+            "trigger embedded-wallet creation, or check the Privy dashboard's "
+            "embedded-wallets config.",
+        )
     if pref and matched is None:
-        # Frontend hinted an address, but it isn't on the user's account.
-        # Fail closed so we don't read someone else's balance.
+        # Frontend hinted an address, but it isn't a Privy embedded
+        # wallet on this user. Fail closed.
         raise HTTPException(
             403,
-            f"X-Wallet-Address {preferred_address} not linked to authenticated user",
+            f"X-Wallet-Address {preferred_address} not a Privy embedded wallet on this user",
         )
-    source = (
-        "header-match" if matched else "embedded-default" if embedded else "external-fallback"
-    )
+    source = "header-match" if matched else "embedded-default"
     print(f"[auth] resolved wallet for {user_did}: {chosen[1]} ({source})")
     return chosen
 
