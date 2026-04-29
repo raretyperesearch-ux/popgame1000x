@@ -550,12 +550,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const n = featureNoise(propId * 6.71);
           if (n < 0.28) continue;
           const isGrassProp = featureNoise(propId * 7.43) > 0.62;
+          const isBigGrassProp = isGrassProp && featureNoise(propId * 9.11) > 0.38;
           const groundY = groundYAt(x);
-          const size = Math.round((isGrassProp ? 10 : 13) + featureNoise(propId * 5.41) * (isGrassProp ? 5 : 9));
+          const size = Math.round(
+            isGrassProp
+              ? (isBigGrassProp ? 22 : 15) + featureNoise(propId * 5.41) * (isBigGrassProp ? 12 : 7)
+              : 13 + featureNoise(propId * 5.41) * 9,
+          );
           const dx = Math.round(x + (featureNoise(propId * 3.19) - 0.5) * 24 - size / 2);
           const dy = Math.round(
             isGrassProp
-              ? groundY - size * 0.7 + featureNoise(propId * 4.83) * 4
+              ? groundY - size * 0.78 + featureNoise(propId * 4.83) * 4
               : groundY + 38 + featureNoise(propId * 4.83) * 54 - size / 2,
           );
           const spritePick = n > 0.84
