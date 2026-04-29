@@ -97,10 +97,11 @@ const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" 
   break: 12,
   fail: 16,
 };
-// Velocity threshold for switching air -> fall during LIVE. Small positive
-// number (not zero) to avoid one-frame flickering as figPriceVel crosses 0
-// from random price jitter.
-const FALL_VEL_THRESHOLD = -0.015;
+// Hysteresis for LIVE air/fall switching; avoids frame flicker when price
+// motion hovers around zero and keeps the character in a readable pose.
+const LIVE_FALL_ENTER_VEL = -0.09;
+const LIVE_FALL_EXIT_VEL = 0.035;
+const LIVE_BANK_LERP = 0.035;
 const CAMERA_LERP = 0.045;
 const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
@@ -257,6 +258,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     smoothMinP: 3450,
     smoothMaxP: 3550,
     smoothRot: 0,
+    flightPose: "air" as "air" | "fall",
     smoothFlameScale: 0,
     smoothAlt: 200, // lerped figure altitude for smooth ground following
     smoothFigPrice: 3500, // lerped price at figure position
@@ -1177,11 +1179,23 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const alpha = Math.max(0, d.life / DUST_LIFE) * 0.5;
         if (alpha < 0.01) continue;
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = "#f4ecd8";
         const sz = d.size * (d.life / DUST_LIFE);
-        ctx.beginPath();
-        ctx.arc(d.x, d.y, Math.max(0.3, sz), 0, Math.PI * 2);
-        ctx.fill();
+        if (a.state === "LIVE") {
+          ctx.strokeStyle = "#ffd94d";
+          ctx.lineWidth = Math.max(0.8, sz);
+          ctx.beginPath();
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d.x - 5 - sz * 2, d.y + d.vy * 5);
+          ctx.stroke();
+          ctx.fillStyle = "#9ffcff";
+          ctx.globalAlpha = alpha * 0.75;
+          ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 1);
+        } else {
+          ctx.fillStyle = "#f4ecd8";
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, Math.max(0.3, sz), 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -1214,6 +1228,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setLevTagText("\u2014");
     a.figPriceVel = 0;
     a.smoothDelta = 0;
+    a.flightPose = "air";
     a.curBobY = 0;
     a.stepPhase = 0;
     a.runFrame = 0;
@@ -1763,6 +1778,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.figPrice = a.price;
           a.figPriceVel = 0.08;
           a.smoothDelta = 0;
+          a.flightPose = "air";
           a.frame = 0;
           setLevTagText(a.positionLev + "x");
           setLevTagShow(true);
@@ -1838,25 +1854,29 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
         }
 
-        /* gentle body tilt with thrust dust */
+        /* Smooth cinematic banking. Rotation follows the trade direction,
+           not every tiny velocity wobble, so LIVE flight reads like gliding
+           instead of twitching. */
+        const profitLean = clamp(pnlPct * 5, -5, 5);
+        const thrustLean = clamp(a.smoothDelta * -1.25, -4, 4);
+        const floatWobble = Math.sin((time - a.tradeStartTime) * 0.004) * 1.2;
+        const targetRot = clamp(thrustLean - profitLean + floatWobble, -8, 8);
+        a.smoothRot = lerp(a.smoothRot, targetRot, LIVE_BANK_LERP * dtNorm);
+
+        /* thrust sparks / air streaks */
         if (a.smoothDelta > 0.001) {
-          const targetRot = clamp(-a.figPriceVel * 35, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, ROTATION_LERP * dtNorm);
           if (a.dustParticles.length < DUST_MAX) {
-            a.dustParticles.push({
-              x: figScreenX - 6 + Math.random() * 5,
-              y: a.stageH - (a.smoothAlt - 20),
-              vx: -0.5 - Math.random() * 0.6,
-              vy: 0.2 + Math.random() * 0.4,
-              life: 0.2 + Math.random() * 0.2,
-              size: 0.6 + Math.random() * 1.2,
-            });
+            for (let k = 0; k < 2; k++) {
+              a.dustParticles.push({
+                x: figScreenX - 9 + Math.random() * 4,
+                y: a.stageH - (a.smoothAlt - 22) + (Math.random() - 0.5) * 6,
+                vx: -0.9 - Math.random() * 0.9,
+                vy: (Math.random() - 0.5) * 0.35,
+                life: 0.18 + Math.random() * 0.18,
+                size: 0.6 + Math.random() * 1.4,
+              });
+            }
           }
-        } else if (a.smoothDelta < -0.001) {
-          const targetRot = clamp(a.figPriceVel * 45, -15, 15);
-          a.smoothRot = lerp(a.smoothRot, targetRot, (ROTATION_LERP * 0.7) * dtNorm);
-        } else {
-          a.smoothRot = lerp(a.smoothRot, 0, ROTATION_LERP * dtNorm);
         }
 
         /* Position figure above the terrain floor. We don't touch
@@ -1872,10 +1892,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
 
-        setSpriteState(
-          a.figPriceVel < FALL_VEL_THRESHOLD ? "fall" : "air",
-          time,
-        );
+        if (a.flightPose === "air") {
+          if (a.figPriceVel < LIVE_FALL_ENTER_VEL && pnlPct < -0.01) a.flightPose = "fall";
+        } else if (a.figPriceVel > LIVE_FALL_EXIT_VEL || pnlPct > 0.015) {
+          a.flightPose = "air";
+        }
+        setSpriteState(a.flightPose, time);
 
         /* Only the real feed price liquidates — figPrice is purely visual
            (see clamp above), so a quiet test feed can't drop the runner
