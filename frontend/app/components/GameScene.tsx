@@ -44,6 +44,7 @@ const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
 const WATER_HAZARD_SRC = "/assets/water-hazard.png";
+const MONEY_PROPS_SRC = "/assets/money-props.png";
 const WATER_SRC_W = 2172;
 const WATER_SRC_H = 350;
 const GRASS_SRC_W = 1024;
@@ -55,8 +56,10 @@ const GRASS_SLICE_W = 16;
 const WATER_SHELF_TOP_PCT = 0.8;
 const WATER_SURFACE_SRC_PCT = 0.34;
 const WATER_SURFACE_DRAW_PCT = 0.42;
-// foam crests extend a few px up into the cliff for a wet-edge blend
-const WATER_FOAM_OVERLAP = 4;
+// foam crests extend up into the cliff for a wet-edge blend
+const WATER_FOAM_OVERLAP = 14;
+const MONEY_PROP_CELL = 32;
+const MONEY_PROP_COLS = 4;
 const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
@@ -220,6 +223,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const groundImageReadyRef = useRef(false);
   const waterImageRef = useRef<HTMLImageElement | HTMLCanvasElement | null>(null);
   const waterImageReadyRef = useRef(false);
+  const moneyPropsImageRef = useRef<HTMLImageElement | null>(null);
+  const moneyPropsImageReadyRef = useRef(false);
 
   /* mutable animation state */
   const anim = useRef({
@@ -521,6 +526,44 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           sourceX, 0, sourceW, GRASS_SRC_H,
           0, 0, drawW, GRASS_TILE_H,
         );
+        ctx.restore();
+      }
+      const moneyImg = moneyPropsImageRef.current;
+      if (moneyImg && moneyPropsImageReadyRef.current) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(0, groundYAt(0) - 2);
+        for (let x = 0; x <= w; x += GRASS_SLICE_W) {
+          const midX = x + GRASS_SLICE_W * 0.5;
+          const endX = x + GRASS_SLICE_W;
+          ctx.quadraticCurveTo(midX, groundYAt(midX) - 2, endX, groundYAt(endX) - 2);
+        }
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.clip();
+        ctx.imageSmoothingEnabled = false;
+        for (let i = 4; i < pts.length; i += 7) {
+          const n = featureNoise(i * 6.71);
+          if (n < 0.34) continue;
+          const x = pts[i].x + (featureNoise(i * 3.19) - 0.5) * 22;
+          const y = pts[i].y + 42 + featureNoise(i * 4.83) * 62;
+          const size = Math.round(13 + featureNoise(i * 5.41) * 11);
+          const spritePick = n > 0.86
+            ? [2, 5, 6, 7][Math.floor(featureNoise(i * 2.23) * 4) % 4]
+            : [0, 1, 3, 4, 8, 13, 14][Math.floor(featureNoise(i * 2.91) * 7) % 7];
+          const sx = (spritePick % MONEY_PROP_COLS) * MONEY_PROP_CELL;
+          const sy = Math.floor(spritePick / MONEY_PROP_COLS) * MONEY_PROP_CELL;
+          const dx = Math.round(x - size / 2);
+          const dy = Math.round(y - size / 2);
+          ctx.globalAlpha = 0.88;
+          ctx.drawImage(moneyImg, sx, sy, MONEY_PROP_CELL, MONEY_PROP_CELL, dx, dy, size, size);
+          if (featureNoise(i * 8.77) > 0.58) {
+            ctx.globalAlpha = 0.68;
+            ctx.fillStyle = "rgba(24,18,13,0.88)";
+            ctx.fillRect(dx - 1, dy + Math.floor(size * 0.66), size + 2, Math.ceil(size * 0.36));
+          }
+        }
         ctx.restore();
       }
       return;
@@ -1027,12 +1070,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* shelfTop hugs the deepest cliff bottom (max terrain y + the grass
          tile's dirt-extent) so water meets the rocks with no plain-brown
-         gradient gap. -4 px overlap so foam crests poke up into the cliff
-         base for a wet-edge blend. WATER_SHELF_TOP_PCT is the fallback
+         gradient gap. The extra overlap tucks foam into the cliff base for
+         a wet-edge blend. WATER_SHELF_TOP_PCT is the fallback
          when pts isn't ready yet (initial frames). */
       const waterImg = waterImageRef.current;
       const shelfTop = pts.length > 0
-        ? Math.max(...pts.map((p) => p.y)) + GRASS_TILE_H - GRASS_SURFACE_Y - 4
+        ? Math.max(...pts.map((p) => p.y)) + GRASS_TILE_H - GRASS_SURFACE_Y - 28
         : h * WATER_SHELF_TOP_PCT;
       const shelfH = h - shelfTop;
       if (waterImg && waterImageReadyRef.current) {
@@ -1045,6 +1088,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.save();
         ctx.globalAlpha = groundAlpha;
         ctx.imageSmoothingEnabled = false;
+        const wetEdge = ctx.createLinearGradient(0, shelfTop - 22, 0, shelfTop + 26);
+        wetEdge.addColorStop(0, "rgba(4,18,19,0)");
+        wetEdge.addColorStop(0.5, "rgba(4,30,32,0.38)");
+        wetEdge.addColorStop(1, "rgba(1,13,17,0.62)");
+        ctx.fillStyle = wetEdge;
+        ctx.fillRect(0, shelfTop - 22, w, 50);
         // No solid backing rect — the asset's top rows are alpha=0 for the
         // foam-against-sky region (see the load-time pre-process), so the
         // dirt cliff shows through the gaps between wave crests for a
@@ -1060,6 +1109,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             Math.round(x), Math.round(shelfTop - waveBob - WATER_FOAM_OVERLAP),
             Math.round(tileW), surfaceH,
           );
+        }
+        const moneyImg = moneyPropsImageRef.current;
+        if (moneyImg && moneyPropsImageReadyRef.current) {
+          ctx.globalAlpha = groundAlpha * 0.42;
+          for (let i = 0; i < 9; i++) {
+            const n = featureNoise((i + startIdx) * 9.37);
+            const spritePick = [0, 2, 4, 5, 7, 11, 13][Math.floor(n * 7) % 7];
+            const sx = (spritePick % MONEY_PROP_COLS) * MONEY_PROP_CELL;
+            const sy = Math.floor(spritePick / MONEY_PROP_COLS) * MONEY_PROP_CELL;
+            const size = Math.round(10 + featureNoise(i * 4.19 + startIdx) * 8);
+            const dx = Math.round(((i * 97 - drift * 0.42) % (w + 140)) - 70);
+            const dy = Math.round(shelfTop + 58 + featureNoise(i * 6.13 + startIdx) * Math.max(24, shelfH * 0.38));
+            ctx.drawImage(moneyImg, sx, sy, MONEY_PROP_CELL, MONEY_PROP_CELL, dx, dy, size, size);
+          }
         }
         ctx.restore();
       }
@@ -1831,6 +1894,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     return () => {
       groundImageRef.current = null;
       groundImageReadyRef.current = false;
+    };
+  }, []);
+
+  /* ============ MONEY PROP IMAGE LOAD ============ */
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      moneyPropsImageReadyRef.current = true;
+    };
+    img.src = MONEY_PROPS_SRC;
+    moneyPropsImageRef.current = img;
+    return () => {
+      moneyPropsImageRef.current = null;
+      moneyPropsImageReadyRef.current = false;
     };
   }, []);
 
