@@ -802,27 +802,30 @@ body::before {
 .boost-row::after {
   content: "";
   position: absolute;
-  left: calc(78px + var(--heat, 0) * 48%);
-  top: -2px;
-  width: 18px;
-  height: 18px;
+  left: calc(70px + var(--heat, 0) * 42%);
+  top: -6px;
+  width: 96px;
+  height: 32px;
   pointer-events: none;
-  opacity: calc(var(--heat, 0) * 0.95);
-  background:
-    radial-gradient(circle, #fff2a8 0 2px, transparent 3px),
-    linear-gradient(90deg, transparent 8px, rgba(255,217,102,0.9) 8px 10px, transparent 10px),
-    linear-gradient(0deg, transparent 8px, rgba(255,95,86,0.8) 8px 10px, transparent 10px);
-  filter: drop-shadow(0 0 7px rgba(255,217,102,0.85));
-  transform: rotate(18deg);
-  animation: boost-spark-pop 0.72s steps(2) infinite;
+  opacity: calc(0.3 + var(--heat, 0) * 0.75);
+  background-image: url("/assets/control-fx/boost-electric-fx.png");
+  background-repeat: no-repeat;
+  background-size: 384px 32px;
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(0 0 7px rgba(255,217,102,0.72))
+    drop-shadow(0 0 10px rgba(255,95,86,0.34));
+  transform: translateX(-50%) scale(calc(0.72 + var(--heat, 0) * 0.42));
+  transform-origin: center;
+  animation: boost-fx-strip 0.42s steps(4) infinite;
 }
 @keyframes boost-row-breathe {
   0%, 100% { transform: translateY(0); filter: saturate(1); }
   50% { transform: translateY(calc(var(--heat, 0) * -1px)); filter: saturate(calc(1 + var(--heat, 0) * 0.55)); }
 }
-@keyframes boost-spark-pop {
-  0%, 100% { transform: scale(0.72) rotate(12deg); }
-  50% { transform: scale(1.25) rotate(38deg); }
+@keyframes boost-fx-strip {
+  from { background-position: 0 0; }
+  to { background-position: -384px 0; }
 }
 .boost-row .slider-label {
   font-family: 'Press Start 2P', monospace;
@@ -924,21 +927,28 @@ body::before {
   box-shadow: 0 0 calc(5px + var(--wager-heat, 0) * 18px) rgba(93,211,158, calc(0.08 + var(--wager-heat, 0) * 0.2));
 }
 .cash-row::after {
-  content: "$";
+  content: "";
   position: absolute;
-  right: calc(50px + var(--wager-heat, 0) * 10px);
-  top: -4px;
+  right: calc(22px + var(--wager-heat, 0) * 4px);
+  top: -6px;
+  width: 96px;
+  height: 32px;
   pointer-events: none;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
-  color: var(--gold);
-  opacity: calc(var(--wager-heat, 0) * 0.9);
-  text-shadow: 0 0 8px rgba(255,215,0,0.8);
-  animation: cash-coin-hop 0.9s ease-in-out infinite;
+  opacity: calc(0.28 + var(--wager-heat, 0) * 0.68);
+  background-image: url("/assets/control-fx/wager-electric-fx.png");
+  background-repeat: no-repeat;
+  background-size: 384px 32px;
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(0 0 7px rgba(93,211,158,0.72))
+    drop-shadow(0 0 9px rgba(255,215,0,0.28));
+  transform: scale(calc(0.72 + var(--wager-heat, 0) * 0.34));
+  transform-origin: right center;
+  animation: wager-fx-strip 0.56s steps(4) infinite;
 }
-@keyframes cash-coin-hop {
-  0%, 100% { transform: translateY(2px) rotate(-8deg); }
-  50% { transform: translateY(-4px) rotate(8deg); }
+@keyframes wager-fx-strip {
+  from { background-position: 0 0; }
+  to { background-position: -384px 0; }
 }
 .cash-row .slider-label {
   font-family: 'Press Start 2P', monospace;
