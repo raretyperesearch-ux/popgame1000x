@@ -240,7 +240,7 @@ body::before {
   border-bottom: 1px dashed var(--border);
 }
 .stage.impact-crash {
-  animation: stage-shake 280ms steps(2) 1;
+  animation: crash-hit 420ms steps(2) 1;
 }
 .stage.impact-win {
   animation: stage-pop 240ms ease-out 1;
@@ -263,9 +263,20 @@ body::before {
   100% { transform: translate(0, 0); }
 }
 @keyframes jump-cinematic-pulse {
-  0% { filter: saturate(1) contrast(1); }
-  45% { filter: saturate(1.22) contrast(1.12); }
-  100% { filter: saturate(1.05) contrast(1.04); }
+  0% { transform: translate(0, 0); filter: saturate(1) contrast(1); }
+  18% { transform: translate(-2px, 1px); }
+  34% { transform: translate(2px, -1px); }
+  52% { transform: translate(-1px, 2px); filter: saturate(1.28) contrast(1.15); }
+  70% { transform: translate(2px, 1px); }
+  100% { transform: translate(0, 0); filter: saturate(1.08) contrast(1.05); }
+}
+@keyframes crash-hit {
+  0% { transform: scale(1) translate(0, 0); filter: saturate(1) contrast(1); }
+  12% { transform: scale(1.045) translate(-7px, 4px); filter: saturate(1.6) contrast(1.25); }
+  24% { transform: scale(1.035) translate(8px, -5px); }
+  38% { transform: scale(1.02) translate(-5px, 3px); }
+  56% { transform: scale(1.012) translate(4px, -2px); }
+  100% { transform: scale(1) translate(0, 0); filter: saturate(1.08) contrast(1.04); }
 }
 @keyframes stage-pop {
   0% { transform: scale(1); }

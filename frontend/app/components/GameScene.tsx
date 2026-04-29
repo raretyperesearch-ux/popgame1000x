@@ -268,6 +268,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     spriteParachuteStart: 0,
     spriteFrame: 5, // current sprite frame index
     cinematicZoom: 1,
+    crashZoomUntil: 0,
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     flagDisplayY: -1, // smoothed Y for the right-edge race flag (lerps toward priceToY); -1 = uninitialized
@@ -1120,6 +1121,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.tradeStartTime = 0;
     a.idleStartTime = 0;
     a.cinematicZoom = 1;
+    a.crashZoomUntil = 0;
     a.spriteJumpStart = 0;
     a.spriteAirStart = 0;
     a.spriteLandStart = 0;
@@ -1143,7 +1145,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setGameState("DEAD");
     setSpriteState("fail");
     sounds.play("rekt-crash");
-    slowMoUntilRef.current = performance.now() + 320;
+    const crashNow = performance.now();
+    slowMoUntilRef.current = crashNow + 420;
+    a.crashZoomUntil = crashNow + 520;
+    a.cinematicZoom = Math.max(a.cinematicZoom || 1, 2.6);
     setImpactFx("crash");
     setTimeout(() => setImpactFx(""), 420);
 
@@ -1299,6 +1304,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.jumpStartTime = 0;
       a.tradeStartTime = 0;
       a.cinematicZoom = 1;
+      a.crashZoomUntil = 0;
       a.spriteJumpStart = 0;
       a.spriteAirStart = 0;
       a.spriteLandStart = 0;
@@ -1396,8 +1402,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const priceAtFig = lerp(a.prices[pi0] ?? a.price, a.prices[pi1] ?? a.price, iFrac);
       const figWorldX = figDataIdx;
       a.cameraWorldX = lerp(a.cameraWorldX || worldLeft, worldLeft, CAMERA_LERP * dtNorm);
-      const cinematicTarget = a.state === "PREPARE" || a.state === "JUMPING" ? 2.05 : 1;
-      a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.16 : 0.11) * dtNorm);
+      const jumpZoom = a.state === "PREPARE" || a.state === "JUMPING";
+      const crashZoom = time < a.crashZoomUntil;
+      const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? 2.45 : 1;
+      a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.22 : 0.1) * dtNorm);
       const canvas = canvasRef.current;
       if (canvas) {
         canvas.style.transformOrigin = `${figScreenX.toFixed(1)}px ${(a.stageH - a.smoothAlt).toFixed(1)}px`;
