@@ -75,6 +75,7 @@ body::before {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 @media (min-height: 920px) {
   .cabinet { max-height: 900px; }
@@ -109,6 +110,7 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 14px 16px 10px;
   border-bottom: 1px dashed var(--border);
 }
@@ -127,15 +129,60 @@ body::before {
   object-position: left center;
   display: block;
 }
+.topbar:has(.avatar-btn) {
+  padding-inline: 12px;
+}
+.topbar:has(.avatar-btn) .brand {
+  width: clamp(118px, 30vw, 150px);
+  height: 58px;
+}
+.topbar:has(.avatar-btn) .topbar-left,
+.topbar:has(.avatar-btn) .topbar-right {
+  gap: 6px;
+}
+.topbar:has(.avatar-btn) .help-btn,
+.topbar:has(.avatar-btn) .mute-btn {
+  width: 24px;
+  height: 24px;
+}
+.topbar:has(.avatar-btn) .balance-pill {
+  max-width: 108px;
+  padding-inline: 9px;
+  gap: 6px;
+  font-size: 18px;
+}
+.topbar:has(.avatar-btn) .balance-pill > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar:has(.avatar-btn) .gas-pill {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+  flex: 0 0 24px;
+}
+.topbar:has(.avatar-btn) .gas-pill span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .topbar-left {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 .topbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 0 0 auto;
 }
 .help-btn {
   background: transparent;
@@ -1692,7 +1739,10 @@ body::before {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: min(320px, calc(100vw - 24px));
+  width: min(300px, calc(100vw - 28px));
+  max-height: min(680px, calc(100dvh - 96px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #0e1018;
   border: 2px solid var(--border);
   border-radius: 12px;
@@ -1897,19 +1947,6 @@ body::before {
 .withdraw-submit {
   text-align: center;
 }
-.user-menu-diag {
-  white-space: pre-wrap;
-  font-family: 'VT323', monospace;
-  font-size: 12px;
-  color: var(--ink);
-  background: rgba(244, 236, 216, 0.05);
-  border: 1px dashed rgba(244, 236, 216, 0.18);
-  padding: 6px 8px;
-  margin: 4px 0;
-  border-radius: 4px;
-  user-select: text;
-}
-
 /* ============ MUTE TOGGLE ============ */
 .mute-btn {
   background: transparent;

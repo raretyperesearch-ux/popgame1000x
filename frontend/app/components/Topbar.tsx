@@ -43,16 +43,14 @@ const USDC_TRANSFER_ABI = [
 ] as const;
 
 export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
-  const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
-  const { addSigners, removeSigners } = useSigners();
+  const { login, logout, authenticated, user, ready } = usePrivy();
+  const { addSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const { sendTransaction } = useSendTransaction();
   const [walletMenuOpen, setWalletMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [delegating, setDelegating] = useState(false);
-  const [diag, setDiag] = useState<string | null>(null);
-  const [diagLoading, setDiagLoading] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<WithdrawAsset>("USDC");
   const [withdrawAddress, setWithdrawAddress] = useState("");
@@ -239,36 +237,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     }
   };
 
-  const onCheckDelegation = async () => {
-    if (!walletAddress) return;
-    setDiag(null);
-    setDiagLoading(true);
-    try {
-      const token = await getAccessToken();
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      const r = await fetch(`${apiUrl}/wallet/status`, {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-          "X-Wallet-Address": walletAddress,
-        },
-      });
-      const j = await r.json();
-      // Compact, human-readable summary that fits in the dropdown.
-      const lines = [
-        `delegated: ${j.delegated}`,
-        `owner_quorum: ${j.quorum_id ?? "none"}`,
-        `signers attached: ${(j.additional ?? []).length}`,
-        `expected: ${j.expected_signer ?? "(env not set)"}`,
-      ];
-      if (j.error) lines.push(`error: ${j.error}`);
-      setDiag(lines.join("\n"));
-    } catch (e) {
-      setDiag(`request failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setDiagLoading(false);
-    }
-  };
-
   const copyAddress = async () => {
     if (!walletAddress) return;
     try { await navigator.clipboard.writeText(walletAddress); } catch { /* noop */ }
@@ -306,7 +274,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const openWithdraw = (asset: WithdrawAsset) => {
     setWithdrawAsset(asset);
     setWithdrawOpen(true);
-    setDiag(null);
   };
 
   const setMaxWithdraw = () => {
@@ -374,17 +341,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       ? "USDC withdraws need ETH gas in this same wallet."
       : "ETH withdraws are native Base transfers.";
   })();
-
-  const onRevoke = async () => {
-    setProfileMenuOpen(false);
-    if (!walletAddress) return;
-    try {
-      await removeSigners({ address: walletAddress });
-      setLocallyDelegated(false);
-    } catch (e) {
-      console.warn("[delegate] revoke failed:", e);
-    }
-  };
 
   return (
     <div className="topbar">
@@ -565,26 +521,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
                   </button>
-                  {isDelegated && (
-                    <button
-                      className="user-menu-item"
-                      role="menuitem"
-                      onClick={() => { sounds.play("ui-click"); onRevoke(); }}
-                    >
-                      revoke trading delegation
-                    </button>
-                  )}
-                  <button
-                    className="user-menu-item"
-                    role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); onCheckDelegation(); }}
-                    disabled={diagLoading}
-                  >
-                    {diagLoading ? "checking…" : "check delegation"}
-                  </button>
-                  {diag && (
-                    <pre className="user-menu-diag" aria-live="polite">{diag}</pre>
-                  )}
                   <button
                     className="user-menu-item danger"
                     role="menuitem"
