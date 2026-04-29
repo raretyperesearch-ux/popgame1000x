@@ -1734,14 +1734,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           time,
         );
 
-        /* liquidation check — fire only on the real market price (a.price)
-           or its derived pnlPct. The previous condition also fired when
-           a.figPrice <= liqPrice, but figPrice is the SIMULATED game
-           figure that falls under gravity at high leverage even when
-           the real price is fine. That caused phantom liquidations
-           (REKT modal + -100% loss) while the actual on-chain trade
-           was still open and barely down a few cents. */
-        if (liqPrice !== null && (a.price <= liqPrice || pnlPct <= -1)) {
+        /* The crash line is a visible game rule: if either the live price
+           or the runner's simulated flight path crosses it, crash now. */
+        const crossedCrashLine = liqPrice !== null && (
+          a.entry >= liqPrice
+            ? (a.price <= liqPrice || a.figPrice <= liqPrice)
+            : (a.price >= liqPrice || a.figPrice >= liqPrice)
+        );
+        if (crossedCrashLine || pnlPct <= -1) {
           splat();
         }
 

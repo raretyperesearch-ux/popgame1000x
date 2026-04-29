@@ -420,7 +420,7 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   ctx.textAlign = "center";
   ctx.fillStyle = "#f4ecd8";
   ctx.font = '32px "Press Start 2P", monospace';
-  ctx.fillText("> RUN <", 720, 360);
+  ctx.fillText("> PNL <", 720, 360);
 
   ctx.fillStyle = accent;
   ctx.font = '120px "Press Start 2P", monospace';
@@ -548,7 +548,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
         <div className="eog-body">
           <div className={`eog-sprite-frame f${copy.spriteFrame}`} aria-hidden="true" />
           <div className="eog-pnl-block">
-            <div className="eog-pnl-label">RUN</div>
+            <div className="eog-pnl-label">PNL</div>
             <div className="eog-pnl-amount">
               <span>{fmtMoney(data.pnlDollars)}</span>
               <span className="eog-pnl-coin"><UsdcCoin broken={data.kind === "rekt"} /></span>

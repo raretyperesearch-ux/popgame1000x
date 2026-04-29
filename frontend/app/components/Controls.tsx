@@ -76,7 +76,7 @@ export default function Controls({
         ))}
       </div>
       <div className="slider-row cash-row">
-        <div className="slider-label">fuel</div>
+        <div className="slider-label">wager</div>
         <input
           type="range"
           className="hand-slider"
