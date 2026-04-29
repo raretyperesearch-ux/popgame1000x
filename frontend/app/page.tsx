@@ -10,6 +10,7 @@ import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
 import { getBalance, openTrade, forceCloseTrade } from "@/lib/api";
+import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
@@ -89,11 +90,12 @@ export default function Home() {
 
   const gameRef = useRef<GameSceneHandle>(null);
 
-  /* Balance refresh: pulls the real wallet USDC from /balance whenever
-     the game returns to IDLE (mount + after each trade settles via
-     reset()). On-chain balance becomes source of truth at idle; the
-     in-flight optimistic local balance still drives wager-deduct/PnL-add
-     during a round. Backend unreachable → keep local balance. */
+  /* Balance refresh: at IDLE we want ground truth for the displayed
+     wallet. When the user has an embedded wallet, read USDC + ETH
+     directly from Base — this is independent of the backend, so a
+     mock-mode build (NEXT_PUBLIC_API_URL unset) or a Railway outage
+     can't make the displayed balance lie. The in-flight local balance
+     still drives wager-deduct/PnL-add during a round. */
   useEffect(() => {
     if (gameState !== "IDLE") return;
     let cancelled = false;
@@ -102,6 +104,28 @@ export default function Home() {
       setBalanceLoading(false);
       return;
     }
+    if (walletAddress) {
+      setBalanceLoading(true);
+      readOnchainBalances(walletAddress as `0x${string}`)
+        .then((r) => {
+          if (cancelled) return;
+          setBalance(r.usdcBalance);
+          setEthBalance(r.ethBalance);
+        })
+        .catch((e) => {
+          console.warn("[balance] on-chain read failed:", e);
+          if (!cancelled) setEthBalance(null);
+        })
+        .finally(() => {
+          if (!cancelled) setBalanceLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    /* No embedded wallet yet (just logged in, or running fully unauthed
+       with mock backend) — fall back to the legacy /balance call so
+       mock dev mode still shows its $100 sandbox. */
     setBalanceLoading(true);
     getBalance(getAccessToken, walletAddress)
       .then((res) => {

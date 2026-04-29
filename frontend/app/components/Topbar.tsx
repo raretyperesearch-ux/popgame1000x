@@ -395,24 +395,38 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                     </div>
                   </div>
                   <div className="user-menu-section">
-                    <div className="user-menu-section-title">deposit</div>
+                    <div className="user-menu-section-title">
+                      <span className="section-arrow" aria-hidden="true">↓</span>
+                      deposit
+                    </div>
                     <button
-                      className="user-menu-item"
+                      className="wallet-action"
                       role="menuitem"
                       onClick={() => { sounds.play("ui-click"); onFundUSDC(); }}
                     >
-                      fund USDC (collateral)
+                      <span className="wallet-action-arrow" aria-hidden="true">↓</span>
+                      <span className="wallet-action-text">
+                        <span className="wallet-action-title">fund USDC</span>
+                        <span className="wallet-action-sub">collateral</span>
+                      </span>
                     </button>
                     <button
-                      className="user-menu-item"
+                      className="wallet-action"
                       role="menuitem"
                       onClick={() => { sounds.play("ui-click"); onFundETH(); }}
                     >
-                      fund ETH (gas)
+                      <span className="wallet-action-arrow" aria-hidden="true">↓</span>
+                      <span className="wallet-action-text">
+                        <span className="wallet-action-title">fund ETH</span>
+                        <span className="wallet-action-sub">gas</span>
+                      </span>
                     </button>
                   </div>
                   <div className="user-menu-section">
-                    <div className="user-menu-section-title">withdraw</div>
+                    <div className="user-menu-section-title">
+                      <span className="section-arrow" aria-hidden="true">↑</span>
+                      withdraw
+                    </div>
                     <div className="withdraw-tabs" role="group" aria-label="Withdraw asset">
                       {(["USDC", "ETH"] as const).map((asset) => (
                         <button
