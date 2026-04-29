@@ -224,6 +224,7 @@ export default function Home() {
         leverage={leverage}
         wager={wager}
         balance={balance}
+        pnl={pnl}
         busy={openInFlight}
         state={gameState}
         onLeverageChange={handleLeverageChange}

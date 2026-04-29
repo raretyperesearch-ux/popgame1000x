@@ -1,11 +1,14 @@
 "use client";
 
+import type { CSSProperties } from "react";
+
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
 interface ControlsProps {
   leverage: number;
   wager: number;
   balance: number;
+  pnl: number | null;
   busy?: boolean;
   state: GameState;
   onLeverageChange: (v: number) => void;
@@ -19,6 +22,7 @@ export default function Controls({
   leverage,
   wager,
   balance,
+  pnl,
   busy = false,
   state,
   onLeverageChange,
@@ -28,6 +32,13 @@ export default function Controls({
   const opening = busy && state === "IDLE";
   const disabled = state !== "IDLE" || opening;
   const wagerMax = Math.max(1, Math.floor(balance));
+  const boostHeat = Math.max(0, Math.min(1, (leverage - 75) / (250 - 75)));
+  const wagerHeat = Math.max(0, Math.min(1, wager / Math.max(1, wagerMax)));
+  const estimatedNetPnl = pnl === null ? null : pnl > 0 ? pnl * 0.975 : pnl;
+  const estimatedNetCopy =
+    estimatedNetPnl === null
+      ? null
+      : `${estimatedNetPnl >= 0 ? "+" : "\u2212"}$${Math.abs(estimatedNetPnl).toFixed(2)} est net`;
 
   let actionLabel = "jump";
   let actionClass = "action";
@@ -50,7 +61,10 @@ export default function Controls({
 
   return (
     <div className="controls">
-      <div className="slider-row boost-row">
+      <div
+        className="slider-row boost-row"
+        style={{ "--heat": boostHeat } as CSSProperties}
+      >
         <div className="slider-label">boost</div>
         <input
           type="range"
@@ -64,7 +78,10 @@ export default function Controls({
         />
         <div className="slider-value">{leverage}x</div>
       </div>
-      <div className="wager-row">
+      <div
+        className="wager-row"
+        style={{ "--wager-heat": wagerHeat } as CSSProperties}
+      >
         {CHIPS.map((amt) => (
           <button
             key={amt}
@@ -75,7 +92,10 @@ export default function Controls({
           </button>
         ))}
       </div>
-      <div className="slider-row cash-row">
+      <div
+        className="slider-row cash-row"
+        style={{ "--wager-heat": wagerHeat } as CSSProperties}
+      >
         <div className="slider-label">wager</div>
         <input
           type="range"
@@ -96,7 +116,12 @@ export default function Controls({
           <span className="boss-sprite v3" />
           <span className="boss-sprite v4" />
         </span>
-        <span className="action-label">{actionLabel}</span>
+        <span className="action-copy">
+          <span className="action-label">{actionLabel}</span>
+          {state === "LIVE" && estimatedNetCopy && (
+            <span className="action-est">{estimatedNetCopy}</span>
+          )}
+        </span>
         <span className="action-boss-pack right" aria-hidden="true">
           <span className="boss-sprite v5" />
           <span className="boss-sprite v6" />

@@ -870,6 +870,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         rawMax = Math.max(rawMax, p);
       }
       if (isLive) {
+        if (entryPrice !== null) {
+          rawMin = Math.min(rawMin, entryPrice);
+          rawMax = Math.max(rawMax, entryPrice);
+        }
         if (liqPrice !== null) rawMin = Math.min(rawMin, liqPrice);
         rawMin = Math.min(rawMin, a.figPrice);
         rawMax = Math.max(rawMax, a.figPrice);
@@ -906,6 +910,38 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.stroke();
       }
       ctx.setLineDash([]);
+
+      /* entry line: the player should always know the trade's starting mark */
+      if (isLive && entryPrice !== null) {
+        const ey = priceToY(entryPrice);
+        const entryPulse = 0.74 + Math.sin(a.frame * 0.16) * 0.18;
+        ctx.save();
+        ctx.strokeStyle = `rgba(93,211,158,${entryPulse})`;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, ey);
+        ctx.lineTo(w, ey);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const label = `ENTRY $${entryPrice.toFixed(2)}`;
+        ctx.font = '7px "Press Start 2P", monospace';
+        ctx.textAlign = "center";
+        const tw = ctx.measureText(label).width;
+        const bx = w / 2;
+        const by = clamp(ey - 20, 8, h - 28);
+        ctx.fillStyle = "rgba(4,20,16,0.72)";
+        ctx.strokeStyle = "rgba(93,211,158,0.72)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(bx - tw / 2 - 9, by - 9, tw + 18, 16, 3);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = `rgba(180,255,218,${0.82 + entryPulse * 0.18})`;
+        ctx.fillText(label, bx, by + 3);
+        ctx.restore();
+      }
 
       /* build chart screen points */
       const pts: { x: number; y: number }[] = [];
