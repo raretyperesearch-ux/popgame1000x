@@ -547,6 +547,12 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
     current = float(latest) if latest is not None else entry
     pnl_usdc, pnl_pct = _compute_pnl(entry, current, leverage, collateral)
 
+    # margin_fee is already USDC-denominated by the SDK validator
+    # (int / 10**6). Surfacing it lets callers reason about how much of
+    # the open mark is real PnL vs accrued borrow cost. For 10-30s
+    # rounds this is typically pennies; for longer runs it grows.
+    margin_fee = float(getattr(t, "margin_fee", 0.0) or 0.0)
+
     return ActiveTrade(
         trade_index=t.trade.trade_index,
         avantis_pair_index=t.trade.pair_index,
@@ -559,4 +565,5 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
         pnl_pct=pnl_pct,
         liquidation_price=t.liquidation_price,
         opened_at=_opened_at_from_trade(t),
+        margin_fee_usdc=round(margin_fee, 6),
     )

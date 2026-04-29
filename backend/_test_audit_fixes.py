@@ -51,9 +51,10 @@ class FakeTradeInner:
 
 
 class FakeTrade:
-    def __init__(self, inner, liq):
+    def __init__(self, inner, liq, margin_fee=0.0):
         self.trade = inner
         self.liquidation_price = liq
+        self.margin_fee = margin_fee
 
 
 async def test_active_pnl_uses_live_price() -> None:
@@ -129,6 +130,36 @@ async def test_active_no_feed_yet_falls_back_to_entry() -> None:
     if not _close(out.pnl_usdc, 0.0):
         _fail("active.cold.pnl_usdc", f"expected 0 PnL when cold, got {out.pnl_usdc}")
     _ok("active.cold-feed falls back to entry")
+
+
+async def test_active_surfaces_sdk_margin_fee() -> None:
+    """ActiveTrade.margin_fee_usdc must reflect the SDK's reported fee
+    (already USDC-denominated by the SDK's int(v)/10**6 validator),
+    not a fabricated zero."""
+    from routes import trade as trade_mod
+    from routes import price as price_mod
+
+    inner = FakeTradeInner(
+        idx=99, pair_index=0, lev=100, collateral=10.0,
+        open_price=3500.0, ts=1714400000,
+    )
+    # 0.0123 USDC of accrued borrow — what the SDK would return for a
+    # trade open ~hours, scaled down here for math obviousness.
+    trade_obj = FakeTrade(inner, liq=3465.0, margin_fee=0.0123)
+    fake_client = AsyncMock()
+    fake_client.trade = AsyncMock()
+    fake_client.trade.get_trades = AsyncMock(return_value=([trade_obj], None))
+
+    with patch.object(trade_mod, "_trader_client", fake_client):
+        price_mod._latest_price = 3500.0
+        from auth import AuthedUser
+        out = await trade_mod.get_active_trade(
+            AuthedUser(did="u", wallet_id="w", address="0xabc")
+        )
+
+    if not _close(out.margin_fee_usdc, 0.0123, tol=1e-5):
+        _fail("active.margin_fee", f"expected 0.0123, got {out.margin_fee_usdc}")
+    _ok(f"active.margin_fee_usdc surfaces SDK value ({out.margin_fee_usdc})")
 
 
 async def test_active_no_open_trade_returns_none() -> None:
@@ -267,6 +298,7 @@ async def main() -> None:
     await test_active_pnl_uses_live_price()
     await test_active_no_feed_yet_falls_back_to_entry()
     await test_active_no_open_trade_returns_none()
+    await test_active_surfaces_sdk_margin_fee()
     test_compute_pnl_long_winning()
     test_compute_pnl_long_losing()
     print()

@@ -35,6 +35,9 @@ export interface ActiveTrade {
   pnl_pct: number;
   liquidation_price: number;
   opened_at: string;
+  /** Rolling borrow fee accrued on the open position, in USDC.
+   *  Comes straight from the Avantis SDK (chain-truth). */
+  margin_fee_usdc: number;
 }
 
 export interface BalanceResponse {
@@ -97,6 +100,7 @@ export async function openTrade(
       pnl_pct: 0,
       liquidation_price,
       opened_at,
+      margin_fee_usdc: 0,
     };
     return {
       trade_index: 0,

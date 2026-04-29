@@ -53,6 +53,12 @@ class ActiveTrade(BaseModel):
     pnl_pct: float
     liquidation_price: float
     opened_at: datetime
+    # Avantis rolling borrow fee accrued so far on this position, in USDC.
+    # Read from t.margin_fee on the SDK trade tuple — chain-truth, not
+    # locally derived. For 10-30s rounds this is in the cent fractions,
+    # but it's the one number that explains the gap between our local
+    # mark-to-market PnL and what Avantis will actually pay out at close.
+    margin_fee_usdc: float = 0.0
 
 
 class PriceStreamMessage(BaseModel):

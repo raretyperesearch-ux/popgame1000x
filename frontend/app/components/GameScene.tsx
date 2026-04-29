@@ -13,7 +13,7 @@ import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
-import { closeTrade, forceCloseTrade } from "@/lib/api";
+import { closeTrade, forceCloseTrade, getActiveTrade } from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 /* ============ CONSTANTS ============ */
@@ -289,6 +289,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     skyAlt: 0, // 0 = ground/night, 1 = deep galaxies (smoothed)
     groundScrollAcc: 0, // monotonic scroll accumulator for grass tile texture
     flagDisplayY: -1, // smoothed Y for the right-edge race flag (lerps toward priceToY); -1 = uninitialized
+    sdkMarginFee: 0, // last-seen Avantis-reported margin fee (USDC) — refreshed by the LIVE reconciliation poll
+    reconcileMissCount: 0, // consecutive /trade/active null responses; needs 2 to declare position gone
     dustParticles: [] as Array<{
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
@@ -1834,14 +1836,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           time,
         );
 
-        /* The crash line is a visible game rule: if either the live price
-           or the runner's simulated flight path crosses it, crash now. */
+        /* Crash trigger uses ONLY the SDK-derived liquidation_price
+           (a.liquidationPrice, snapshotted from /trade/open response).
+           The local pnlPct <= -1 check was mathematically equivalent
+           but ignored Avantis's loss protection — under loss protection
+           the on-chain position can survive a -100% local move, so
+           splatting on local math could fire before Avantis would
+           actually liquidate. The crossedCrashLine check below also
+           respects a.figPrice (the runner's visual flight) so the
+           game-feel "stick figure dips below the line" still works. */
         const crossedCrashLine = liqPrice !== null && (
           a.entry >= liqPrice
             ? (a.price <= liqPrice || a.figPrice <= liqPrice)
             : (a.price >= liqPrice || a.figPrice >= liqPrice)
         );
-        if (crossedCrashLine || pnlPct <= -1) {
+        if (crossedCrashLine) {
           splat();
         }
 
@@ -1886,6 +1895,71 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     });
     return disconnect;
   }, []);
+
+  /* ============ LIVE-STATE RECONCILIATION POLL ============
+     During LIVE, periodically ask the backend whether the trade is
+     still open on Avantis. Three outcomes:
+       1. trade present  → snap a.liquidationPrice + a.sdkMarginFee
+          to whatever the SDK reports (chain-truth) so the crash line
+          tracks any on-chain changes (rare but possible) and the
+          margin-fee display is accurate.
+       2. trade absent   → the position was closed externally OR
+          Avantis liquidated past our local trigger. Either way the
+          local LIVE state is wrong; trip splat() so the EndOfGame
+          modal opens with the real settle (force-close call inside
+          splat is a no-op against an already-closed position; the
+          backend computes net_pnl from balance diff regardless).
+       3. fetch error    → keep the last-known state, log, retry next
+          tick. Don't punish flaky networks.
+
+     Skipped in paper mode (no backend trade to reconcile) and when
+     auth isn't ready yet. 5s interval keeps RPC pressure low while
+     still catching anomalies within ~half a typical 10-30s round. */
+  useEffect(() => {
+    if (paperMode) return;
+    if (gameState !== "LIVE") return;
+    anim.current.reconcileMissCount = 0;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const active = await getActiveTrade(getAccessToken, walletAddress);
+        if (cancelled) return;
+        const a = anim.current;
+        if (a.state !== "LIVE") return; // game state may have advanced mid-fetch
+        if (active === null) {
+          // Single null could be a transient RPC hiccup — only splat
+          // after two consecutive nulls (~10s window) to avoid false
+          // positives on a healthy live position.
+          a.reconcileMissCount += 1;
+          if (a.reconcileMissCount >= 2) {
+            console.warn("[reconcile] /trade/active null twice — position gone; splatting");
+            splat();
+          } else {
+            console.warn("[reconcile] /trade/active null once — waiting for confirmation");
+          }
+          return;
+        }
+        // Trade present — clear the miss counter and snap to SDK truth.
+        a.reconcileMissCount = 0;
+        if (Math.abs(active.liquidation_price - a.liquidationPrice) > 0.01) {
+          a.liquidationPrice = active.liquidation_price;
+        }
+        a.sdkMarginFee = active.margin_fee_usdc || 0;
+      } catch (e) {
+        // Network errors are not signals about trade state — keep last
+        // known state and don't accumulate the miss counter.
+        console.warn("[reconcile] /trade/active fetch failed:", e);
+      }
+    };
+    // Fire one immediate poll so the first LIVE frame already has
+    // fresh SDK truth, then a steady 5s cadence.
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [gameState, paperMode, getAccessToken, walletAddress, splat]);
 
   /* ============ INIT + RESIZE ============ */
   useEffect(() => {
