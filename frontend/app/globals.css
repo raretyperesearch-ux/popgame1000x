@@ -2312,12 +2312,72 @@ body::before {
   padding-top: 6px;
 }
 .user-menu-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 10px 2px;
   font-family: 'Press Start 2P', monospace;
   font-size: 6px;
   color: var(--muted);
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+.section-arrow {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--cyan);
+  opacity: 0.7;
+}
+/* Deposit / withdraw row: arrow ▾ + title + muted subtitle.
+   Cleaner than a one-line "fund USDC (collateral)" string and keeps
+   the menu narrow enough that the centered .wallet-menu never clips. */
+.wallet-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.wallet-action:hover {
+  background: rgba(244, 236, 216, 0.08);
+}
+.wallet-action-arrow {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--cyan);
+}
+.wallet-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.wallet-action-title {
+  font-family: 'Caveat', cursive;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+.wallet-action-sub {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 2px;
 }
 .withdraw-tabs {
   display: grid;
