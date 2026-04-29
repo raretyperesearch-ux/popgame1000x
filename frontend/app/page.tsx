@@ -314,7 +314,7 @@ export default function Home() {
         </div>
       )}
       {paperMode && (
-        <div className="trade-error-banner" role="status">
+        <div className="paper-mode-banner" role="status">
           PAPER MODE: not logged in — using test balance + simulated trades.
         </div>
       )}

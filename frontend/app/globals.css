@@ -710,6 +710,27 @@ body::before {
   to   { transform: translate(-50%, 0); opacity: 1; }
 }
 
+/* Paper-mode notice — separate from .trade-error-banner so it doesn't
+   land on top of .pnl-readout (centered at the top of the stage). Sits
+   in the top-right corner just below the topbar as a passive badge. */
+.paper-mode-banner {
+  position: absolute;
+  top: 80px;
+  right: 8px;
+  background: rgba(8, 8, 13, 0.82);
+  border: 1.5px solid var(--border);
+  color: var(--muted);
+  padding: 5px 8px;
+  max-width: 60%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1.4;
+  text-align: right;
+  z-index: 7;
+  pointer-events: none;
+  animation: trade-error-in 0.18s ease-out;
+}
+
 /* ============ CONTROLS ============ */
 .controls {
   padding: 4px 12px 5px;
