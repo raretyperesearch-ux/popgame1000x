@@ -2200,8 +2200,14 @@ body::before {
   animation: user-menu-pop 0.15s ease-out;
 }
 .wallet-menu {
+  /* Wallet pill sits mid-topbar — opening rightward would overflow the
+     cabinet. Center the menu on the pill and clamp its width to the
+     viewport so it always fits inside the cabinet on phone or desktop. */
   right: auto;
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(300px, calc(100vw - 32px));
+  animation: wallet-menu-pop 0.15s ease-out;
 }
 .wallet-menu-balances {
   display: grid;
@@ -2215,6 +2221,10 @@ body::before {
 @keyframes user-menu-pop {
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes wallet-menu-pop {
+  from { opacity: 0; transform: translate(-50%, -4px) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 .user-menu-header {
   padding: 8px 10px 10px;
