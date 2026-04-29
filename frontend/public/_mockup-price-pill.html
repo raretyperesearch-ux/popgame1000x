@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mockup — current price pill near race flag</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #f4ecd8;
+    --green: #5dd39e;
+    --red: #ff5f56;
+    --muted: #6e6e75;
+    --bg-body: #050507;
+  }
+  body {
+    margin: 0;
+    background: var(--bg-body);
+    color: var(--ink);
+    font-family: 'VT323', monospace;
+    padding: 24px;
+  }
+  h1 { font-family: 'Press Start 2P', monospace; font-size: 14px; margin: 0 0 4px; }
+  p.note { color: var(--muted); font-size: 16px; margin: 0 0 24px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .card {
+    background: linear-gradient(180deg, #050818 0%, #0a1828 50%, #060a14 100%);
+    border: 1.5px solid #1a1a22;
+    height: 320px;
+    position: relative;
+    overflow: hidden;
+  }
+  .label {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--muted);
+    z-index: 10;
+  }
+  .terrain {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, transparent 70%, rgba(28,58,35,0.88) 70%, rgba(8,14,18,0.95) 100%);
+  }
+  /* fake chart curve via inline svg */
+  .curve {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  /* dashed entry / liq lines so the pill reads in context */
+  .hline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 1.2px dashed;
+    pointer-events: none;
+  }
+  .hline.entry { top: 42%; border-color: rgba(93,211,158,0.72); }
+  .hline.crash { top: 78%; border-color: rgba(255,95,86,0.72); }
+  .hline-label {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    padding: 2px 8px;
+    border: 1px solid;
+    background: rgba(4,20,16,0.72);
+  }
+  .hline-label.entry { color: rgba(180,255,218,0.88); border-color: rgba(93,211,158,0.72); }
+  .hline-label.crash { color: var(--red); background: rgba(20,4,4,0.72); border-color: rgba(255,95,86,0.72); }
+
+  /* race flag (CSS-only stand-in for the sprite) */
+  .race-flag {
+    position: absolute;
+    right: -2px;
+    top: 50%;
+    width: 28px;
+    height: 28px;
+    transform: translateY(-50%);
+    background: var(--red);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 18% 50%);
+    filter:
+      drop-shadow(0 2px 0 rgba(0,0,0,0.5))
+      drop-shadow(0 0 6px rgba(255,95,86,0.35));
+  }
+
+  /* ============ Variants ============ */
+
+  /* Variant A — pill ABOVE the flag */
+  .pill-a {
+    position: absolute;
+    right: 36px;
+    top: 50%;
+    transform: translateY(-150%);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--ink);
+    background: rgba(4,4,8,0.85);
+    border: 1px solid rgba(244,236,216,0.35);
+    padding: 4px 7px;
+    white-space: nowrap;
+  }
+
+  /* Variant B — chip TO THE LEFT of the flag, with arrow tail */
+  .pill-b {
+    position: absolute;
+    right: 38px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--ink);
+    background: rgba(4,4,8,0.92);
+    border: 1px solid var(--ink);
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .pill-b::after {
+    content: "";
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 6px solid var(--ink);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+
+  /* Variant C — pill REPLACES the flag, integrated price tag like TradingView */
+  .pill-c-wrap {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+  }
+  .pill-c-line {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 1px;
+    background: rgba(244,236,216,0.4);
+    margin-right: 0;
+  }
+  .pill-c-tag {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--bg-body);
+    background: var(--ink);
+    padding: 4px 7px;
+    white-space: nowrap;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+
+  /* trend up tint */
+  .pill-up { color: var(--green) !important; }
+  .pill-up.pill-c-tag { color: var(--bg-body) !important; background: var(--green); }
+
+  /* Variant D and E — color-tracked-to-PnL */
+  .pill-d {
+    position: absolute;
+    right: 38px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--bg-body);
+    background: var(--green);
+    padding: 4px 8px;
+    white-space: nowrap;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.4),
+      0 0 8px rgba(93,211,158,0.4);
+  }
+  .pill-d::after {
+    content: "";
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 6px solid var(--green);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+
+  .pill-e {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .pill-e-tag {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--ink);
+    background: rgba(0,0,0,0.78);
+    border-top: 1px solid rgba(244,236,216,0.5);
+    border-bottom: 1px solid rgba(244,236,216,0.5);
+    border-left: 1px solid rgba(244,236,216,0.5);
+    padding: 4px 7px 4px 8px;
+    white-space: nowrap;
+  }
+
+  .desc {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .desc strong { color: var(--ink); }
+</style>
+</head>
+<body>
+<h1>Current-price pill — 5 mockup variants</h1>
+<p class="note">all over a fake chart frame so you can read it in context. dashed lines = entry / crash. flag = right edge marker.</p>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <div class="label">A. PILL ABOVE FLAG</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-a">$3517.50</div>
+      <div class="race-flag"></div>
+    </div>
+    <div class="desc"><strong>cream pill, dark bg.</strong> least busy. easy to glance. small risk: stacks vertically with flag, so it can clip if price is near top of chart.</div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="label">B. CHIP LEFT OF FLAG (arrow)</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-b">$3517.50</div>
+      <div class="race-flag"></div>
+    </div>
+    <div class="desc"><strong>arrow points at flag.</strong> reads as "this number = where the flag is." matches the entry/crash label style. recommended.</div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="label">C. INTEGRATED TAG (no flag)</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-c-wrap">
+        <div class="pill-c-line"></div>
+        <div class="pill-c-tag">$3517.50</div>
+      </div>
+    </div>
+    <div class="desc"><strong>tradingview-style.</strong> cleaner but loses the flag (flag is part of the game's identity / vibe). probably not the right call here.</div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="label">D. PNL-COLORED (green up)</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-d">$3517.50</div>
+      <div class="race-flag"></div>
+    </div>
+    <div class="desc"><strong>same as B but tinted by PnL sign.</strong> green when above entry, red when below. reinforces the in/out-of-money state. flips on every chart re-flow.</div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="label">E. EDGE-FLUSH STRIP</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-e">
+        <div class="pill-e-tag">$3517.50</div>
+      </div>
+    </div>
+    <div class="desc"><strong>flush against the right edge, replaces flag.</strong> minimal, very clean. but again: kills the flag.</div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="label">F. STATE WHEN PRICE IS HIGH</div>
+      <div class="terrain"></div>
+      <div class="hline entry"></div>
+      <div class="hline-label entry" style="top:42%;">— ENTRY $3500.00 —</div>
+      <div class="hline crash"></div>
+      <div class="hline-label crash" style="top:78%;">— CRASH LINE —</div>
+      <div class="pill-d" style="top:18%;">$3551.20</div>
+      <div class="race-flag" style="top:18%;"></div>
+    </div>
+    <div class="desc"><strong>variant D, near top of chart.</strong> shows what happens when price is near the edge — pill stays anchored to the flag. no clipping issue.</div>
+  </div>
+</div>
+
+</body>
+</html>
