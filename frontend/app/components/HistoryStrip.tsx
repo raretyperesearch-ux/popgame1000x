@@ -14,7 +14,7 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
 
   return (
     <div className="history-row">
-      <span className="label">LAST 5</span>
+      <span className="label">LAST 5 TRADES</span>
       {slots.map((h, i) => {
         if (!h) {
           return (
@@ -23,13 +23,13 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
             </span>
           );
         }
-        const sign = h.win ? "+" : "\u2212";
+        const sign = h.win ? "+" : "\u2212$";
         return (
           <span
             key={i}
             className={`h-tag ${h.win ? "win" : "loss"}`}
           >
-            {sign}${Math.abs(h.amt).toFixed(2)}
+            {sign}{Math.abs(h.amt).toFixed(2)}
           </span>
         );
       })}

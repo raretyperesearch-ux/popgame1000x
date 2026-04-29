@@ -79,56 +79,55 @@ export default function Controls({
         <div className="slider-value">{leverage}x</div>
       </div>
       <div
-        className="wager-row"
+        className="wager-panel"
         style={{ "--wager-heat": wagerHeat } as CSSProperties}
       >
-        {CHIPS.map((amt) => (
-          <button
-            key={amt}
-            className={`chip${wager === amt ? " active" : ""}${disabled ? " disabled" : ""}`}
-            onClick={() => onWagerChange(amt)}
-          >
-            ${amt}
-          </button>
-        ))}
+        <div className="slider-row cash-row">
+          <div className="slider-label">wager</div>
+          <input
+            type="range"
+            className="hand-slider"
+            min={1}
+            max={wagerMax}
+            step={1}
+            value={Math.min(wager, wagerMax)}
+            disabled={disabled}
+            onChange={(e) => onWagerChange(parseInt(e.target.value, 10))}
+          />
+          <div className="slider-value">${wager}</div>
+        </div>
+        <div className="wager-row">
+          {CHIPS.map((amt) => (
+            <button
+              key={amt}
+              className={`chip${wager === amt ? " active" : ""}${disabled ? " disabled" : ""}`}
+              onClick={() => onWagerChange(amt)}
+            >
+              ${amt}
+            </button>
+          ))}
+        </div>
+        <button type="button" className={actionClass} disabled={actionLocked} onClick={onAction}>
+          <span className="action-boss-pack left" aria-hidden="true">
+            <span className="boss-sprite v1" />
+            <span className="boss-sprite v2" />
+            <span className="boss-sprite v3" />
+            <span className="boss-sprite v4" />
+          </span>
+          <span className="action-copy">
+            <span className="action-label">{actionLabel}</span>
+            {state === "LIVE" && estimatedNetCopy && (
+              <span className="action-est">{estimatedNetCopy}</span>
+            )}
+          </span>
+          <span className="action-boss-pack right" aria-hidden="true">
+            <span className="boss-sprite v5" />
+            <span className="boss-sprite v6" />
+            <span className="boss-sprite v1" />
+            <span className="boss-sprite v3" />
+          </span>
+        </button>
       </div>
-      <div
-        className="slider-row cash-row"
-        style={{ "--wager-heat": wagerHeat } as CSSProperties}
-      >
-        <div className="slider-label">wager</div>
-        <input
-          type="range"
-          className="hand-slider"
-          min={1}
-          max={wagerMax}
-          step={1}
-          value={Math.min(wager, wagerMax)}
-          disabled={disabled}
-          onChange={(e) => onWagerChange(parseInt(e.target.value, 10))}
-        />
-        <div className="slider-value">${wager}</div>
-      </div>
-      <button type="button" className={actionClass} disabled={actionLocked} onClick={onAction}>
-        <span className="action-boss-pack left" aria-hidden="true">
-          <span className="boss-sprite v1" />
-          <span className="boss-sprite v2" />
-          <span className="boss-sprite v3" />
-          <span className="boss-sprite v4" />
-        </span>
-        <span className="action-copy">
-          <span className="action-label">{actionLabel}</span>
-          {state === "LIVE" && estimatedNetCopy && (
-            <span className="action-est">{estimatedNetCopy}</span>
-          )}
-        </span>
-        <span className="action-boss-pack right" aria-hidden="true">
-          <span className="boss-sprite v5" />
-          <span className="boss-sprite v6" />
-          <span className="boss-sprite v1" />
-          <span className="boss-sprite v3" />
-        </span>
-      </button>
     </div>
   );
 }
