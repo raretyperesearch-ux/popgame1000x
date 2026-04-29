@@ -46,7 +46,8 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const { addSigners, removeSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const { sendTransaction } = useSendTransaction();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [walletMenuOpen, setWalletMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [delegating, setDelegating] = useState(false);
   const [diag, setDiag] = useState<string | null>(null);
@@ -61,7 +62,8 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   // wallet's `delegated: boolean` field is the OLD delegateAction
   // signal and may not flip for the new useSigners flow.
   const [locallyDelegated, setLocallyDelegated] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const walletWrapRef = useRef<HTMLDivElement>(null);
+  const profileWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMuted(sounds.isMuted()); }, []);
   const onMuteClick = () => {
@@ -164,14 +166,21 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   }, [ready, authenticated, walletAddress, isDelegated, addSigners, delegating]);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!walletMenuOpen && !profileMenuOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+      const target = e.target as Node;
+      if (walletWrapRef.current && !walletWrapRef.current.contains(target)) {
+        setWalletMenuOpen(false);
+      }
+      if (profileWrapRef.current && !profileWrapRef.current.contains(target)) {
+        setProfileMenuOpen(false);
       }
     };
     const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key === "Escape") {
+        setWalletMenuOpen(false);
+        setProfileMenuOpen(false);
+      }
     };
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onEsc);
@@ -179,7 +188,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [menuOpen]);
+  }, [walletMenuOpen, profileMenuOpen]);
 
   const onDelegate = async () => {
     if (!walletAddress) {
@@ -192,7 +201,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       );
       return;
     }
-    setMenuOpen(false);
+    setProfileMenuOpen(false);
     setDelegating(true);
     try {
       // addSigners is headless for TEE wallets — it shouldn't open a
@@ -262,12 +271,12 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const copyAddress = async () => {
     if (!walletAddress) return;
     try { await navigator.clipboard.writeText(walletAddress); } catch { /* noop */ }
-    setMenuOpen(false);
+    setProfileMenuOpen(false);
   };
 
   const onFundUSDC = () => {
     if (!walletAddress) return;
-    setMenuOpen(false);
+    setWalletMenuOpen(false);
     fundWallet({
       address: walletAddress,
       options: {
@@ -281,7 +290,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
 
   const onFundETH = () => {
     if (!walletAddress) return;
-    setMenuOpen(false);
+    setWalletMenuOpen(false);
     fundWallet({
       address: walletAddress,
       options: {
@@ -366,7 +375,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   })();
 
   const onRevoke = async () => {
-    setMenuOpen(false);
+    setProfileMenuOpen(false);
     if (!walletAddress) return;
     try {
       await removeSigners({ address: walletAddress });
@@ -393,55 +402,33 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
           </button>
         ) : (
           <>
-            <div className="balance-pill" title="USDC balance">
-              <span className="balance-icon" aria-hidden="true" />
-              <span>{balanceLoading ? "syncing…" : `$${balance.toFixed(2)}`}</span>
-            </div>
-            <div
-              className={`gas-pill ${hasGas ? "ok" : "warn"}`}
-              title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
-            >
-              <span className="gas-dot" aria-hidden="true" />
-              <span>{ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
-            </div>
-            <div className="user-wrap" ref={wrapRef}>
+            <div className="wallet-wrap" ref={walletWrapRef}>
               <button
-                className="avatar-btn"
-                onClick={() => { sounds.play("ui-click"); setMenuOpen((v) => !v); }}
-                aria-label="Account"
-                aria-expanded={menuOpen}
+                className="balance-pill wallet-trigger"
+                title="Wallet balance"
+                aria-label="Wallet actions"
+                aria-expanded={walletMenuOpen}
+                onClick={() => {
+                  sounds.play("ui-click");
+                  setWalletMenuOpen((v) => !v);
+                  setProfileMenuOpen(false);
+                }}
               >
-                {initials}
+                <span className="balance-icon" aria-hidden="true" />
+                <span>{balanceLoading ? "syncing…" : `$${balance.toFixed(2)}`}</span>
               </button>
-              {menuOpen && (
-                <div className="user-menu" role="menu">
+              {walletMenuOpen && (
+                <div className="user-menu wallet-menu" role="menu">
                   <div className="user-menu-header">
-                    <div className="user-menu-label">wallet</div>
-                    <div className="user-menu-addr">{truncated}</div>
-                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
-                      {ethBalance === null
-                        ? "gas checking…"
-                        : hasGas
-                          ? `${ethBalance.toFixed(5)} ETH gas`
-                          : "needs ETH gas"}
+                    <div className="user-menu-label">wallet balance</div>
+                    <div className="wallet-menu-balances">
+                      <span>{balanceLoading ? "syncing USDC" : `${balance.toFixed(2)} USDC`}</span>
+                      <span>{ethBalance === null ? "gas checking..." : `${ethBalance.toFixed(5)} ETH`}</span>
                     </div>
-                    <div className={`user-menu-tag ${isDelegated ? "ok" : "warn"}`}>
-                      {isDelegated ? "trading delegated ✓" : "delegation pending"}
+                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
+                      {hasGas ? "gas ready" : "needs ETH gas"}
                     </div>
                   </div>
-                  {!isDelegated && (
-                    <button
-                      className="user-menu-item primary"
-                      role="menuitem"
-                      onClick={() => { sounds.play("ui-click"); onDelegate(); }}
-                      disabled={delegating}
-                    >
-                      {delegating ? "waiting for popup…" : "enable trading"}
-                    </button>
-                  )}
-                  <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
-                    copy address
-                  </button>
                   <div className="user-menu-section">
                     <div className="user-menu-section-title">deposit</div>
                     <button
@@ -517,6 +504,58 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+            <div
+              className={`gas-pill ${hasGas ? "ok" : "warn"}`}
+              title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
+            >
+              <span className="gas-dot" aria-hidden="true" />
+              <span>{ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
+            </div>
+            <div className="user-wrap" ref={profileWrapRef}>
+              <button
+                className="avatar-btn"
+                onClick={() => {
+                  sounds.play("ui-click");
+                  setProfileMenuOpen((v) => !v);
+                  setWalletMenuOpen(false);
+                }}
+                aria-label="Account"
+                aria-expanded={profileMenuOpen}
+              >
+                {initials}
+              </button>
+              {profileMenuOpen && (
+                <div className="user-menu" role="menu">
+                  <div className="user-menu-header">
+                    <div className="user-menu-label">wallet</div>
+                    <div className="user-menu-addr">{truncated}</div>
+                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
+                      {ethBalance === null
+                        ? "gas checking…"
+                        : hasGas
+                          ? `${ethBalance.toFixed(5)} ETH gas`
+                          : "needs ETH gas"}
+                    </div>
+                    <div className={`user-menu-tag ${isDelegated ? "ok" : "warn"}`}>
+                      {isDelegated ? "trading delegated ✓" : "delegation pending"}
+                    </div>
+                  </div>
+                  {!isDelegated && (
+                    <button
+                      className="user-menu-item primary"
+                      role="menuitem"
+                      onClick={() => { sounds.play("ui-click"); onDelegate(); }}
+                      disabled={delegating}
+                    >
+                      {delegating ? "waiting for popup…" : "enable trading"}
+                    </button>
+                  )}
+                  <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
+                    copy address
+                  </button>
                   {isDelegated && (
                     <button
                       className="user-menu-item"
@@ -540,7 +579,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                   <button
                     className="user-menu-item danger"
                     role="menuitem"
-                    onClick={() => { sounds.play("ui-click"); setMenuOpen(false); logout(); }}
+                    onClick={() => { sounds.play("ui-click"); setProfileMenuOpen(false); logout(); }}
                   >
                     disconnect
                   </button>

@@ -1512,6 +1512,9 @@ body::before {
   line-height: 0.7;
   transform: translateY(-1px);
 }
+.wallet-wrap {
+  position: relative;
+}
 .balance-pill {
   display: inline-flex;
   align-items: center;
@@ -1524,6 +1527,14 @@ body::before {
   font-size: 18px;
   color: var(--ink);
   transform: rotate(-0.6deg);
+}
+.wallet-trigger {
+  background: transparent;
+  cursor: pointer;
+}
+.wallet-trigger:hover {
+  color: #fff;
+  border-color: var(--ink);
 }
 .balance-icon {
   width: 14px;
@@ -1608,6 +1619,19 @@ body::before {
   z-index: 30;
   font-family: 'Caveat', cursive;
   animation: user-menu-pop 0.15s ease-out;
+}
+.wallet-menu {
+  right: auto;
+  left: 0;
+}
+.wallet-menu-balances {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: 0.5px;
 }
 @keyframes user-menu-pop {
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
