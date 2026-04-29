@@ -1789,6 +1789,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
 
+        /* figPrice is the visual flight path. Crashing the figure into the
+           ground is reserved for real liquidations (a.price crossing the
+           on-chain liq line); clamp figPrice so gravity can't drag it past
+           the crash line during quiet feeds. */
+        if (liqPrice !== null) {
+          if (a.entry >= liqPrice && a.figPrice < liqPrice) {
+            a.figPrice = liqPrice;
+            if (a.figPriceVel < 0) a.figPriceVel = 0;
+          } else if (a.entry < liqPrice && a.figPrice > liqPrice) {
+            a.figPrice = liqPrice;
+            if (a.figPriceVel > 0) a.figPriceVel = 0;
+          }
+        }
+
         /* PnL */
         const move = (a.price - a.entry) / a.entry;
         const pnlPct = move * a.positionLev;
@@ -1834,12 +1848,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           time,
         );
 
-        /* The crash line is a visible game rule: if either the live price
-           or the runner's simulated flight path crosses it, crash now. */
+        /* Only the real feed price liquidates — figPrice is purely visual
+           (see clamp above), so a quiet test feed can't drop the runner
+           into the crash line on its own. */
         const crossedCrashLine = liqPrice !== null && (
-          a.entry >= liqPrice
-            ? (a.price <= liqPrice || a.figPrice <= liqPrice)
-            : (a.price >= liqPrice || a.figPrice >= liqPrice)
+          a.entry >= liqPrice ? a.price <= liqPrice : a.price >= liqPrice
         );
         if (crossedCrashLine || pnlPct <= -1) {
           splat();
