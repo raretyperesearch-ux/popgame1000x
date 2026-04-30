@@ -462,30 +462,67 @@ body::before {
 /* ============ OVERLAYS ============ */
 .pnl-readout {
   position: absolute;
-  top: 12px;
+  top: 8px;
   left: 50%;
-  transform: translateX(-50%) rotate(-1.2deg);
-  padding: 4px 18px;
-  background: transparent;
+  transform: translateX(-50%) rotate(-0.6deg);
+  width: min(330px, 58vw);
+  min-height: 72px;
+  padding: 13px 34px 12px;
+  background-image: url(/assets/ui/pnl-frame.png);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
   border: none;
-  font-family: 'Caveat', cursive;
-  font-weight: 700;
-  font-size: 36px;
-  letter-spacing: 1px;
+  font-family: 'Press Start 2P', monospace;
+  font-weight: normal;
+  font-size: 25px;
+  letter-spacing: 0;
   color: var(--muted);
   z-index: 8;
-  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
   text-align: center;
   line-height: 1;
-  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.55);
+  image-rendering: pixelated;
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.42));
+  text-shadow:
+    2px 2px 0 rgba(0,0,0,0.75),
+    0 0 16px rgba(244,236,216,0.18);
+  pointer-events: none;
+}
+.pnl-readout-label {
+  font-size: 8px;
+  color: rgba(244,236,216,0.56);
+  letter-spacing: 2px;
+}
+.pnl-readout-amount {
+  white-space: nowrap;
 }
 .pnl-readout.up {
   color: var(--green);
-  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.6), 0 0 18px rgba(93,211,158,0.45);
+  animation: pnlPlateProfit 1.05s ease-in-out infinite;
+  text-shadow:
+    2px 2px 0 rgba(0,0,0,0.72),
+    0 0 18px rgba(93,211,158,0.6),
+    0 0 30px rgba(93,211,158,0.24);
 }
 .pnl-readout.down {
   color: var(--red);
-  text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.6), 0 0 18px rgba(255,95,86,0.45);
+  animation: pnlPlateDanger 0.72s ease-in-out infinite;
+  text-shadow:
+    2px 2px 0 rgba(0,0,0,0.72),
+    0 0 16px rgba(255,95,86,0.7),
+    0 0 30px rgba(255,95,86,0.26);
+}
+@keyframes pnlPlateProfit {
+  0%, 100% { filter: drop-shadow(0 8px 18px rgba(0,0,0,0.42)) brightness(1); }
+  50% { filter: drop-shadow(0 8px 18px rgba(0,0,0,0.42)) drop-shadow(0 0 10px rgba(93,211,158,0.3)) brightness(1.1); }
+}
+@keyframes pnlPlateDanger {
+  0%, 100% { filter: drop-shadow(0 8px 18px rgba(0,0,0,0.42)) brightness(1); }
+  50% { filter: drop-shadow(0 8px 18px rgba(0,0,0,0.42)) drop-shadow(0 0 12px rgba(255,95,86,0.35)) brightness(1.12); }
 }
 .crash-warning {
   position: absolute;
@@ -1272,29 +1309,51 @@ body::before {
   transform: rotate(-0.8deg) scale(0.97);
 }
 .action.stop {
-  color: var(--red);
-  border-color: var(--red);
+  min-height: 48px;
+  color: #fff4d4;
+  border-color: transparent;
   background:
-    linear-gradient(180deg, rgba(255,95,86,0.24), rgba(255,95,86,0.06)),
-    #140d0e;
+    linear-gradient(90deg, rgba(255,95,86,0.1), transparent 18%, transparent 82%, rgba(255,95,86,0.12)),
+    url(/assets/ui/pull-chute-frame.png) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
   text-shadow:
-    0 0 8px rgba(255,95,86,0.6),
-    0 0 14px rgba(255,95,86,0.35),
-    0 2px 0 rgba(0,0,0,0.6);
+    0 0 8px rgba(255,217,102,0.72),
+    0 0 14px rgba(255,95,86,0.45),
+    0 2px 0 rgba(0,0,0,0.85);
+  box-shadow:
+    0 0 20px rgba(255,95,86,0.42),
+    0 0 34px rgba(255,153,51,0.2),
+    0 8px 22px rgba(0,0,0,0.32);
   animation: pulseStop 0.8s ease-in-out infinite;
 }
 .action.stop::after {
-  border-color: rgba(255,95,86,0.28);
+  border: none;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 0 36%, rgba(255,248,190,0.22) 42%, transparent 48% 100%);
+  transform: translateX(-110%);
+  animation: chuteSweep 1.1s ease-in-out infinite;
 }
 .action.stop .boss-sprite {
-  filter:
-    drop-shadow(0 2px 0 rgba(0,0,0,0.6))
-    drop-shadow(0 0 6px rgba(255,95,86,0.35));
-  opacity: 0.88;
+  display: none;
+}
+.action.stop .action-copy {
+  background: radial-gradient(ellipse at center, rgba(70,10,4,0.64) 0%, rgba(70,10,4,0.42) 54%, transparent 72%);
+  padding: 2px 20px;
 }
 @keyframes pulseStop {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%, 100% {
+    filter: brightness(1);
+    transform: rotate(-0.8deg) scale(1);
+  }
+  50% {
+    filter: brightness(1.16) saturate(1.1);
+    transform: rotate(-0.8deg) scale(1.012);
+  }
+}
+@keyframes chuteSweep {
+  0%, 22% { transform: translateX(-110%); opacity: 0; }
+  44% { opacity: 1; }
+  72%, 100% { transform: translateX(110%); opacity: 0; }
 }
 .action.disabled {
   color: #444;
@@ -1565,13 +1624,19 @@ body::before {
   border-radius: 8px;
 }
 .wager-panel .action.stop {
-  color: #ffe3df;
-  border-color: #ff7068;
+  min-height: 48px;
+  color: #fff4d4;
+  border-color: transparent;
   background:
-    linear-gradient(180deg, #ff837a 0%, #e43d35 58%, #7d1619 100%);
+    linear-gradient(90deg, rgba(255,95,86,0.08), transparent 20%, transparent 80%, rgba(255,95,86,0.1)),
+    url(/assets/ui/pull-chute-frame.png) center / 100% 100% no-repeat;
   text-shadow:
-    0 0 8px rgba(255,95,86,0.55),
-    0 3px 0 rgba(82,0,0,0.52);
+    0 0 8px rgba(255,217,102,0.7),
+    0 0 14px rgba(255,95,86,0.45),
+    0 3px 0 rgba(82,0,0,0.72);
+}
+.wager-panel .action.stop::before {
+  display: none;
 }
 .wager-panel .action-boss-pack {
   display: none;
@@ -2510,7 +2575,8 @@ body::before {
   .hand-slider { height: 20px; }
   .hand-slider::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -9px; }
   .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
-  .pnl-readout { font-size: 28px; padding: 2px 12px; }
+  .pnl-readout { width: min(280px, 62vw); min-height: 60px; padding: 11px 28px 10px; font-size: 19px; }
+  .pnl-readout-label { font-size: 7px; }
   .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
 }
 @media (max-height: 600px) {

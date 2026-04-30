@@ -172,25 +172,50 @@ function terrainifyNorm(t: number): number {
   return clamp(Math.pow(c, 0.88) + ridge, 0, 1);
 }
 
-function drawMiniPriceTag(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, stageW: number, stageH: number) {
+function drawMiniPriceTag(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  x: number,
+  y: number,
+  stageW: number,
+  stageH: number,
+  trend: number,
+  frame: number,
+  plate?: HTMLImageElement | null,
+) {
   ctx.save();
   ctx.font = '10px "VT323", monospace';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const textW = Math.ceil(ctx.measureText(label).width);
-  const boxW = textW + 13;
-  const boxH = 15;
+  const boxW = 108;
+  const boxH = 28;
   const bx = clamp(Math.round(x - boxW / 2), 6, Math.max(6, stageW - boxW - 6));
   const by = clamp(Math.round(y - boxH / 2), 8, Math.max(8, stageH - boxH - 8));
-  ctx.fillStyle = "rgba(3,8,16,0.66)";
-  ctx.strokeStyle = "rgba(244,236,216,0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(bx, by, boxW, boxH, 3);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(244,236,216,0.66)";
-  ctx.fillText(label, bx + boxW / 2, by + boxH / 2 + 0.5);
+  if (plate?.complete && plate.naturalWidth > 0) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(plate, bx, by, boxW, boxH);
+  } else {
+    ctx.fillStyle = "rgba(3,8,16,0.72)";
+    ctx.strokeStyle = "rgba(74,180,255,0.32)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 10);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const arrow = trend > 0.01 ? "▲" : trend < -0.01 ? "▼" : "◆";
+  const hot = Math.min(1, Math.abs(trend) * 24);
+  ctx.fillStyle = trend > 0.01
+    ? `rgba(112,255,183,${0.74 + hot * 0.26})`
+    : trend < -0.01
+      ? `rgba(255,112,102,${0.76 + hot * 0.24})`
+      : "rgba(244,236,216,0.72)";
+  ctx.shadowColor = trend >= 0 ? "rgba(93,211,158,0.5)" : "rgba(255,95,86,0.5)";
+  ctx.shadowBlur = 4 + Math.sin(frame * 0.22) * 1.5;
+  ctx.fillText(arrow, bx + 31, by + boxH / 2 + 0.5);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(244,236,216,0.76)";
+  ctx.fillText(label, bx + 69, by + boxH / 2 + 0.5);
   ctx.restore();
 }
 
@@ -249,6 +274,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const waterImageReadyRef = useRef(false);
   const moneyPropsImageRef = useRef<HTMLImageElement | null>(null);
   const moneyPropsImageReadyRef = useRef(false);
+  const ethTickerImageRef = useRef<HTMLImageElement | null>(null);
+  const ethTickerImageReadyRef = useRef(false);
 
   /* mutable animation state */
   const anim = useRef({
@@ -2029,8 +2056,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const lift = a.skyAlt * a.stageH * 0.25;
           const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
           const footY = a.stageH - a.smoothAlt - lift;
-          const tagY = footY - SPRITE_DISPLAY_H * figScale - 15;
-          drawMiniPriceTag(ctx, `ETH $${a.price.toFixed(2)}`, figScreenX, tagY, a.stageW, a.stageH);
+          const tagY = footY - SPRITE_DISPLAY_H * figScale - 20;
+          const priceTrend = a.price - a.prevPrice;
+          const tickerPlate = ethTickerImageReadyRef.current ? ethTickerImageRef.current : null;
+          drawMiniPriceTag(ctx, `ETH $${a.price.toFixed(2)}`, figScreenX, tagY, a.stageW, a.stageH, priceTrend, a.frame, tickerPlate);
         }
       }
 
@@ -2101,6 +2130,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     return () => {
       moneyPropsImageRef.current = null;
       moneyPropsImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      ethTickerImageReadyRef.current = true;
+    };
+    img.src = "/assets/ui/eth-ticker-frame.png";
+    ethTickerImageRef.current = img;
+    return () => {
+      ethTickerImageRef.current = null;
+      ethTickerImageReadyRef.current = false;
     };
   }, []);
 

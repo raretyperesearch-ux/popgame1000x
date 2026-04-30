@@ -6,7 +6,12 @@ interface PnLReadoutProps {
 
 export default function PnLReadout({ pnlDollars }: PnLReadoutProps) {
   if (pnlDollars === null) {
-    return <div className="pnl-readout">PNL &mdash;</div>;
+    return (
+      <div className="pnl-readout">
+        <span className="pnl-readout-label">PNL</span>
+        <span className="pnl-readout-amount">&mdash;</span>
+      </div>
+    );
   }
 
   const cls =
@@ -15,7 +20,8 @@ export default function PnLReadout({ pnlDollars }: PnLReadoutProps) {
 
   return (
     <div className={cls}>
-      PNL {sign}${Math.abs(pnlDollars).toFixed(2)}
+      <span className="pnl-readout-label">PNL</span>
+      <span className="pnl-readout-amount">{sign}${Math.abs(pnlDollars).toFixed(2)}</span>
     </div>
   );
 }
