@@ -32,7 +32,8 @@ from typing import Any, Optional
 
 _client: Any = None
 _enabled: bool = False
-_TABLE = "trades"
+_TABLE = "pg_trades"
+_LEADERBOARD_VIEW = "pg_trade_leaderboard"
 
 
 def init() -> None:
@@ -201,7 +202,7 @@ def recent_trades_for(wallet_address: str, limit: int = 25) -> list[dict]:
 def leaderboard(limit: int = 20) -> list[dict]:
     """Sum net realized PnL per wallet over closed trades, top N.
 
-    Implemented as a SQL view (`trade_leaderboard`) defined in the
+    Implemented as a SQL view (`pg_trade_leaderboard`) defined in the
     migration so we can sort/aggregate server-side. Falls back to an
     in-process aggregation only if the view is missing — cheap on a
     small table, but logged so the operator notices the missing view."""
@@ -210,7 +211,7 @@ def leaderboard(limit: int = 20) -> list[dict]:
     limit = max(1, min(int(limit), 100))
     try:
         res = (
-            _client.table("trade_leaderboard")
+            _client.table(_LEADERBOARD_VIEW)
             .select("*")
             .order("net_pnl_usdc", desc=True)
             .limit(limit)
