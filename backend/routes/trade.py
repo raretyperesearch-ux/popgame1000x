@@ -93,6 +93,18 @@ _eth_pair_index: Optional[int] = None
 _trader_address: Optional[str] = None  # legacy env wallet (single-wallet fallback only)
 
 
+def _valid_treasury_address() -> Optional[str]:
+    """Return a configured treasury address, ignoring local placeholders."""
+    if not _TREASURY_ADDRESS:
+        return None
+    treasury = _TREASURY_ADDRESS.strip()
+    if treasury.lower() in {"0x", "0x0", "0x0000000000000000000000000000000000000000"}:
+        return None
+    if not treasury.startswith("0x") or len(treasury) != 42:
+        return None
+    return treasury
+
+
 async def init_trader():
     """Initialize a SHARED TraderClient used for read-only ops (pair info,
     get_trades, get_usdc_balance) AND legacy single-wallet signing when
@@ -356,7 +368,8 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
     # on failure rather than unwinding the open — easier to reconcile
     # a missed fee from the txhash than to refund a successful trade.
     if house_fee > 0:
-        if not _TREASURY_ADDRESS:
+        treasury_address = _valid_treasury_address()
+        if not treasury_address:
             print(
                 f"⚠️  TREASURY_ADDRESS unset — skipping {house_fee} USDC fee "
                 f"collection for trade {new_trade.trade.trade_index} "
@@ -364,7 +377,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
             )
         else:
             try:
-                fee_tx = build_usdc_transfer_tx(_TREASURY_ADDRESS, house_fee)
+                fee_tx = build_usdc_transfer_tx(treasury_address, house_fee)
                 if _is_legacy_user(user):
                     receipt = await client.sign_and_get_receipt(fee_tx)
                     fee_hash = _tx_hash_str(receipt)
@@ -372,7 +385,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
                     fee_hash = await _send_user_tx(user, fee_tx)
                 print(
                     f"✓ House fee {house_fee} USDC collected: "
-                    f"{user.address} -> {_TREASURY_ADDRESS} ({fee_hash})"
+                    f"{user.address} -> {treasury_address} ({fee_hash})"
                 )
             except Exception as e:  # noqa: BLE001
                 print(
