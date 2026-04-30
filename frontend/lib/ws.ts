@@ -19,22 +19,52 @@ export function connectPriceStream(onMessage: OnMessage): () => void {
     /^http:\/\//,
     "ws://",
   );
-  const ws = new WebSocket(`${wsUrl}/price/stream`);
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data) as PriceMessage;
-      onMessage(data);
-    } catch {
-      /* ignore malformed messages */
-    }
+  let closed = false;
+  let ws: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+
+  const open = () => {
+    if (closed) return;
+    ws = new WebSocket(`${wsUrl}/price/stream`);
+
+    ws.onopen = () => {
+      attempt = 0;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as PriceMessage;
+        onMessage(data);
+      } catch {
+        /* ignore malformed messages */
+      }
+    };
+
+    // A drop mid-trade silently freezes PnL because `a.price` never
+    // ticks again. Reconnect with capped exponential backoff so the
+    // feed self-heals without a page refresh.
+    const scheduleReconnect = () => {
+      if (closed || reconnectTimer) return;
+      const delay = Math.min(5000, 250 * 2 ** attempt);
+      attempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        open();
+      }, delay);
+    };
+    ws.onerror = scheduleReconnect;
+    ws.onclose = scheduleReconnect;
   };
 
-  ws.onerror = () => {
-    /* silent — reconnect logic can be added later */
-  };
+  open();
 
-  return () => ws.close();
+  return () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    ws?.close();
+  };
 }
 
 function startMockStream(onMessage: OnMessage): () => void {
