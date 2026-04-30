@@ -172,6 +172,28 @@ function terrainifyNorm(t: number): number {
   return clamp(Math.pow(c, 0.88) + ridge, 0, 1);
 }
 
+function drawMiniPriceTag(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, stageW: number, stageH: number) {
+  ctx.save();
+  ctx.font = '10px "VT323", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const textW = Math.ceil(ctx.measureText(label).width);
+  const boxW = textW + 13;
+  const boxH = 15;
+  const bx = clamp(Math.round(x - boxW / 2), 6, Math.max(6, stageW - boxW - 6));
+  const by = clamp(Math.round(y - boxH / 2), 8, Math.max(8, stageH - boxH - 8));
+  ctx.fillStyle = "rgba(3,8,16,0.66)";
+  ctx.strokeStyle = "rgba(244,236,216,0.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, boxW, boxH, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(244,236,216,0.66)";
+  ctx.fillText(label, bx + boxW / 2, by + boxH / 2 + 0.5);
+  ctx.restore();
+}
+
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
   startJump: (
@@ -233,7 +255,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     price: 3500,
     renderPrice: 3500,
     prevPrice: 3500,
-    lastPriceShown: 0, // last value pushed to setPriceDisplay; gates re-render
     smoothDelta: 0,
     prices: generatePriceSeries(TOTAL_POINTS, 3500),
     terrainSeed: Math.random() * Math.PI * 2,
@@ -314,7 +335,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   });
 
   /* render-triggering state */
-  const [priceDisplay, setPriceDisplay] = useState("ETH $3500.00");
   const [levTagText, setLevTagText] = useState("\u2014");
   const [levTagShow, setLevTagShow] = useState(false);
   const [impactFx, setImpactFx] = useState<"" | "crash" | "win" | "loss">("");
@@ -1566,16 +1586,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.terrainPoints.length > TOTAL_POINTS * 1.5) a.terrainPoints.shift();
       }
 
-      /* update price display — refresh every frame so the topbar text
-         and the canvas's per-frame chart price label can't drift apart
-         visually (the old `frame % 4` throttle made the two numbers
-         disagree by a few cents during fast moves, which looked like
-         the PnL math was glitching). */
-      if (a.lastPriceShown !== a.price) {
-        setPriceDisplay("ETH $" + a.price.toFixed(2));
-        a.lastPriceShown = a.price;
-      }
-
       /* compute figScreenX and pointSpacing */
       const figScreenX = a.stageW * FIG_X_PCT;
       const pointSpacing = a.stageW / VISIBLE_POINTS;
@@ -1998,6 +2008,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const figY = Math.min(priceToY(a.figPrice), groundY - PARACHUTE_MIN_AIR_GAP_PX);
           const alt = a.stageH - figY;
           a.smoothRot = lerp(a.smoothRot, 0, 0.05 * dtNorm);
+          a.smoothAlt = alt;
           setFig(figScreenX, alt, a.smoothRot);
           a.loco.grounded = false;
           setSpriteState("parachute", time);
@@ -2010,6 +2021,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.smoothAlt = lerp(a.smoothAlt, a.stageH - groundY + 2, 0.35 * dtNorm);
         setFig(figScreenX, a.smoothAlt, 0);
         a.frame++;
+      }
+
+      if (priceToY && (a.state === "LIVE" || a.state === "STOPPED")) {
+        const ctx = canvasRef.current?.getContext("2d");
+        if (ctx) {
+          const lift = a.skyAlt * a.stageH * 0.25;
+          const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+          const footY = a.stageH - a.smoothAlt - lift;
+          const tagY = footY - SPRITE_DISPLAY_H * figScale - 15;
+          drawMiniPriceTag(ctx, `ETH $${a.price.toFixed(2)}`, figScreenX, tagY, a.stageW, a.stageH);
+        }
       }
 
       drawSprite(time);
@@ -2143,7 +2165,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       />
 
       {/* HUD overlays */}
-      <div className="price-tick">{priceDisplay}</div>
       <div className={`lev-tag${levTagShow ? " show" : ""}`}>
         {levTagText}
       </div>

@@ -543,15 +543,6 @@ body::before {
   color: #ffb347;
   border-color: #ffb347;
 }
-.price-tick {
-  position: absolute;
-  top: 80px;
-  left: 12px;
-  font-size: 14px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  z-index: 8;
-}
 .race-flag {
   position: absolute;
   top: 0;
@@ -2521,7 +2512,6 @@ body::before {
   .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
   .pnl-readout { font-size: 28px; padding: 2px 12px; }
   .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
-  .price-tick { top: 56px; font-size: 12px; }
 }
 @media (max-height: 600px) {
   /* Even tighter — landscape phones, small webviews */
