@@ -60,27 +60,19 @@ async def get_eth_balance_wei(address: str) -> int:
 
 
 def get_avantis_trading_address(client: Any) -> str:
-    """Find the Avantis Trading contract address from a TraderClient.
-    Tries a handful of plausible attribute paths the SDK might expose,
-    falling back to the well-known Base mainnet address."""
-    # Try the snapshot-style API first (newer SDK versions).
-    for path in (
-        ("snapshot", "contracts", "trading", "address"),
-        ("contracts", "trading", "address"),
-        ("snapshot", "trading", "address"),
-        ("trading", "contract", "address"),
-    ):
-        node: Any = client
-        ok = True
-        for attr in path:
-            node = getattr(node, attr, None)
-            if node is None:
-                ok = False
-                break
-        if ok and isinstance(node, str) and node.startswith("0x"):
-            return _to_checksum(node)
-    # Avantis Trading proxy on Base mainnet (verified via avantisfi.com).
-    return "0x5FF292d70bA9cD9e7CCb313782811b3D7120535f"
+    """Resolve the USDC spender for Avantis trading.
+
+    The SDK's `get_usdc_allowance_for_trading` reads allowance against
+    the TradingStorage contract (not the Trading entry contract), so
+    that's the address we must approve as the USDC spender — otherwise
+    every approve mines successfully but allowance still reads zero."""
+    contracts = getattr(client, "contracts", None)
+    storage = contracts["TradingStorage"] if isinstance(contracts, dict) and "TradingStorage" in contracts else None
+    addr = getattr(storage, "address", None) if storage is not None else None
+    if isinstance(addr, str) and addr.startswith("0x"):
+        return _to_checksum(addr)
+    # Avantis TradingStorage on Base mainnet.
+    return "0x8a311D7048c35985aa31C131B9A13e03a5f7422d"
 
 
 def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
