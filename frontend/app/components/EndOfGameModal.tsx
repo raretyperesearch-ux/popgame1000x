@@ -468,7 +468,7 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   ctx.fillStyle = "rgba(244,236,216,0.4)";
   ctx.font = '20px "Press Start 2P", monospace';
   ctx.textAlign = "center";
-  ctx.fillText("popgame1000x", W / 2, H - 40);
+  ctx.fillText("ScalpRunner500x", W / 2, H - 40);
 
   return new Promise((res) => canvas.toBlob((b) => res(b), "image/png"));
 }
@@ -498,7 +498,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `popgame-${data.kind}-${Date.now()}.png`;
+    a.download = `scalprunner-${data.kind}-${Date.now()}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -509,16 +509,16 @@ export default function EndOfGameModal({ data, onClose }: Props) {
     sounds.play("coin-clink");
     const blob = await renderShareImage(data);
     if (!blob) return;
-    const file = new File([blob], `popgame-${data.kind}.png`, { type: "image/png" });
+    const file = new File([blob], `scalprunner-${data.kind}.png`, { type: "image/png" });
     const shareText = data.kind === "win"
-      ? `Clean run for ${fmtMoney(data.pnlDollars)} on popgame1000x 🚀`
+      ? `Clean run for ${fmtMoney(data.pnlDollars)} on ScalpRunner500x 🚀`
       : data.kind === "loss"
-      ? `Pulled chute at ${fmtMoney(data.pnlDollars)} on popgame1000x. We move.`
-      : `Crashed out on popgame1000x. ${data.boost}x boost was a choice.`;
+      ? `Pulled chute at ${fmtMoney(data.pnlDollars)} on ScalpRunner500x. We move.`
+      : `Crashed out on ScalpRunner500x. ${data.boost}x boost was a choice.`;
     const navAny = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (navigator.share && navAny.canShare && navAny.canShare({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], text: shareText, title: "popgame1000x" });
+        await navigator.share({ files: [file], text: shareText, title: "ScalpRunner500x" });
         return;
       } catch {
         // user cancelled — fall through to download
