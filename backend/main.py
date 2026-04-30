@@ -257,11 +257,35 @@ async def _validate_quorum_alignment(privy_client) -> None:
 
 
 def _pem_equal(a: str, b: str) -> bool:
-    """Compare two PEMs ignoring whitespace + line-wrap differences. Privy
-    sometimes returns PEMs with different newline conventions than what we
-    derive locally, so a literal string match would false-negative."""
-    norm = lambda s: "".join(s.split())  # noqa: E731 — local one-shot
-    return norm(a) == norm(b)
+    """Compare two public keys by their DER-encoded SubjectPublicKeyInfo.
+
+    Privy may return the key in a different PEM line-wrap, or as bare
+    base64 without the BEGIN/END headers — the cryptographically equal
+    key then false-negatives a string compare. Parse both sides and
+    compare the canonical DER bytes."""
+    from cryptography.hazmat.primitives import serialization
+
+    def _load(s: str):
+        s = s.strip()
+        candidates = (
+            s,
+            f"-----BEGIN PUBLIC KEY-----\n{s}\n-----END PUBLIC KEY-----",
+        )
+        for c in candidates:
+            try:
+                return serialization.load_pem_public_key(c.encode())
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    ka, kb = _load(a), _load(b)
+    if ka is None or kb is None:
+        return False
+    der = lambda k: k.public_bytes(  # noqa: E731
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return der(ka) == der(kb)
 
 
 @asynccontextmanager
