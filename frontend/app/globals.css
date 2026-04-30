@@ -249,6 +249,47 @@ body::before {
   font-size: 5px;
   text-transform: uppercase;
 }
+.powered-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px dashed rgba(244, 236, 216, 0.22);
+  border-radius: 8px;
+  background: rgba(244, 236, 216, 0.04);
+  color: rgba(244, 236, 216, 0.78);
+  text-decoration: none;
+  line-height: 1;
+  transform: rotate(-0.6deg);
+  transition: opacity 140ms ease, border-color 140ms ease, color 140ms ease;
+  opacity: 0.78;
+}
+.powered-tab:hover {
+  opacity: 1;
+  border-color: rgba(244, 236, 216, 0.45);
+  color: #fff;
+}
+.powered-tab img {
+  height: 12px;
+  width: auto;
+  display: block;
+}
+.powered-tab-prefix {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.topbar:has(.avatar-btn) .powered-tab {
+  padding: 2px 5px;
+  gap: 4px;
+}
+.topbar:has(.avatar-btn) .powered-tab-prefix {
+  display: none;
+}
+.topbar:has(.avatar-btn) .powered-tab img {
+  height: 11px;
+}
 .connect-btn {
   background: transparent;
   border: 1.5px dashed var(--muted);
@@ -1789,12 +1830,23 @@ body::before {
   font-family: 'Caveat', cursive;
   font-size: 34px;
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   text-align: center;
   transform: rotate(-1.2deg);
   text-shadow:
     0 2px 0 rgba(0,0,0,0.55),
     0 0 12px rgba(255, 213, 93, 0.24);
+}
+.help-subtitle {
+  position: relative;
+  z-index: 1;
+  font-family: 'Tiny5', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: rgba(244, 236, 216, 0.62);
+  text-align: center;
+  margin-bottom: 12px;
+  text-transform: lowercase;
 }
 .help-list {
   position: relative;
@@ -1863,6 +1915,25 @@ body::before {
   box-shadow:
     0 3px 0 rgba(116, 48, 0, 0.9),
     0 0 12px rgba(255, 213, 93, 0.24);
+}
+.help-powered {
+  position: relative;
+  z-index: 1;
+  margin: 14px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'Tiny5', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(244, 236, 216, 0.55);
+}
+.help-powered img {
+  height: 18px;
+  width: auto;
+  opacity: 0.9;
 }
 
 /* ============ END OF GAME MODAL ============ */
@@ -2625,6 +2696,8 @@ body::before {
   .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
   .discord-tab { width: 22px; height: 22px; border-radius: 8px; }
   .discord-tab svg { width: 16px; height: 16px; }
+  .powered-tab { padding: 2px 5px; gap: 4px; border-radius: 7px; }
+  .powered-tab img { height: 10px; }
 }
 @media (max-height: 600px) {
   /* Even tighter — landscape phones, small webviews */
