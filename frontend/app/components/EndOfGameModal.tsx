@@ -21,11 +21,11 @@ interface Props {
   onClose: () => void;
 }
 
-const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; spriteFrame: 11 | 15 | 16; exitFallback: string }> = {
+const KIND_COPY: Record<EndOfGameKind, { subtitle: string; badge: string; spriteFrame: number; exitFallback: string }> = {
   win: {
     subtitle: "YOU CAME. YOU SCALPED. YOU WON.",
     badge: "WIN",
-    spriteFrame: 11,
+    spriteFrame: 35,
     exitFallback: "—",
   },
   loss: {

@@ -75,11 +75,11 @@ const JUMP_FRAMES = [7, 10, 11];
 const CHARGE_FRAMES = [17, 18];
 const BREAK_FRAMES = [19, 20];
 const LAUNCH_FRAMES = [21, 22];
-// Dedicated LIVE flight loops live at 27..34 in the extended sheet.
-// They keep the flight readable without relying on jittery DOM rotation.
+// Dedicated LIVE flight loops live in the extended sheet.
+// Upright launch frames stay reserved for takeoff so LIVE flight never reads as standing.
 const AIR_FRAMES = [27, 28, 35, 36, 34, 31, 39];
 const AIR_FRAME_MS = 85;
-const BOOST_FRAMES = [29, 30, 37, 38, 36];
+const BOOST_FRAMES = [35, 36, 34, 39, 28, 31];
 const BOOST_FRAME_MS = 78;
 const FALL_FRAMES = [32, 33];
 const FALL_FRAME_MS = 110;

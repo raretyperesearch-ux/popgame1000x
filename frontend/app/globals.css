@@ -1863,13 +1863,14 @@ body::before {
   height: 71px;
   background-image: url(/spritesheet.png);
   background-repeat: no-repeat;
-  background-size: 320px 284px;
+  background-size: 320px 569px;
   image-rendering: pixelated;
   filter: drop-shadow(0 2px 0 rgba(0,0,0,0.4));
 }
 .eog-sprite-frame.f11 { background-position: -64px -142px; }
 .eog-sprite-frame.f15 { background-position: 0 -213px; }
 .eog-sprite-frame.f16 { background-position: -64px -213px; }
+.eog-sprite-frame.f35 { background-position: 0 -497px; }
 .eog-pnl-block {
   display: flex;
   flex-direction: column;
