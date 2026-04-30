@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import {
   usePrivy,
@@ -12,6 +12,7 @@ import { encodeFunctionData, isAddress, parseEther, parseUnits } from "viem";
 import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
+import { getWalletStatus } from "@/lib/api";
 
 type WithdrawAsset = "USDC" | "ETH";
 
@@ -43,7 +44,7 @@ const USDC_TRANSFER_ABI = [
 ] as const;
 
 export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
-  const { login, logout, authenticated, user, ready } = usePrivy();
+  const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
   const { addSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const { sendTransaction } = useSendTransaction();
@@ -61,6 +62,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   // wallet's `delegated: boolean` field is the OLD delegateAction
   // signal and may not flip for the new useSigners flow.
   const [locallyDelegated, setLocallyDelegated] = useState(false);
+  // Server-confirmed view of the wallet's delegation. Reflects what the
+  // backend's /wallet/status endpoint sees — the AUTHORITATIVE check,
+  // because that's what gates trade signing. `null` until first poll.
+  const [serverDelegated, setServerDelegated] = useState<boolean | null>(null);
+  const [serverDelegationMismatch, setServerDelegationMismatch] = useState<string | null>(null);
   const walletWrapRef = useRef<HTMLDivElement>(null);
   const profileWrapRef = useRef<HTMLDivElement>(null);
 
@@ -87,7 +93,45 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
 
   useEffect(() => {
     setLocallyDelegated(false);
+    setServerDelegated(null);
+    setServerDelegationMismatch(null);
   }, [walletAddress]);
+
+  /* Authoritative delegation check: ask the backend whether this wallet
+     has the expected signer registered. This catches the silent-401
+     case where addSigners() succeeded but the signer ID we registered
+     doesn't match PRIVY_EXPECTED_SIGNER_ID on the backend (env drift
+     between Vercel and Railway). Without this check, the user only
+     finds out at first JUMP when the trade fails with a generic 502. */
+  const verifyServerDelegation = useCallback(async () => {
+    if (!authenticated || !walletAddress) return;
+    try {
+      const status = await getWalletStatus(getAccessToken, walletAddress);
+      if (!status) return;
+      setServerDelegated(status.delegated);
+      if (!status.delegated && (status.quorum_id || status.additional.length > 0)) {
+        // Wallet has SOME signer registered but not the one the backend
+        // expects — env mismatch between Vercel's NEXT_PUBLIC_PRIVY_SIGNER_ID
+        // and Railway's PRIVY_EXPECTED_SIGNER_ID. Surface specifically.
+        setServerDelegationMismatch(
+          `Trading delegation mismatch: backend expects signer ${
+            status.expected_signer ? `${status.expected_signer.slice(0, 8)}…` : "(unset)"
+          } but this wallet is delegated to ${
+            status.quorum_id ? `${status.quorum_id.slice(0, 8)}…` : "(none)"
+          }${
+            status.additional.length
+              ? ` + ${status.additional.length} additional`
+              : ""
+          }. Operator: align NEXT_PUBLIC_PRIVY_SIGNER_ID, PRIVY_EXPECTED_SIGNER_ID, and PRIVY_KEY_QUORUM_ID.`,
+        );
+      } else {
+        setServerDelegationMismatch(null);
+      }
+    } catch (e) {
+      // /wallet/status itself failing isn't user-actionable; just log.
+      console.warn("[delegate] /wallet/status check failed:", e);
+    }
+  }, [authenticated, walletAddress, getAccessToken]);
 
   /* `delegated: true` is the LEGACY delegateAction flag — it's not set
      by the new useSigners session-signer flow on TEE wallets. We treat
@@ -154,6 +198,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       .then((result) => {
         console.log("[delegate] addSigners ok. signerId we sent:", PRIVY_SIGNER_ID, "result:", result);
         setLocallyDelegated(true);
+        // Don't trust the local flag alone — confirm with the backend
+        // that the signer the frontend just registered matches the one
+        // it expects. Catches NEXT_PUBLIC_PRIVY_SIGNER_ID vs
+        // PRIVY_EXPECTED_SIGNER_ID env drift between Vercel and Railway.
+        void verifyServerDelegation();
       })
       .catch((e) => console.warn("[delegate] declined or failed:", e))
       .finally(() => {
@@ -162,7 +211,15 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     return () => {
       cancelled = true;
     };
-  }, [ready, authenticated, walletAddress, isDelegated, addSigners, delegating]);
+  }, [ready, authenticated, walletAddress, isDelegated, addSigners, delegating, verifyServerDelegation]);
+
+  // First /wallet/status poll on auth, before any addSigners call — so a
+  // user who already delegated in a previous session (and a backend that
+  // already agrees) doesn't see "delegation pending" even though it's fine.
+  useEffect(() => {
+    if (!ready || !authenticated || !walletAddress) return;
+    void verifyServerDelegation();
+  }, [ready, authenticated, walletAddress, verifyServerDelegation]);
 
   useEffect(() => {
     if (!walletMenuOpen && !profileMenuOpen) return;
@@ -228,6 +285,10 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       console.log("[delegate] addSigners ok. signerId we sent:", PRIVY_SIGNER_ID, "result:", result);
       setLocallyDelegated(true);
       onError?.(`Trading delegated. Signer: ${PRIVY_SIGNER_ID.slice(0, 8)}…`);
+      // Authoritative confirm: ask the backend whether it would actually
+      // accept this signer for trade execution. If not, the user finds
+      // out NOW (in the avatar menu) rather than at first JUMP.
+      void verifyServerDelegation();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("[delegate] failed:", e);
@@ -518,18 +579,37 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                           ? `${ethBalance.toFixed(5)} ETH gas`
                           : "needs ETH gas"}
                     </div>
-                    <div className={`user-menu-tag ${isDelegated ? "ok" : "warn"}`}>
-                      {isDelegated ? "trading delegated ✓" : "delegation pending"}
+                    <div className={`user-menu-tag ${
+                      serverDelegationMismatch
+                        ? "warn"
+                        : serverDelegated === true
+                          ? "ok"
+                          : isDelegated
+                            ? "ok"
+                            : "warn"
+                    }`}>
+                      {serverDelegationMismatch
+                        ? "delegation mismatch"
+                        : serverDelegated === true
+                          ? "trading delegated ✓"
+                          : isDelegated
+                            ? "trading delegated (verifying…)"
+                            : "delegation pending"}
                     </div>
+                    {serverDelegationMismatch && (
+                      <div className="user-menu-error" role="alert">
+                        {serverDelegationMismatch}
+                      </div>
+                    )}
                   </div>
-                  {!isDelegated && (
+                  {(!isDelegated || serverDelegationMismatch) && (
                     <button
                       className="user-menu-item primary"
                       role="menuitem"
                       onClick={() => { sounds.play("ui-click"); onDelegate(); }}
                       disabled={delegating}
                     >
-                      {delegating ? "waiting for popup…" : "enable trading"}
+                      {delegating ? "waiting for popup…" : serverDelegationMismatch ? "retry delegation" : "enable trading"}
                     </button>
                   )}
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>

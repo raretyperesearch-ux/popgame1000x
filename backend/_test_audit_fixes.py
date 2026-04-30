@@ -224,6 +224,76 @@ def test_compute_pnl_long_losing() -> None:
     _ok("compute_pnl.long losing → -$5.00")
 
 
+def test_persistence_disabled_is_noop() -> None:
+    """Persistence layer must NEVER raise when Supabase env is unset —
+    trade routes call it on every open/close and a raise would break
+    real-money trades. Verifies all public helpers are silent no-ops."""
+    import persistence
+    from datetime import datetime, timezone
+
+    # Ensure clean state — no client, not enabled.
+    persistence._client = None
+    persistence._enabled = False
+
+    # All write helpers must succeed silently.
+    persistence.record_open(
+        did="did:privy:test",
+        wallet_address="0xabc",
+        trade_index=1,
+        pair_index=0,
+        leverage=100,
+        wager_usdc=5.0,
+        house_fee_usdc=0.04,
+        collateral_usdc=4.96,
+        entry_price=3500.0,
+        liquidation_price=3465.0,
+        opened_at=datetime.now(timezone.utc),
+        open_tx_hash="0xdead",
+    )
+    persistence.record_close(
+        wallet_address="0xabc",
+        trade_index=1,
+        exit_price=3517.5,
+        gross_pnl_usdc=5.0,
+        avantis_win_fee_usdc=0.125,
+        net_pnl_usdc=4.875,
+        was_liquidated=False,
+        closed_at=datetime.now(timezone.utc),
+        close_tx_hash="0xbeef",
+    )
+    if persistence.is_enabled():
+        _fail("persistence.disabled.is_enabled", "expected False with no env")
+    if persistence.recent_trades_for("0xabc") != []:
+        _fail("persistence.disabled.recent", "expected empty list when disabled")
+    if persistence.leaderboard() != []:
+        _fail("persistence.disabled.leaderboard", "expected empty list when disabled")
+    _ok("persistence.disabled → all helpers silent no-ops")
+
+
+def test_persistence_init_no_env_disables() -> None:
+    """init() with empty env must leave the client unset and is_enabled() False,
+    even if it was previously enabled (e.g. test isolation)."""
+    import persistence
+
+    # Force a re-init with no env. Save and restore so this doesn't bleed.
+    saved_url = os.environ.pop("SUPABASE_URL", None)
+    saved_key = os.environ.pop("SUPABASE_SERVICE_ROLE_KEY", None)
+    persistence._client = "stale"
+    persistence._enabled = True
+    try:
+        persistence.init()
+        if persistence.is_enabled():
+            _fail("persistence.init.no_env", "is_enabled stayed True after empty-env init")
+        if persistence._client is not None:
+            _fail("persistence.init.no_env.client", f"expected None client, got {persistence._client!r}")
+    finally:
+        if saved_url is not None:
+            os.environ["SUPABASE_URL"] = saved_url
+        if saved_key is not None:
+            os.environ["SUPABASE_SERVICE_ROLE_KEY"] = saved_key
+    _ok("persistence.init.no env → disabled")
+
+
 async def main() -> None:
     print("Running audit-fix tests…")
     print()
@@ -239,6 +309,10 @@ async def main() -> None:
     test_exit_price_back_compute_losing_trade()
     test_exit_price_back_compute_full_liquidation()
     test_exit_price_degenerate_inputs_return_none()
+    print()
+    print("[persistence]")
+    test_persistence_disabled_is_noop()
+    test_persistence_init_no_env_disables()
     print()
     print("All tests passed.")
 

@@ -31,6 +31,7 @@ from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
 
 import auth
 from auth import AuthedUser, require_user
+import persistence
 from privy_send import send_via_privy
 from routes import price as price_module
 from usdc_approval import (
@@ -316,6 +317,22 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
             f"open tx broadcast ({tx_hash}) but trade did not appear after polling",
         )
     new_trade = trades[0]
+    opened_at = datetime.now(timezone.utc)
+
+    persistence.record_open(
+        did=user.did,
+        wallet_address=user.address,
+        trade_index=new_trade.trade.trade_index,
+        pair_index=pair_index,
+        leverage=body.leverage,
+        wager_usdc=body.wager_usdc,
+        house_fee_usdc=house_fee,
+        collateral_usdc=collateral,
+        entry_price=float(new_trade.trade.open_price),
+        liquidation_price=float(new_trade.liquidation_price),
+        opened_at=opened_at,
+        open_tx_hash=tx_hash,
+    )
 
     return OpenTradeResponse(
         trade_index=new_trade.trade.trade_index,
@@ -326,7 +343,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         collateral_usdc=collateral,
         entry_price=new_trade.trade.open_price,
         liquidation_price=new_trade.liquidation_price,
-        opened_at=datetime.now(timezone.utc),
+        opened_at=opened_at,
         tx_hash=tx_hash,
     )
 
@@ -409,6 +426,20 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     if exit_price is None:
         exit_price = 0.0
 
+    closed_at = datetime.now(timezone.utc)
+
+    persistence.record_close(
+        wallet_address=user.address,
+        trade_index=target.trade.trade_index,
+        exit_price=float(exit_price),
+        gross_pnl_usdc=float(gross_pnl),
+        avantis_win_fee_usdc=float(avantis_win_fee),
+        net_pnl_usdc=float(net_pnl),
+        was_liquidated=was_liquidated,
+        closed_at=closed_at,
+        close_tx_hash=tx_hash,
+    )
+
     return CloseTradeResponse(
         trade_index=target.trade.trade_index,
         entry_price=entry_price,
@@ -417,7 +448,7 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
         avantis_win_fee_usdc=avantis_win_fee,
         net_pnl_usdc=net_pnl,
         was_liquidated=was_liquidated,
-        closed_at=datetime.now(timezone.utc),
+        closed_at=closed_at,
         tx_hash=tx_hash,
     )
 
