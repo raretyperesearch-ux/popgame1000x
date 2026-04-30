@@ -22,6 +22,7 @@ Override with ETH_LAZER_FEED_ID if Avantis re-numbers.
 
 import asyncio
 import os
+import time
 from datetime import datetime, timezone
 from typing import Optional, Set
 
@@ -107,10 +108,14 @@ async def _run_feed_supervised() -> None:
     """Run the Avantis Lazer feed in a restart loop. The SDK closes the
     underlying WebSocket on transient network blips and the
     listen_* coroutine returns silently — without a supervisor the
-    stream stays dead until the pod restarts. Backoff caps at 60s."""
+    stream stays dead until the pod restarts. Backoff caps at 60s and
+    resets after a healthy run, so a brief blip after hours of uptime
+    doesn't pin the next reconnect at the cap."""
     global _feed_client
     backoff = 1.0
+    HEALTHY_RUN_S = 30.0
     while True:
+        started = time.monotonic()
         try:
             _feed_client = FeedClient(on_error=_on_feed_error, on_close=_on_feed_error)
             await _feed_client.listen_for_lazer_price_updates(
@@ -122,6 +127,8 @@ async def _run_feed_supervised() -> None:
             raise
         except Exception as e:  # noqa: BLE001
             print(f"⚠️  FeedClient crashed, reconnecting in {backoff:.0f}s: {e}")
+        if time.monotonic() - started >= HEALTHY_RUN_S:
+            backoff = 1.0
         await asyncio.sleep(backoff)
         backoff = min(backoff * 2, 60.0)
 
