@@ -185,11 +185,11 @@ function drawMiniPriceTag(
   plate?: HTMLImageElement | null,
 ) {
   ctx.save();
-  ctx.font = '10px "VT323", monospace';
+  ctx.font = '8px "VT323", monospace';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const boxW = 108;
-  const boxH = 28;
+  const boxW = 82;
+  const boxH = 21;
   const bx = clamp(Math.round(x - boxW / 2), 6, Math.max(6, stageW - boxW - 6));
   const by = clamp(Math.round(y - boxH / 2), 8, Math.max(8, stageH - boxH - 8));
   if (plate?.complete && plate.naturalWidth > 0) {
@@ -200,7 +200,7 @@ function drawMiniPriceTag(
     ctx.strokeStyle = "rgba(74,180,255,0.32)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(bx, by, boxW, boxH, 10);
+    ctx.roundRect(bx, by, boxW, boxH, 8);
     ctx.fill();
     ctx.stroke();
   }
@@ -212,11 +212,11 @@ function drawMiniPriceTag(
       ? `rgba(255,112,102,${0.76 + hot * 0.24})`
       : "rgba(244,236,216,0.72)";
   ctx.shadowColor = trend >= 0 ? "rgba(93,211,158,0.5)" : "rgba(255,95,86,0.5)";
-  ctx.shadowBlur = 4 + Math.sin(frame * 0.22) * 1.5;
-  ctx.fillText(arrow, bx + 31, by + boxH / 2 + 0.5);
+  ctx.shadowBlur = 3 + Math.sin(frame * 0.22);
+  ctx.fillText(arrow, bx + 24, by + boxH / 2 + 0.5);
   ctx.shadowBlur = 0;
   ctx.fillStyle = "rgba(244,236,216,0.76)";
-  ctx.fillText(label, bx + 69, by + boxH / 2 + 0.5);
+  ctx.fillText(label, bx + 53, by + boxH / 2 + 0.5);
   ctx.restore();
 }
 

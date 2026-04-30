@@ -465,16 +465,16 @@ body::before {
   top: 8px;
   left: 50%;
   transform: translateX(-50%) rotate(-0.6deg);
-  width: min(330px, 58vw);
-  min-height: 72px;
-  padding: 13px 34px 12px;
+  width: min(270px, 50vw);
+  min-height: 58px;
+  padding: 10px 28px 9px;
   background-image: url(/assets/ui/pnl-frame.png);
   background-repeat: no-repeat;
   background-size: 100% 100%;
   border: none;
   font-family: 'Press Start 2P', monospace;
   font-weight: normal;
-  font-size: 25px;
+  font-size: 20px;
   letter-spacing: 0;
   color: var(--muted);
   z-index: 8;
@@ -482,7 +482,7 @@ body::before {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   text-align: center;
   line-height: 1;
   image-rendering: pixelated;
@@ -493,7 +493,7 @@ body::before {
   pointer-events: none;
 }
 .pnl-readout-label {
-  font-size: 8px;
+  font-size: 7px;
   color: rgba(244,236,216,0.56);
   letter-spacing: 2px;
 }
@@ -2575,8 +2575,8 @@ body::before {
   .hand-slider { height: 20px; }
   .hand-slider::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -9px; }
   .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
-  .pnl-readout { width: min(280px, 62vw); min-height: 60px; padding: 11px 28px 10px; font-size: 19px; }
-  .pnl-readout-label { font-size: 7px; }
+  .pnl-readout { width: min(230px, 58vw); min-height: 50px; padding: 9px 22px 8px; font-size: 16px; }
+  .pnl-readout-label { font-size: 6px; }
   .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
 }
 @media (max-height: 600px) {
