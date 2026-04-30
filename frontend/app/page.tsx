@@ -32,6 +32,7 @@ export default function Home() {
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const [showPaperModeNotice, setShowPaperModeNotice] = useState(false);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTradeError = useCallback((msg: string) => {
     setTradeError(msg);
@@ -87,6 +88,16 @@ export default function Home() {
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
+
+  useEffect(() => {
+    if (!paperMode) {
+      setShowPaperModeNotice(false);
+      return;
+    }
+    setShowPaperModeNotice(true);
+    const t = setTimeout(() => setShowPaperModeNotice(false), 4800);
+    return () => clearTimeout(t);
+  }, [paperMode]);
 
   const gameRef = useRef<GameSceneHandle>(null);
 
@@ -337,9 +348,9 @@ export default function Home() {
           )}
         </div>
       )}
-      {paperMode && (
+      {paperMode && showPaperModeNotice && (
         <div className="paper-mode-banner" role="status">
-          PAPER MODE: not logged in — using test balance + simulated trades.
+          paper mode: test balance + simulated trades
         </div>
       )}
     </div>

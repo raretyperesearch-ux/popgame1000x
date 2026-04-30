@@ -465,16 +465,16 @@ body::before {
   top: 8px;
   left: 50%;
   transform: translateX(-50%) rotate(-0.6deg);
-  width: min(270px, 50vw);
-  min-height: 58px;
-  padding: 10px 28px 9px;
+  width: min(230px, 44vw);
+  min-height: 50px;
+  padding: 9px 24px 8px;
   background-image: url(/assets/ui/pnl-frame.png);
   background-repeat: no-repeat;
   background-size: 100% 100%;
   border: none;
   font-family: 'Press Start 2P', monospace;
   font-weight: normal;
-  font-size: 20px;
+  font-size: 17px;
   letter-spacing: 0;
   color: var(--muted);
   z-index: 8;
@@ -493,7 +493,7 @@ body::before {
   pointer-events: none;
 }
 .pnl-readout-label {
-  font-size: 7px;
+  font-size: 6px;
   color: rgba(244,236,216,0.56);
   letter-spacing: 2px;
 }
@@ -738,25 +738,29 @@ body::before {
   to   { transform: translate(-50%, 0); opacity: 1; }
 }
 
-/* Paper-mode notice — separate from .trade-error-banner so it doesn't
-   land on top of .pnl-readout (centered at the top of the stage). Sits
-   in the top-right corner just below the topbar as a passive badge. */
+/* Paper-mode notice: a short-lived mini toast, not a permanent HUD layer. */
 .paper-mode-banner {
   position: absolute;
-  top: 80px;
-  right: 8px;
-  background: rgba(8, 8, 13, 0.82);
-  border: 1.5px solid var(--border);
+  top: 108px;
+  left: 12px;
+  background: rgba(5, 7, 12, 0.72);
+  border: 1px solid rgba(244,236,216,0.16);
   color: var(--muted);
-  padding: 5px 8px;
-  max-width: 60%;
+  padding: 4px 6px;
+  max-width: 190px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
+  font-size: 5px;
   line-height: 1.4;
-  text-align: right;
-  z-index: 7;
+  text-align: left;
+  z-index: 6;
   pointer-events: none;
-  animation: trade-error-in 0.18s ease-out;
+  opacity: 0;
+  animation: paper-mode-toast 4.8s ease forwards;
+}
+@keyframes paper-mode-toast {
+  0% { opacity: 0; transform: translateY(-5px); }
+  9%, 72% { opacity: 0.82; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
 }
 
 /* ============ CONTROLS ============ */
@@ -2575,8 +2579,8 @@ body::before {
   .hand-slider { height: 20px; }
   .hand-slider::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -9px; }
   .hand-slider::-moz-range-thumb { width: 18px; height: 18px; }
-  .pnl-readout { width: min(230px, 58vw); min-height: 50px; padding: 9px 22px 8px; font-size: 16px; }
-  .pnl-readout-label { font-size: 6px; }
+  .pnl-readout { width: min(205px, 52vw); min-height: 44px; padding: 8px 20px 7px; font-size: 14px; }
+  .pnl-readout-label { font-size: 5px; }
   .lev-tag { top: 8px; right: 8px; padding: 3px 6px; font-size: 8px; }
 }
 @media (max-height: 600px) {
