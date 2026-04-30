@@ -93,3 +93,19 @@ def build_usdc_approval_tx(spender: str, amount_usdc: float) -> dict:
         "data": data,
         "value": 0,
     }
+
+
+def build_usdc_transfer_tx(to: str, amount_usdc: float) -> dict:
+    """Build a transaction dict for `USDC.transfer(to, amount)` on Base,
+    routed through the same Privy relay as the trade itself. Used to
+    sweep the house fee from the user's wallet to the treasury at
+    open-time."""
+    amount_raw = int(round(amount_usdc * (10**USDC_DECIMALS)))
+    selector = function_signature_to_4byte_selector("transfer(address,uint256)")
+    args = encode(["address", "uint256"], [_to_checksum(to), amount_raw])
+    data = "0x" + (selector + args).hex()
+    return {
+        "to": USDC_BASE_ADDRESS,
+        "data": data,
+        "value": 0,
+    }

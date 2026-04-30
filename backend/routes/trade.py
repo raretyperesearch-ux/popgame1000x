@@ -36,6 +36,7 @@ from privy_send import send_via_privy
 from routes import price as price_module
 from usdc_approval import (
     build_usdc_approval_tx,
+    build_usdc_transfer_tx,
     get_avantis_trading_address,
     get_eth_balance_wei,
     MIN_GAS_ETH_WEI,
@@ -318,6 +319,37 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         )
     new_trade = trades[0]
     opened_at = datetime.now(timezone.utc)
+
+    # Sweep the house fee from the user's wallet to the treasury. The
+    # collateral that just entered Avantis is already net of fee, so
+    # this transfer covers the difference between the wager debited
+    # client-side and what actually went to TradingStorage. Loud-log
+    # on failure rather than unwinding the open — easier to reconcile
+    # a missed fee from the txhash than to refund a successful trade.
+    if house_fee > 0:
+        if not _TREASURY_ADDRESS:
+            print(
+                f"⚠️  TREASURY_ADDRESS unset — skipping {house_fee} USDC fee "
+                f"collection for trade {new_trade.trade.trade_index} "
+                f"({user.address}). Set TREASURY_ADDRESS on Railway."
+            )
+        else:
+            try:
+                fee_tx = build_usdc_transfer_tx(_TREASURY_ADDRESS, house_fee)
+                if _is_legacy_user(user):
+                    receipt = await client.sign_and_get_receipt(fee_tx)
+                    fee_hash = _tx_hash_str(receipt)
+                else:
+                    fee_hash = await _send_user_tx(user, fee_tx)
+                print(
+                    f"✓ House fee {house_fee} USDC collected: "
+                    f"{user.address} -> {_TREASURY_ADDRESS} ({fee_hash})"
+                )
+            except Exception as e:  # noqa: BLE001
+                print(
+                    f"⚠️  House fee {house_fee} USDC NOT collected from "
+                    f"{user.address} (trade {new_trade.trade.trade_index}): {e}"
+                )
 
     persistence.record_open(
         did=user.did,
