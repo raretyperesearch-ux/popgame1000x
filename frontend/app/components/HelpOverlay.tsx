@@ -51,10 +51,10 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
         <div className="help-powered" aria-label="Powered by Avantis">
           <span>powered by</span>
           <Image
-            src="/assets/avantis-logo.svg"
+            src="/assets/avantis-logo.png"
             alt="Avantis"
-            width={140}
-            height={30}
+            width={644}
+            height={215}
             unoptimized
           />
         </div>

@@ -1729,7 +1729,8 @@ body::before {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease;
-  padding: 20px;
+  padding: 16px;
+  overflow-y: auto;
 }
 .help-overlay.show {
   opacity: 1;
@@ -1772,8 +1773,8 @@ body::before {
 .help-art {
   position: relative;
   z-index: 1;
-  width: min(100%, 220px);
-  height: 72px;
+  width: min(100%, 200px);
+  height: 60px;
   margin: -4px auto 0;
   filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5));
 }
@@ -1888,9 +1889,9 @@ body::before {
   color: rgba(244, 236, 216, 0.55);
 }
 .help-powered img {
-  height: 14px;
+  height: 18px;
   width: auto;
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
 /* ============ END OF GAME MODAL ============ */
