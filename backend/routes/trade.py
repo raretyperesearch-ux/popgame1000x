@@ -100,8 +100,8 @@ async def init_trader():
                 raise RuntimeError(
                     f"{_PAIR} min leverage is {min_lev} — ZFP requires <=75"
                 )
-            if max_lev is not None and max_lev < 250:
-                print(f"⚠️  {_PAIR} max leverage is {max_lev}, our cap is 250")
+            if max_lev is not None and max_lev < 500:
+                print(f"⚠️  {_PAIR} max leverage is {max_lev}, our cap is 500")
             lev_str = f"{min_lev}-{max_lev}" if min_lev is not None and max_lev is not None else "unknown"
             print(
                 f"✓ Avantis ready: pair={_PAIR} index={_eth_pair_index} "

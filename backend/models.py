@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 HOUSE_FEE_BPS = 80  # 0.8%
 MIN_LEVERAGE = 75
-MAX_LEVERAGE = 250
+MAX_LEVERAGE = 500
 
 
 class OpenTradeRequest(BaseModel):

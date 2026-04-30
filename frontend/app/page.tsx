@@ -267,7 +267,7 @@ export default function Home() {
   const handleLeverageChange = useCallback(
     (v: number) => {
       if (gameState !== "IDLE") return;
-      setLeverage(Math.max(75, Math.min(250, v)));
+      setLeverage(Math.max(75, Math.min(500, v)));
     },
     [gameState],
   );

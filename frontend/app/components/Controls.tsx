@@ -32,7 +32,7 @@ export default function Controls({
   const opening = busy && state === "IDLE";
   const disabled = state !== "IDLE" || opening;
   const wagerMax = Math.max(1, Math.floor(balance));
-  const boostHeat = Math.max(0, Math.min(1, (leverage - 75) / (250 - 75)));
+  const boostHeat = Math.max(0, Math.min(1, (leverage - 75) / (500 - 75)));
   const wagerHeat = Math.max(0, Math.min(1, wager / Math.max(1, wagerMax)));
   const estimatedNetPnl = pnl === null ? null : pnl > 0 ? pnl * 0.975 : pnl;
   const estimatedNetCopy =
@@ -70,7 +70,7 @@ export default function Controls({
           type="range"
           className="hand-slider"
           min={75}
-          max={250}
+          max={500}
           step={1}
           value={leverage}
           disabled={disabled}

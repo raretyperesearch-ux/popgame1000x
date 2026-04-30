@@ -37,7 +37,7 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
         </div>
         <div className="help-title">how this works</div>
         <div className="help-list" role="list">
-          <div role="listitem"><span>pick boost</span><strong>75&ndash;250&times;</strong></div>
+          <div role="listitem"><span>pick boost</span><strong>75&ndash;500&times;</strong></div>
           <div role="listitem"><span>set wager</span><strong>choose your run</strong></div>
           <div role="listitem"><span>tap jump</span><strong>enter</strong></div>
           <div role="listitem"><span>price up</span><strong>flames fire, you rise</strong></div>
