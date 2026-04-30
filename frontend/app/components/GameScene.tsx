@@ -1227,12 +1227,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.textAlign = "start";
       }
 
-      /* price label on right */
-      ctx.fillStyle = "rgba(244,236,216,0.4)";
-      ctx.font = '10px "VT323", monospace';
-      const curY = priceToY(a.price);
-      ctx.fillText("$" + a.price.toFixed(2), w - 72, curY - 4);
-
       /* ground fades away as we climb out of the atmosphere */
       const groundAlpha = clamp(1 - a.skyAlt * 1.6, 0, 1);
       if (groundAlpha > 0.01) {
@@ -1287,15 +1281,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.restore();
       }
 
-      /* race flag DOM element tracks the live price.
-         Targets priceToY(renderPrice) — renderPrice is already smoothed
-         by the per-tick lerp at 0.08*dtNorm, so the flag inherits the
-         chart line's smoothing and stays perfectly in sync with it.
-         A second gentle lerp at 0.09 polishes any remaining micro-jitter.
-         Clamp Y so the flag can't escape the stage when price is way
-         outside the visible chart range. Sprite is 36x36, center-anchor. */
+      /* race flag marks ENTRY. Current ETH is already attached to the
+         character, so the right-side flag anchors the start line instead
+         of duplicating live price. */
       const FLAG_H = 36;
-      const flagPriceY = priceToY(a.renderPrice);
+      const flagPriceY = isLive && entryPrice !== null ? priceToY(entryPrice) : priceToY(a.renderPrice);
       const flagTargetY = clamp(flagPriceY, FLAG_H / 2, h - FLAG_H / 2);
       if (a.flagDisplayY < 0) a.flagDisplayY = flagTargetY;
       a.flagDisplayY = lerp(a.flagDisplayY, flagTargetY, 0.09);

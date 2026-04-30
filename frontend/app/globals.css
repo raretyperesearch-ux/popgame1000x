@@ -595,7 +595,7 @@ body::before {
   filter:
     drop-shadow(0 2px 0 rgba(0,0,0,0.5))
     drop-shadow(0 0 6px rgba(255,95,86,0.25));
-  /* JS sets transform: translateY(...) every frame to track the live price.
+  /* JS sets transform: translateY(...) every frame to track the entry line.
      Initial offscreen position; the first drawScene tick moves it in. */
   transform: translateY(-100px);
   will-change: transform;
