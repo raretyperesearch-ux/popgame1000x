@@ -424,6 +424,19 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         <button className="mute-btn" onClick={onMuteClick} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute" : "Mute"}>
           {muted ? "🔇" : "🔊"}
         </button>
+        <a
+          className="discord-tab"
+          href="https://discord.gg/DjGgNUKhZ"
+          target="_blank"
+          rel="noreferrer"
+          title="Join Discord"
+          aria-label="Join the Scalprunnr Discord"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M8.1 7.7c1.1-.5 2.1-.7 3.1-.8l.3.6c.3 0 .6-.1.9-.1s.6 0 .9.1l.3-.6c1 .1 2 .3 3.1.8 1.5 2.2 2 4.3 1.8 6.4-1.2.9-2.4 1.4-3.5 1.7l-.7-1.1c.4-.1.8-.3 1.2-.6-.2-.1-.3-.2-.5-.3-2 .9-4.2.9-6.1 0-.2.1-.3.2-.5.3.4.3.8.5 1.2.6l-.7 1.1c-1.1-.3-2.3-.8-3.5-1.7-.1-2.1.4-4.2 1.8-6.4Zm2.1 5.1c.6 0 1.1-.6 1.1-1.2s-.5-1.2-1.1-1.2-1.1.6-1.1 1.2.5 1.2 1.1 1.2Zm3.8 0c.6 0 1.1-.6 1.1-1.2s-.5-1.2-1.1-1.2-1.1.6-1.1 1.2.5 1.2 1.1 1.2Z" />
+          </svg>
+          <span>discord</span>
+        </a>
       </div>
       <div className="topbar-right">
         {!authenticated ? (
