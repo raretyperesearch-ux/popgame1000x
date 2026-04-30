@@ -110,13 +110,13 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  padding: 14px 16px 10px;
+  gap: 7px;
+  padding: 10px 12px 8px;
   border-bottom: 1px dashed var(--border);
 }
 .brand {
-  width: clamp(170px, 26vw, 250px);
-  height: 72px;
+  width: clamp(150px, 25vw, 220px);
+  height: 62px;
   display: flex;
   align-items: center;
   transform: rotate(-1.2deg);
@@ -130,11 +130,11 @@ body::before {
   display: block;
 }
 .topbar:has(.avatar-btn) {
-  padding-inline: 12px;
+  padding-inline: 10px;
 }
 .topbar:has(.avatar-btn) .brand {
-  width: clamp(118px, 30vw, 150px);
-  height: 58px;
+  width: clamp(106px, 27vw, 138px);
+  height: 50px;
 }
 .topbar:has(.avatar-btn) .topbar-left,
 .topbar:has(.avatar-btn) .topbar-right {
@@ -146,10 +146,10 @@ body::before {
   height: 24px;
 }
 .topbar:has(.avatar-btn) .balance-pill {
-  max-width: 108px;
-  padding-inline: 9px;
-  gap: 6px;
-  font-size: 18px;
+  max-width: 96px;
+  padding-inline: 8px;
+  gap: 5px;
+  font-size: 16px;
 }
 .topbar:has(.avatar-btn) .balance-pill > span:last-child {
   overflow: hidden;
@@ -174,13 +174,13 @@ body::before {
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   min-width: 0;
 }
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   flex: 0 0 auto;
 }
@@ -2130,8 +2130,8 @@ body::before {
   color: var(--green);
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 20px;
-  padding: 4px 14px 4px 16px;
+  font-size: 18px;
+  padding: 4px 12px 4px 14px;
   border-radius: 999px;
   cursor: pointer;
   transform: rotate(0.4deg);
@@ -2144,7 +2144,7 @@ body::before {
   border-color: #c2ffe0;
 }
 .deposit-arrow {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 900;
   line-height: 0.7;
   transform: translateY(-1px);
@@ -2155,13 +2155,13 @@ body::before {
 .balance-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: 7px;
+  padding: 4px 10px;
   border: 1.5px dashed var(--muted);
   border-radius: 999px;
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 16px;
   color: var(--ink);
   transform: rotate(-0.6deg);
 }
@@ -2247,35 +2247,34 @@ body::before {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: min(300px, calc(100vw - 28px));
-  max-height: min(680px, calc(100dvh - 96px));
+  width: min(280px, calc(100vw - 28px));
+  max-height: min(560px, calc(100dvh - 116px));
   overflow-y: auto;
   overscroll-behavior: contain;
   background: #0e1018;
   border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 8px;
+  border-radius: 10px;
+  padding: 7px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
   z-index: 30;
   font-family: 'Caveat', cursive;
   animation: user-menu-pop 0.15s ease-out;
 }
 .wallet-menu {
-  /* Wallet pill sits mid-topbar — opening rightward would overflow the
-     cabinet. Center the menu on the pill and clamp its width to the
-     viewport so it always fits inside the cabinet on phone or desktop. */
-  right: auto;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(300px, calc(100vw - 32px));
+  right: 0;
+  left: auto;
+  transform: none;
+  width: min(268px, calc(100vw - 28px));
   animation: wallet-menu-pop 0.15s ease-out;
 }
 .wallet-menu-balances {
-  display: grid;
-  gap: 2px;
-  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 1px;
+  margin-top: 3px;
   font-family: 'VT323', monospace;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--ink);
   letter-spacing: 0.5px;
 }
@@ -2284,16 +2283,16 @@ body::before {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes wallet-menu-pop {
-  from { opacity: 0; transform: translate(-50%, -4px) scale(0.97); }
-  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .user-menu-header {
-  padding: 8px 10px 10px;
-  border-bottom: 1px dashed var(--border);
-  margin-bottom: 6px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px dashed rgba(244,236,216,0.12);
+  margin-bottom: 4px;
 }
 .user-menu-label {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--muted);
   letter-spacing: 1.5px;
   text-transform: lowercase;
@@ -2307,10 +2306,10 @@ body::before {
 }
 .user-menu-tag {
   display: inline-block;
-  margin-top: 6px;
-  padding: 2px 8px;
+  margin-top: 5px;
+  padding: 2px 7px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 6px;
   letter-spacing: 1px;
   text-transform: uppercase;
   border: 1px solid;
@@ -2383,14 +2382,14 @@ body::before {
 }
 .user-menu-section {
   border-top: 1px dashed rgba(244,236,216,0.12);
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
 }
 .user-menu-section-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 2px;
+  padding: 3px 8px 2px;
   font-family: 'Press Start 2P', monospace;
   font-size: 6px;
   color: var(--muted);
@@ -2410,11 +2409,11 @@ body::before {
 .wallet-action {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   width: 100%;
   background: transparent;
   border: none;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
@@ -2426,10 +2425,10 @@ body::before {
 }
 .wallet-action-arrow {
   flex: 0 0 auto;
-  width: 18px;
+  width: 14px;
   text-align: center;
   font-family: 'VT323', monospace;
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1;
   color: var(--cyan);
 }
@@ -2442,13 +2441,13 @@ body::before {
 .wallet-action-title {
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1;
   letter-spacing: 0.5px;
 }
 .wallet-action-sub {
   font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
+  font-size: 5px;
   color: var(--muted);
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -2457,17 +2456,17 @@ body::before {
 .withdraw-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 4px 8px 6px;
+  gap: 5px;
+  padding: 3px 6px 5px;
 }
 .withdraw-tab {
   border: 1px solid rgba(244,236,216,0.22);
   background: rgba(244,236,216,0.04);
   color: var(--muted);
   border-radius: 6px;
-  padding: 7px 6px;
+  padding: 5px 6px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
+  font-size: 6px;
   cursor: pointer;
 }
 .withdraw-tab.active {
@@ -2476,15 +2475,15 @@ body::before {
   background: rgba(93,211,158,0.1);
 }
 .withdraw-panel {
-  margin: 0 8px 8px;
-  padding: 9px;
+  margin: 0 6px 6px;
+  padding: 7px;
   border: 1px solid rgba(244,236,216,0.16);
   border-radius: 8px;
   background: rgba(0,0,0,0.24);
 }
 .withdraw-field {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .withdraw-field > span {
   display: block;
@@ -2503,9 +2502,9 @@ body::before {
   background: rgba(0,0,0,0.38);
   color: var(--ink);
   font-family: 'VT323', monospace;
-  font-size: 17px;
+  font-size: 15px;
   letter-spacing: 0;
-  padding: 7px 8px;
+  padding: 5px 7px;
   outline: none;
 }
 .withdraw-field input:focus {
@@ -2524,14 +2523,14 @@ body::before {
   color: var(--ink);
   font-family: 'Press Start 2P', monospace;
   font-size: 6px;
-  padding: 0 8px;
+  padding: 0 7px;
   cursor: pointer;
   text-transform: uppercase;
 }
 .withdraw-hint {
-  margin: 2px 0 8px;
+  margin: 1px 0 6px;
   font-family: 'VT323', monospace;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.1;
 }
 .withdraw-hint.ok { color: var(--muted); }
