@@ -437,6 +437,23 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
           </svg>
           <span>discord</span>
         </a>
+        <a
+          className="powered-tab"
+          href="https://www.avantisfi.com"
+          target="_blank"
+          rel="noreferrer"
+          title="Powered by Avantis"
+          aria-label="Powered by Avantis"
+        >
+          <span className="powered-tab-prefix">powered by</span>
+          <Image
+            src="/assets/avantis-logo.svg"
+            alt="Avantis"
+            width={64}
+            height={14}
+            unoptimized
+          />
+        </a>
       </div>
       <div className="topbar-right">
         {!authenticated ? (

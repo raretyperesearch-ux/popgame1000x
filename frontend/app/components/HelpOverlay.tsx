@@ -36,19 +36,30 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
           />
         </div>
         <div className="help-title">how this works</div>
+        <div className="help-subtitle">leveraged ETH/USD perpetuals, dressed as a jumper</div>
         <div className="help-list" role="list">
-          <div role="listitem"><span>boost</span><strong>75&ndash;500&times; leverage on ETH/USD</strong></div>
-          <div role="listitem"><span>wager</span><strong>USDC at stake &mdash; your max loss</strong></div>
-          <div role="listitem"><span>jump</span><strong>opens a leveraged long on Avantis</strong></div>
-          <div role="listitem"><span>rise</span><strong>price up &times; boost = PnL up</strong></div>
-          <div role="listitem"><span>fall</span><strong>price down &times; boost = PnL down</strong></div>
-          <div role="listitem"><span>crash line</span><strong>liquidation &mdash; touch it, wager gone</strong></div>
-          <div role="listitem"><span>pull chute</span><strong>close the position, keep your PnL</strong></div>
-          <div role="listitem"><span>fees</span><strong>2.5% house on open &middot; 2.5% Avantis on profit</strong></div>
+          <div role="listitem"><span>leverage</span><strong>75&ndash;500&times; exposure on the ETH/USD perpetual</strong></div>
+          <div role="listitem"><span>collateral</span><strong>USDC margin posted &mdash; loss is capped at this amount</strong></div>
+          <div role="listitem"><span>open</span><strong>jump places a leveraged long on Avantis (Base)</strong></div>
+          <div role="listitem"><span>profit</span><strong>1% ETH move &times; your leverage = % gain on collateral</strong></div>
+          <div role="listitem"><span>loss</span><strong>same math the other way &mdash; mirrors ETH downside</strong></div>
+          <div role="listitem"><span>liquidation</span><strong>collateral exhausted &rarr; auto-close, wager forfeit</strong></div>
+          <div role="listitem"><span>close</span><strong>pull chute exits at market; net PnL settles to USDC</strong></div>
+          <div role="listitem"><span>fees</span><strong>2.5% house fee on open &middot; 2.5% Avantis fee on profit only</strong></div>
         </div>
         <button className="help-got-it" onClick={onClose}>
           got it
         </button>
+        <div className="help-powered" aria-label="Powered by Avantis">
+          <span>powered by</span>
+          <Image
+            src="/assets/avantis-logo.svg"
+            alt="Avantis"
+            width={140}
+            height={30}
+            unoptimized
+          />
+        </div>
       </div>
     </div>
   );

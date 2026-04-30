@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60" fill="none" role="img" aria-label="avantis">
+  <!--
+    Approximation of the Avantis brand mark + wordmark.
+    Replace this file with the official asset to match brand exactly;
+    layout-wise the consumer scales by height so any aspect-preserving
+    SVG/PNG with a transparent background will drop in fine.
+  -->
+  <g fill="#ffffff">
+    <path d="M2 50 C2 22 14 6 30 6 C46 6 58 22 58 50 L48 50 C48 30 40 16 30 16 C20 16 12 30 12 50 Z"/>
+    <path d="M44 50 C44 22 56 6 72 6 C88 6 100 22 100 50 L90 50 C90 30 82 16 72 16 C62 16 54 30 54 50 Z"/>
+  </g>
+  <text x="116" y="44"
+        font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="40" font-weight="600" letter-spacing="-1.4" fill="#ffffff">avantis</text>
+</svg>
