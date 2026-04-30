@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 import auth
-from routes import trade, price, balance, wallet
+import persistence
+from routes import trade, price, balance, wallet, history
 
 
 def _init_privy_client():
@@ -139,6 +140,130 @@ async def _maybe_create_key_quorum(privy_client) -> None:
         print(f"⚠️  Key quorum auto-create failed: {e}")
 
 
+async def _validate_quorum_alignment(privy_client) -> None:
+    """Boot-time sanity check for the three-env-var trap that produces
+    silent 401s on first trade.
+
+    Three independent env vars must all match the same Privy key
+    quorum ID:
+      - PRIVY_KEY_QUORUM_ID       (Railway, this backend)
+      - PRIVY_EXPECTED_SIGNER_ID  (Railway, used by /wallet/status)
+      - NEXT_PUBLIC_PRIVY_SIGNER_ID (Vercel, used by frontend addSigners)
+
+    The frontend var has to be checked at frontend build time; we mirror
+    it on the backend env so we can at least flag mismatches in the
+    logs. We also fetch the quorum from Privy and verify our auth
+    key's public PEM is one of the registered keys — that's the
+    actual cause of the 401 ("No valid authorization keys") when it
+    happens.
+
+    All checks are non-fatal: misalignment doesn't prevent boot, it
+    just prints a giant banner so the operator sees it on Railway."""
+    quorum_id = os.getenv("PRIVY_KEY_QUORUM_ID", "").strip()
+    expected_signer = os.getenv("PRIVY_EXPECTED_SIGNER_ID", "").strip()
+    public_signer = os.getenv("NEXT_PUBLIC_PRIVY_SIGNER_ID", "").strip()
+    auth_key = os.getenv("PRIVY_AUTH_PRIVATE_KEY", "")
+
+    if not quorum_id and not expected_signer and not public_signer:
+        print(
+            "⚠️  No PRIVY_KEY_QUORUM_ID / PRIVY_EXPECTED_SIGNER_ID set — "
+            "delegated trades will 401 until a quorum is registered. "
+            "Run `python -m scripts.setup_quorum` (or set "
+            "PRIVY_AUTO_CREATE_QUORUM=1 once) to bootstrap."
+        )
+        return
+
+    ids = {
+        "PRIVY_KEY_QUORUM_ID": quorum_id,
+        "PRIVY_EXPECTED_SIGNER_ID": expected_signer,
+        "NEXT_PUBLIC_PRIVY_SIGNER_ID": public_signer,
+    }
+    set_ids = {k: v for k, v in ids.items() if v}
+    distinct = set(set_ids.values())
+    if len(distinct) > 1:
+        print()
+        print("=" * 72)
+        print("✗ PRIVY SIGNER ID MISMATCH — delegated trades will 401 silently.")
+        for k, v in ids.items():
+            print(f"  {k}={v or '(unset)'}")
+        print("All three vars must equal the SAME Privy key-quorum ID.")
+        print("=" * 72)
+        print()
+        return
+
+    # IDs all match (or only one is set). Now verify our auth key's
+    # public PEM is one of the registered keys on that quorum.
+    if not quorum_id:
+        # Only frontend/expected vars are set; we can't fetch the quorum
+        # without the ID. Warn so the operator notices the gap.
+        print(
+            "⚠️  PRIVY_KEY_QUORUM_ID is unset on the backend even though signer IDs "
+            "are configured — set it to the quorum ID so this validator can "
+            "verify the auth key's public PEM is registered on it."
+        )
+        return
+    if not auth_key:
+        print(
+            "⚠️  PRIVY_KEY_QUORUM_ID set but PRIVY_AUTH_PRIVATE_KEY is unset — "
+            "backend cannot sign. Set the auth key registered on the quorum."
+        )
+        return
+
+    try:
+        from privy_send import _normalize_auth_key
+        from cryptography.hazmat.primitives import serialization
+
+        body = _normalize_auth_key(auth_key)
+        pem = f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----"
+        priv = serialization.load_pem_private_key(pem.encode(), password=None)
+        our_pub = priv.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode().strip()
+
+        quorum = await privy_client.key_quorums.get(key_quorum_id=quorum_id)
+        keys = getattr(quorum, "authorization_keys", None) or []
+        registered_pems = []
+        for k in keys:
+            pk = (
+                getattr(k, "public_key", None)
+                or (k.get("public_key") if isinstance(k, dict) else None)
+            )
+            if isinstance(pk, str):
+                registered_pems.append(pk.strip())
+        ok = any(_pem_equal(our_pub, p) for p in registered_pems)
+        if ok:
+            print(
+                f"✓ Privy quorum alignment verified — {quorum_id} contains "
+                f"the public key derived from PRIVY_AUTH_PRIVATE_KEY."
+            )
+        else:
+            print()
+            print("=" * 72)
+            print(f"✗ PRIVY AUTH KEY NOT REGISTERED on quorum {quorum_id}")
+            print("  Delegated trades WILL 401. Either:")
+            print("    a) PRIVY_AUTH_PRIVATE_KEY is wrong for this quorum, or")
+            print("    b) The quorum is missing this key. Re-run "
+                  "`python -m scripts.setup_quorum` (with the SAME auth key) "
+                  "and align all three signer-ID env vars to the new quorum.")
+            print(f"  Registered keys on quorum: {len(registered_pems)}")
+            print("=" * 72)
+            print()
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"⚠️  Privy quorum alignment check skipped — could not fetch "
+            f"or compare quorum {quorum_id}: {e}"
+        )
+
+
+def _pem_equal(a: str, b: str) -> bool:
+    """Compare two PEMs ignoring whitespace + line-wrap differences. Privy
+    sometimes returns PEMs with different newline conventions than what we
+    derive locally, so a literal string match would false-negative."""
+    norm = lambda s: "".join(s.split())  # noqa: E731 — local one-shot
+    return norm(a) == norm(b)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Boot order:
@@ -155,6 +280,9 @@ async def lifespan(app: FastAPI):
     if privy_client is not None:
         auth.set_privy_client(privy_client)
         await _maybe_create_key_quorum(privy_client)
+        await _validate_quorum_alignment(privy_client)
+
+    persistence.init()
 
     try:
         await trade.init_trader()
@@ -225,6 +353,7 @@ app.include_router(trade.router, prefix="/trade", tags=["trade"])
 app.include_router(price.router, prefix="/price", tags=["price"])
 app.include_router(balance.router, prefix="/balance", tags=["balance"])
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
+app.include_router(history.router, prefix="/history", tags=["history"])
 
 
 @app.get("/")

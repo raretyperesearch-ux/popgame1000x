@@ -219,3 +219,30 @@ export async function getBalance(
     walletAddress,
   );
 }
+
+export interface WalletStatus {
+  address: string;
+  delegated: boolean;
+  quorum_id: string | null;
+  additional: string[];
+  expected_signer: string | null;
+  error?: string;
+}
+
+/* Backend's view of the user's Privy delegation: does this wallet have
+   a signer matching PRIVY_EXPECTED_SIGNER_ID? Used after addSigners()
+   to confirm the backend would actually be able to sign trades — the
+   frontend's own `delegated` flag is the legacy delegateAction signal
+   and doesn't flip for the new useSigners flow. */
+export async function getWalletStatus(
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<WalletStatus | null> {
+  if (isMock()) return null;
+  return apiFetch<WalletStatus>(
+    "/wallet/status",
+    { method: "GET" },
+    getAccessToken,
+    walletAddress,
+  );
+}

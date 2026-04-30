@@ -12,5 +12,7 @@ pyjwt[crypto]>=2.9,<3
 eth-abi
 eth-utils
 
-# P3 additions:
-# supabase
+# Supabase persistence — trade history + leaderboard. Best-effort:
+# when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are unset, persistence
+# is a no-op and trades still execute normally.
+supabase>=2.7,<3
