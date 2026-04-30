@@ -449,7 +449,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
           <Image
             src="/assets/avantis-logo.svg"
             alt="Avantis"
-            width={64}
+            width={63}
             height={14}
             unoptimized
           />
