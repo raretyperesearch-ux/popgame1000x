@@ -35,7 +35,8 @@ const CHART_SPEED_LIVE = 0.45; // sub-point scroll per frame (live)
 const PRICE_VOL = 0.65; // random walk step for new chart points
 const STEP_FREQ = 4.2; // step cycles per second during run
 const BODY_BOB_PX = 3.5; // vertical bob amplitude during run
-const DUST_MAX = 15; // max dust particles alive
+const DUST_MAX = 15; // max ground particles alive
+const FLIGHT_FX_MAX = 54; // max live-flight particles alive
 const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const PREPARE_DURATION = 300; // ms of charge + ground-break anticipation
@@ -45,6 +46,7 @@ const GAME_SPEED = 0.45;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
 const WATER_HAZARD_SRC = "/assets/water-hazard.png";
 const MONEY_PROPS_SRC = "/assets/money-props.png";
+const FLIGHT_HYPE_FX_SRC = "/assets/fx/flight-hype/sheet-transparent.png";
 const WATER_SRC_W = 2172;
 const WATER_SRC_H = 350;
 const GRASS_SRC_H = 256;
@@ -61,6 +63,8 @@ const WATER_SURFACE_DRAW_PCT = 0.42;
 const WATER_FOAM_OVERLAP = 14;
 const MONEY_PROP_CELL = 32;
 const MONEY_PROP_COLS = 4;
+const FLIGHT_FX_CELL = 96;
+const FLIGHT_FX_COLS = 4;
 const TERRAIN_SCROLL_PX = 18;
 const SPRITE_FRAME_W = 72;
 const SPRITE_FRAME_H = 80;
@@ -110,6 +114,18 @@ const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
 const SETTLE_TIMEOUT_MS = 4500;
+const FLIGHT_CUE_LINES = [
+  "LET IT COOK!",
+  "STAY AIRBORNE",
+  "CANDLE ROCKET!",
+  "HOLD THE LINE",
+  "MOON PATH!",
+  "STACKING!",
+  "KEEP IT CLEAN",
+  "WATCH THE RED!",
+];
+
+type FlightFxKind = "streak" | "spark" | "coin" | "ring";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
@@ -220,6 +236,55 @@ function drawMiniPriceTag(
   ctx.restore();
 }
 
+function drawFlightBubble(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  stageW: number,
+  stageH: number,
+  lifeT: number,
+) {
+  const alpha = clamp(Math.sin(clamp(lifeT, 0, 1) * Math.PI), 0, 1);
+  if (alpha <= 0.02) return;
+  ctx.save();
+  ctx.font = '7px "Press Start 2P", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const tw = ctx.measureText(text).width;
+  const bw = clamp(tw + 22, 82, 154);
+  const bh = 24;
+  const bx = clamp(Math.round(x - bw * 0.18), 8, Math.max(8, stageW - bw - 8));
+  const by = clamp(Math.round(y - 58 - Math.sin(lifeT * Math.PI) * 8), 14, Math.max(14, stageH - bh - 14));
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "rgba(4,8,18,0.86)";
+  ctx.strokeStyle = "rgba(255,217,77,0.86)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(bx + 18, by + bh - 1);
+  ctx.lineTo(bx + 29, by + bh + 9);
+  ctx.lineTo(bx + 37, by + bh - 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowColor = "rgba(255,217,77,0.65)";
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = "#fff0a0";
+  ctx.fillText(text, bx + bw / 2, by + bh / 2 + 1);
+  ctx.restore();
+}
+
+function flightFxFrame(kind: FlightFxKind, seed: number): number {
+  if (kind === "streak") return [0, 4, 8, 14][Math.floor(featureNoise(seed * 2.13) * 4) % 4];
+  if (kind === "coin") return [1, 13][Math.floor(featureNoise(seed * 3.77) * 2) % 2];
+  if (kind === "ring") return [2, 12][Math.floor(featureNoise(seed * 5.19) * 2) % 2];
+  return [3, 5, 6, 7, 9, 10, 11, 15][Math.floor(featureNoise(seed * 7.41) * 8) % 8];
+}
+
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
   startJump: (
@@ -275,6 +340,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const waterImageReadyRef = useRef(false);
   const moneyPropsImageRef = useRef<HTMLImageElement | null>(null);
   const moneyPropsImageReadyRef = useRef(false);
+  const flightFxImageRef = useRef<HTMLImageElement | null>(null);
+  const flightFxImageReadyRef = useRef(false);
   const ethTickerImageRef = useRef<HTMLImageElement | null>(null);
   const ethTickerImageReadyRef = useRef(false);
 
@@ -344,6 +411,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       x: number; y: number; vx: number; vy: number;
       life: number; size: number;
     }>,
+    flightFx: [] as Array<{
+      kind: FlightFxKind; x: number; y: number; vx: number; vy: number;
+      life: number; maxLife: number; size: number; hue: number; frame: number; rot: number;
+    }>,
+    flightBubble: {
+      text: "",
+      start: 0,
+      until: 0,
+    },
+    nextFlightCueAt: 0,
+    lastFlightMilestone: 0,
+    liveShake: 0,
     loco: {
       bodyX: 0,
       bodyY: 0,
@@ -1320,6 +1399,68 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       ctx.globalAlpha = 1;
 
+      /* long-flight hype FX: these are independent of the ground, so quiet
+         400s positions still feel alive without falsifying the trade path. */
+      const flightFx = anim.current.flightFx;
+      const fxImg = flightFxImageReadyRef.current ? flightFxImageRef.current : null;
+      for (const fx of flightFx) {
+        const lifeN = clamp(fx.life / fx.maxLife, 0, 1);
+        const alpha = Math.sin(lifeN * Math.PI);
+        if (alpha < 0.02) continue;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.imageSmoothingEnabled = false;
+        if (fxImg?.complete && fxImg.naturalWidth > 0) {
+          const sx = (fx.frame % FLIGHT_FX_COLS) * FLIGHT_FX_CELL;
+          const sy = Math.floor(fx.frame / FLIGHT_FX_COLS) * FLIGHT_FX_CELL;
+          const drawSize = fx.size * (0.75 + 0.25 * alpha);
+          ctx.translate(Math.round(fx.x), Math.round(fx.y));
+          ctx.rotate(fx.rot);
+          ctx.drawImage(
+            fxImg,
+            sx, sy, FLIGHT_FX_CELL, FLIGHT_FX_CELL,
+            Math.round(-drawSize / 2), Math.round(-drawSize / 2),
+            Math.round(drawSize), Math.round(drawSize),
+          );
+        } else if (fx.kind === "streak") {
+          ctx.strokeStyle = fx.hue > 190 ? "#9ffcff" : "#ffd94d";
+          ctx.lineWidth = Math.max(1, fx.size);
+          ctx.beginPath();
+          ctx.moveTo(fx.x, fx.y);
+          ctx.lineTo(fx.x - 18 - fx.size * 4, fx.y + fx.vy * 7);
+          ctx.stroke();
+        } else if (fx.kind === "spark") {
+          ctx.fillStyle = fx.hue > 190 ? "#78f7ff" : "#fff0a0";
+          ctx.shadowColor = fx.hue > 190 ? "rgba(120,247,255,0.6)" : "rgba(255,217,77,0.6)";
+          ctx.shadowBlur = 5;
+          ctx.fillRect(Math.round(fx.x), Math.round(fx.y), Math.max(2, fx.size), Math.max(2, fx.size));
+        } else if (fx.kind === "coin") {
+          const r = fx.size * (0.75 + 0.25 * Math.sin(a.frame * 0.18 + fx.x));
+          ctx.fillStyle = "#ffd94d";
+          ctx.strokeStyle = "#8f5314";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#fff0a0";
+          ctx.fillRect(Math.round(fx.x - 1), Math.round(fx.y - r * 0.45), 2, Math.max(2, r));
+        } else {
+          const r = fx.size * (1.2 - lifeN) * 2.8;
+          ctx.strokeStyle = "rgba(159,252,255,0.9)";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.ellipse(fx.x, fx.y, r * 1.8, r, -0.18, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      const bubble = anim.current.flightBubble;
+      if (bubble.until > performance.now() && bubble.text) {
+        const lifeT = (performance.now() - bubble.start) / Math.max(1, bubble.until - bubble.start);
+        drawFlightBubble(ctx, bubble.text, w * FIG_X_PCT + 18, h - anim.current.smoothAlt, w, h, lifeT);
+      }
+
       /* return priceToY so the tick can use it */
       return priceToY;
     },
@@ -1366,6 +1507,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.spriteParachuteStart = 0;
     a.prevStepHalf = 0;
     a.dustParticles.length = 0;
+    a.flightFx.length = 0;
+    a.flightBubble = { text: "", start: 0, until: 0 };
+    a.nextFlightCueAt = 0;
+    a.lastFlightMilestone = 0;
+    a.liveShake = 0;
     a.loco.grounded = true;
     a.loco.stepPhase = 0;
     a.loco.plantedFoot = "left";
@@ -1547,6 +1693,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteLandStart = 0;
       a.spriteParachuteStart = 0;
       a.dustParticles.length = 0;
+      a.flightFx.length = 0;
+      a.flightBubble = { text: "", start: 0, until: 0 };
+      a.nextFlightCueAt = 0;
+      a.lastFlightMilestone = 0;
+      a.liveShake = 0;
       a.loco.grounded = true;
       a.loco.stepPhase = 0;
       a.loco.plantedFoot = "left";
@@ -1633,10 +1784,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const crashZoom = time < a.crashZoomUntil;
       const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? 2.45 : 1;
       a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.22 : 0.1) * dtNorm);
+      a.liveShake = Math.max(0, a.liveShake - dt * 0.004);
       const canvas = canvasRef.current;
       if (canvas) {
+        const shakeX = a.liveShake > 0 ? Math.round(Math.sin(time * 0.08) * a.liveShake * 2.2) : 0;
+        const shakeY = a.liveShake > 0 ? Math.round(Math.cos(time * 0.095) * a.liveShake * 1.5) : 0;
         canvas.style.transformOrigin = `${figScreenX.toFixed(1)}px ${(a.stageH - a.smoothAlt).toFixed(1)}px`;
-        canvas.style.transform = `scale(${a.cinematicZoom.toFixed(3)})`;
+        canvas.style.transform = `translate3d(${shakeX}px, ${shakeY}px, 0) scale(${a.cinematicZoom.toFixed(3)})`;
       }
 
       /* liqPrice comes from the on-chain trade snapshotted at LIVE entry
@@ -1695,6 +1849,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         d.y += d.vy * dtNorm;
         d.vy += 0.03 * dtNorm;
         if (d.life <= 0) a.dustParticles.splice(i, 1);
+      }
+      for (let i = a.flightFx.length - 1; i >= 0; i--) {
+        const fx = a.flightFx[i];
+        fx.life -= dt / 1000;
+        fx.x += fx.vx * dtNorm;
+        fx.y += fx.vy * dtNorm;
+        fx.vy += (fx.kind === "coin" ? 0.018 : 0.006) * dtNorm;
+        if (fx.life <= 0 || fx.x < -80 || fx.y < -80 || fx.y > a.stageH + 80) {
+          a.flightFx.splice(i, 1);
+        }
       }
 
       if (DEBUG_FEET) {
@@ -1954,6 +2118,37 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const pnlDollars = pnlPct * a.positionWager;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
+        const liveElapsed = time - (a.tradeStartTime || time);
+        const cueEvery = 7800 + (featureNoise(Math.floor(liveElapsed / 7800) * 9.17) * 5200);
+        const milestone = Math.floor(liveElapsed / 30000);
+        if (a.nextFlightCueAt === 0) a.nextFlightCueAt = time + 3600;
+        if (time >= a.nextFlightCueAt || milestone > a.lastFlightMilestone) {
+          const lineSeed = Math.floor(liveElapsed / 1000) + Math.floor(Math.abs(pnlPct) * 100);
+          const urgentLine = pnlPct < -0.18 ? "PULL UP!" : pnlPct > 0.18 ? "LET IT RIP!" : FLIGHT_CUE_LINES[lineSeed % FLIGHT_CUE_LINES.length];
+          a.flightBubble = { text: urgentLine, start: time, until: time + 2450 };
+          a.nextFlightCueAt = time + cueEvery;
+          a.lastFlightMilestone = milestone;
+          a.liveShake = Math.max(a.liveShake, pnlPct < -0.12 ? 1.6 : 0.85);
+          for (let k = 0; k < 10 && a.flightFx.length < FLIGHT_FX_MAX; k++) {
+            const kind: FlightFxKind = k % 5 === 0 ? "ring" : k % 3 === 0 ? "coin" : "spark";
+            const seed = liveElapsed + k * 17 + a.frame;
+            const maxLife = kind === "ring" ? 0.78 : 0.62 + Math.random() * 0.5;
+            a.flightFx.push({
+              kind,
+              x: figScreenX - 12 + (Math.random() - 0.5) * 42,
+              y: a.stageH - (a.smoothAlt - 16) + (Math.random() - 0.5) * 36,
+              vx: -0.6 - Math.random() * 1.8,
+              vy: -0.8 + Math.random() * 1.2,
+              life: maxLife,
+              maxLife,
+              size: kind === "ring" ? 62 : kind === "coin" ? 38 : 42 + Math.random() * 22,
+              hue: k % 2 ? 205 : 48,
+              frame: flightFxFrame(kind, seed),
+              rot: (Math.random() - 0.5) * 0.45,
+            });
+          }
+        }
+
         const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
         if (pnlPct > 0.002 && a.price > a.entry) {
           const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
@@ -1975,19 +2170,42 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.smoothRot = lerp(a.smoothRot, targetRot, LIVE_BANK_LERP * dtNorm);
 
         /* thrust sparks / air streaks */
-        if (a.smoothDelta > 0.001) {
-          if (a.dustParticles.length < DUST_MAX) {
-            for (let k = 0; k < 2; k++) {
-              a.dustParticles.push({
-                x: figScreenX - 9 + Math.random() * 4,
-                y: a.stageH - (a.smoothAlt - 22) + (Math.random() - 0.5) * 6,
-                vx: -0.9 - Math.random() * 0.9,
-                vy: (Math.random() - 0.5) * 0.35,
-                life: 0.18 + Math.random() * 0.18,
-                size: 0.6 + Math.random() * 1.4,
-              });
-            }
+        const thrustHeat = clamp(Math.abs(a.smoothDelta) * 16 + Math.max(0, pnlPct) * 1.8, 0, 1);
+        const streakRate = a.smoothDelta > 0.001 ? 2 : 1;
+        if ((a.smoothDelta > 0.001 || a.frame % 10 === 0) && a.flightFx.length < FLIGHT_FX_MAX) {
+          for (let k = 0; k < streakRate; k++) {
+            const kind: FlightFxKind = "streak";
+            const maxLife = 0.32 + Math.random() * 0.22;
+            a.flightFx.push({
+              kind,
+              x: figScreenX - 7 + Math.random() * 8,
+              y: a.stageH - (a.smoothAlt - 21) + (Math.random() - 0.5) * (8 + thrustHeat * 14),
+              vx: -1.1 - Math.random() * (1.0 + thrustHeat * 2.2),
+              vy: (Math.random() - 0.5) * (0.22 + thrustHeat * 0.5),
+              life: maxLife,
+              maxLife,
+              size: 32 + Math.random() * (20 + thrustHeat * 34),
+              hue: thrustHeat > 0.45 ? 48 : 205,
+              frame: flightFxFrame(kind, a.frame + k * 11),
+              rot: (Math.random() - 0.5) * 0.22,
+            });
           }
+        }
+        if (pnlPct > 0.1 && a.frame % 16 === 0 && a.flightFx.length < FLIGHT_FX_MAX) {
+          const kind: FlightFxKind = "coin";
+          a.flightFx.push({
+            kind,
+            x: figScreenX + 18,
+            y: a.stageH - a.smoothAlt - 16,
+            vx: -0.8 - Math.random() * 0.8,
+            vy: -0.45 - Math.random() * 0.35,
+            life: 0.9,
+            maxLife: 0.9,
+            size: 28 + Math.random() * 20,
+            hue: 48,
+            frame: flightFxFrame(kind, a.frame),
+            rot: (Math.random() - 0.5) * 0.35,
+          });
         }
 
         /* Position figure above the terrain floor. We don't touch
@@ -2060,13 +2278,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.frame++;
       }
 
-      if (priceToY && (a.state === "LIVE" || a.state === "STOPPED")) {
+      if (priceToY && a.state !== "DEAD") {
         const ctx = canvasRef.current?.getContext("2d");
         if (ctx) {
           const lift = a.skyAlt * a.stageH * 0.25;
           const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
           const footY = a.stageH - a.smoothAlt - lift;
-          const tagY = footY - SPRITE_DISPLAY_H * figScale - 20;
+          const tagY = footY - SPRITE_DISPLAY_H * figScale - (a.state === "LIVE" ? 20 : 16);
           const priceTrend = a.price - a.prevPrice;
           const tickerPlate = ethTickerImageReadyRef.current ? ethTickerImageRef.current : null;
           drawMiniPriceTag(ctx, `ETH $${a.price.toFixed(2)}`, figScreenX, tagY, a.stageW, a.stageH, priceTrend, a.frame, tickerPlate);
@@ -2140,6 +2358,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     return () => {
       moneyPropsImageRef.current = null;
       moneyPropsImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      flightFxImageReadyRef.current = true;
+    };
+    img.src = FLIGHT_HYPE_FX_SRC;
+    flightFxImageRef.current = img;
+    return () => {
+      flightFxImageRef.current = null;
+      flightFxImageReadyRef.current = false;
     };
   }, []);
 
