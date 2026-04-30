@@ -89,6 +89,7 @@ const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
 const PARACHUTE_MIN_AIR_GAP_PX = 48;
+const HUD_NO_FLY_GAP_PX = 22;
 type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "boost" | "fall" | "land" | "parachute" | "fail";
 const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "boost" | "fall" | "land" | "parachute">, number> = {
   idle: 5,
@@ -420,6 +421,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     },
     [],
   );
+
+  const getHudNoFlyBottom = useCallback(() => {
+    const stage = stageRef.current;
+    const pnl = stage?.querySelector<HTMLElement>(".pnl-readout");
+    if (!stage || !pnl) return 0;
+    const stageRect = stage.getBoundingClientRect();
+    const pnlRect = pnl.getBoundingClientRect();
+    return Math.max(0, pnlRect.bottom - stageRect.top + HUD_NO_FLY_GAP_PX);
+  }, []);
 
   /* ============ SPRITE RENDERING ============ */
   const setSpriteState = useCallback(
@@ -1997,7 +2007,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (priceToY) {
           const groundYNow = getTerrainY(figWorldX);
           const rawFigY = priceToY(a.figPrice);
-          const figY = Math.min(rawFigY, groundYNow - LIVE_MIN_AIR_GAP_PX);
+          const groundCeilingY = groundYNow - LIVE_MIN_AIR_GAP_PX;
+          const lift = a.skyAlt * a.stageH * 0.25;
+          const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+          const hudCeilingY = getHudNoFlyBottom() + lift + SPRITE_DISPLAY_H * figScale;
+          const effectiveHudCeilingY = Math.min(hudCeilingY, groundCeilingY - 8);
+          const figY = Math.min(Math.max(rawFigY, effectiveHudCeilingY), groundCeilingY);
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, LIVE_BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
@@ -2032,7 +2047,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.figPrice = lerp(a.figPrice, priceAtFig, 0.02 * dtNorm);
         if (priceToY) {
           const groundY = getTerrainY(figWorldX);
-          const figY = Math.min(priceToY(a.figPrice), groundY - PARACHUTE_MIN_AIR_GAP_PX);
+          const groundCeilingY = groundY - PARACHUTE_MIN_AIR_GAP_PX;
+          const lift = a.skyAlt * a.stageH * 0.25;
+          const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+          const hudCeilingY = getHudNoFlyBottom() + lift + (SPRITE_DISPLAY_H + 20) * figScale;
+          const effectiveHudCeilingY = Math.min(hudCeilingY, groundCeilingY - 8);
+          const figY = Math.min(Math.max(priceToY(a.figPrice), effectiveHudCeilingY), groundCeilingY);
           const alt = a.stageH - figY;
           a.smoothRot = lerp(a.smoothRot, 0, 0.05 * dtNorm);
           a.smoothAlt = alt;
@@ -2072,7 +2092,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [drawScene, drawSprite, setSpriteState, setFig, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
+  }, [drawScene, drawSprite, setSpriteState, setFig, getHudNoFlyBottom, onPnlChange, splat, getTerrainY, getTerrainSlope, getTerrainNormal, setGameState]);
 
   /* ============ PRICE STREAM ============ */
   useEffect(() => {
