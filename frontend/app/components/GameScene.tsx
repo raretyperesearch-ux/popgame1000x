@@ -423,6 +423,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     nextFlightCueAt: 0,
     lastFlightMilestone: 0,
     liveShake: 0,
+    liveZoomPunch: 0,
     loco: {
       bodyX: 0,
       bodyY: 0,
@@ -1512,6 +1513,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.nextFlightCueAt = 0;
     a.lastFlightMilestone = 0;
     a.liveShake = 0;
+    a.liveZoomPunch = 0;
     a.loco.grounded = true;
     a.loco.stepPhase = 0;
     a.loco.plantedFoot = "left";
@@ -1698,6 +1700,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.nextFlightCueAt = 0;
       a.lastFlightMilestone = 0;
       a.liveShake = 0;
+      a.liveZoomPunch = 0;
       a.loco.grounded = true;
       a.loco.stepPhase = 0;
       a.loco.plantedFoot = "left";
@@ -1782,13 +1785,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.cameraWorldX = lerp(a.cameraWorldX || worldLeft, worldLeft, CAMERA_LERP * dtNorm);
       const jumpZoom = a.state === "PREPARE" || a.state === "JUMPING";
       const crashZoom = time < a.crashZoomUntil;
-      const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? 2.45 : 1;
+      const liveCueZoom = a.state === "LIVE" ? 1 + a.liveZoomPunch * 0.11 : 1;
+      const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? 2.45 : liveCueZoom;
       a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.22 : 0.1) * dtNorm);
-      a.liveShake = Math.max(0, a.liveShake - dt * 0.004);
+      a.liveShake = Math.max(0, a.liveShake - dt * 0.0032);
+      a.liveZoomPunch = Math.max(0, a.liveZoomPunch - dt * 0.0017);
       const canvas = canvasRef.current;
       if (canvas) {
-        const shakeX = a.liveShake > 0 ? Math.round(Math.sin(time * 0.08) * a.liveShake * 2.2) : 0;
-        const shakeY = a.liveShake > 0 ? Math.round(Math.cos(time * 0.095) * a.liveShake * 1.5) : 0;
+        const shakeX = a.liveShake > 0 ? Math.round(Math.sin(time * 0.08) * a.liveShake * 3.6) : 0;
+        const shakeY = a.liveShake > 0 ? Math.round(Math.cos(time * 0.095) * a.liveShake * 2.4) : 0;
         canvas.style.transformOrigin = `${figScreenX.toFixed(1)}px ${(a.stageH - a.smoothAlt).toFixed(1)}px`;
         canvas.style.transform = `translate3d(${shakeX}px, ${shakeY}px, 0) scale(${a.cinematicZoom.toFixed(3)})`;
       }
@@ -2128,7 +2133,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.flightBubble = { text: urgentLine, start: time, until: time + 2450 };
           a.nextFlightCueAt = time + cueEvery;
           a.lastFlightMilestone = milestone;
-          a.liveShake = Math.max(a.liveShake, pnlPct < -0.12 ? 1.6 : 0.85);
+          a.liveShake = Math.max(a.liveShake, pnlPct < -0.12 ? 2.8 : 1.65);
+          a.liveZoomPunch = Math.max(a.liveZoomPunch, pnlPct < -0.12 ? 1.45 : 1);
           for (let k = 0; k < 10 && a.flightFx.length < FLIGHT_FX_MAX; k++) {
             const kind: FlightFxKind = k % 5 === 0 ? "ring" : k % 3 === 0 ? "coin" : "spark";
             const seed = liveElapsed + k * 17 + a.frame;

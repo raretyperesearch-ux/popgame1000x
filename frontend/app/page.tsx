@@ -353,6 +353,16 @@ export default function Home() {
           paper mode: test balance + simulated trades
         </div>
       )}
+      <a
+        className="discord-float"
+        href="https://discord.gg/DjGgNUKhZ"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Join the Scalprunnr Discord"
+      >
+        <span className="discord-float-mark" aria-hidden="true">D</span>
+        <span>discord</span>
+      </a>
     </div>
   );
 }
