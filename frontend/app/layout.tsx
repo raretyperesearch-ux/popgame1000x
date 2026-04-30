@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://scalprunner.hiscore.me"),
   title: "POP",
   description: "Arcade price-runner — ride the boost or crash",
 };
