@@ -75,22 +75,22 @@ const JUMP_FRAMES = [7, 10, 11];
 const CHARGE_FRAMES = [17, 18];
 const BREAK_FRAMES = [19, 20];
 const LAUNCH_FRAMES = [21, 22];
-// "air" = ascending / hovering. Frames 10/11 are upright torso poses.
-// "fall" = descending. Frames 12/13 are the head-first dive poses, which
-// belong on the way down — keeping them in air looked like the character
-// was casually floating during a losing trade.
-const AIR_FRAMES = [10, 11];
-const AIR_FRAME_MS = 150;
-const FALL_FRAMES = [12, 13];
-const FALL_FRAME_MS = 130;
+// Dedicated LIVE flight loops live at 27..34 in the extended sheet.
+// They keep the flight readable without relying on jittery DOM rotation.
+const AIR_FRAMES = [27, 28, 35, 36, 34, 31, 39];
+const AIR_FRAME_MS = 85;
+const BOOST_FRAMES = [29, 30, 37, 38, 36];
+const BOOST_FRAME_MS = 78;
+const FALL_FRAMES = [32, 33];
+const FALL_FRAME_MS = 110;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
 const PARACHUTE_MIN_AIR_GAP_PX = 48;
-type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "fall" | "land" | "parachute" | "fail";
-const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" | "land" | "parachute">, number> = {
+type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "boost" | "fall" | "land" | "parachute" | "fail";
+const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "boost" | "fall" | "land" | "parachute">, number> = {
   idle: 5,
   crouch: 6,
   charge: 6,
@@ -101,9 +101,9 @@ const SPRITE_FRAME: Record<Exclude<SpriteState, "run" | "jump" | "air" | "fall" 
 // motion hovers around zero and keeps the character in a readable pose.
 const LIVE_FALL_ENTER_VEL = -0.09;
 const LIVE_FALL_EXIT_VEL = 0.035;
-const LIVE_BANK_LERP = 0.035;
+const LIVE_BANK_LERP = 0.022;
+const LIVE_BODY_LERP = 0.18;
 const CAMERA_LERP = 0.045;
-const BODY_LERP = 0.35;
 const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
@@ -258,7 +258,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     smoothMinP: 3450,
     smoothMaxP: 3550,
     smoothRot: 0,
-    flightPose: "air" as "air" | "fall",
+    flightPose: "air" as "air" | "boost" | "fall",
     smoothFlameScale: 0,
     smoothAlt: 200, // lerped figure altitude for smooth ground following
     smoothFigPrice: 3500, // lerped price at figure position
@@ -382,7 +382,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.spriteState = state;
         if (state === "run") a.spriteRunStart = time ?? performance.now();
         if (state === "charge" || state === "break" || state === "jump") a.spriteJumpStart = time ?? performance.now();
-        if (state === "air") a.spriteAirStart = time ?? performance.now();
+        if (state === "air" || state === "boost") a.spriteAirStart = time ?? performance.now();
         if (state === "fall") a.spriteFallStart = time ?? performance.now();
         if (state === "land") a.spriteLandStart = time ?? performance.now();
         if (state === "parachute") a.spriteParachuteStart = time ?? performance.now();
@@ -425,6 +425,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
       frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
+    } else if (a.spriteState === "boost") {
+      const elapsed = time - (a.spriteAirStart || time);
+      frameIdx = BOOST_FRAMES[Math.floor(elapsed / BOOST_FRAME_MS) % BOOST_FRAMES.length];
     } else if (a.spriteState === "fall") {
       const elapsed = time - (a.spriteFallStart || time);
       frameIdx = FALL_FRAMES[Math.floor(elapsed / FALL_FRAME_MS) % FALL_FRAMES.length];
@@ -674,6 +677,41 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
+      /* horizon glow + atmospheric bands, so climbs feel layered instead of flat */
+      const horizonGlow = clamp(1 - Math.abs(skyAlt - 0.28) * 2.8, 0, 1);
+      if (horizonGlow > 0.01) {
+        const hg = ctx.createLinearGradient(0, h * 0.28, 0, h * 0.74);
+        hg.addColorStop(0, "rgba(255,238,190,0)");
+        hg.addColorStop(0.52, `rgba(255,183,93,${0.18 * horizonGlow})`);
+        hg.addColorStop(1, "rgba(255,120,80,0)");
+        ctx.fillStyle = hg;
+        ctx.fillRect(0, h * 0.2, w, h * 0.56);
+      }
+      const auroraAlpha = clamp((skyAlt - 0.58) * 2.2, 0, 0.55);
+      if (auroraAlpha > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = auroraAlpha;
+        for (let band = 0; band < 3; band++) {
+          const yBase = h * (0.18 + band * 0.12);
+          const bandGrad = ctx.createLinearGradient(0, yBase - 24, 0, yBase + 28);
+          bandGrad.addColorStop(0, "rgba(70,255,210,0)");
+          bandGrad.addColorStop(0.52, band % 2 ? "rgba(164,112,255,0.18)" : "rgba(70,255,210,0.22)");
+          bandGrad.addColorStop(1, "rgba(70,255,210,0)");
+          ctx.fillStyle = bandGrad;
+          ctx.beginPath();
+          ctx.moveTo(0, yBase);
+          for (let x = 0; x <= w; x += 18) {
+            const y = yBase + Math.sin(x * 0.018 + a.frame * 0.008 + band) * (16 + band * 5);
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(w, yBase + 50);
+          ctx.lineTo(0, yBase + 50);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       /* stars — fade in as altitude increases */
       const starAlpha = clamp(1 - skyAlt * 0.2 + skyAlt * 0.6, 0.6, 1.4);
       ctx.fillStyle = "#f4ecd8";
@@ -693,6 +731,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const flicker = 0.5 + 0.5 * Math.sin(a.frame * 0.02 + i * 0.7);
           ctx.globalAlpha = deepAlpha * 0.6 * flicker;
           ctx.fillRect(sx, sy, 1.4, 1.4);
+        }
+        for (let i = 0; i < 5; i++) {
+          const sx = ((i * 211 + a.frame * 0.38) % (w + 90)) - 45;
+          const sy = h * (0.08 + ((i * 0.173) % 0.48));
+          ctx.globalAlpha = deepAlpha * 0.22;
+          ctx.strokeStyle = i % 2 ? "#9ffcff" : "#fff1a0";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx - 26, sy + 9);
+          ctx.stroke();
         }
         ctx.globalAlpha = 1;
       }
@@ -724,10 +773,24 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         sunGrad.addColorStop(1, "rgba(255,140,80,0)");
         ctx.fillStyle = sunGrad;
         ctx.fillRect(0, 0, w, h * 0.5);
+        ctx.save();
+        ctx.globalAlpha = sunAlpha * 0.34;
+        ctx.strokeStyle = "#fff1a0";
+        ctx.lineWidth = 1;
+        for (let r = 0; r < 16; r++) {
+          const ang = (r / 16) * Math.PI * 2 + a.frame * 0.004;
+          ctx.beginPath();
+          ctx.moveTo(sunX + Math.cos(ang) * (sunR + 6), sunY + Math.sin(ang) * (sunR + 6));
+          ctx.lineTo(sunX + Math.cos(ang) * (sunR + 22), sunY + Math.sin(ang) * (sunR + 22));
+          ctx.stroke();
+        }
+        ctx.restore();
         ctx.fillStyle = `rgba(255,240,200,${sunAlpha})`;
         ctx.beginPath();
         ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
         ctx.fill();
+        ctx.fillStyle = `rgba(255,207,83,${sunAlpha * 0.7})`;
+        ctx.fillRect(Math.round(sunX - 13), Math.round(sunY - 1), 26, 2);
       }
 
       /* planets — appear in the space band (skyAlt 0.5 - 1.0) */
@@ -749,6 +812,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           ctx.beginPath();
           ctx.arc(px, py, p.r, 0, Math.PI * 2);
           ctx.fill();
+          ctx.globalAlpha = planetAlpha * 0.22;
+          ctx.strokeStyle = "#f4ecd8";
+          ctx.lineWidth = 1;
+          for (let stripe = -1; stripe <= 1; stripe++) {
+            ctx.beginPath();
+            ctx.ellipse(px, py + stripe * p.r * 0.28, p.r * 0.74, p.r * 0.16, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = planetAlpha;
           if (p.ring) {
             ctx.strokeStyle = `rgba(200,180,140,${planetAlpha * 0.6})`;
             ctx.lineWidth = 1.4;
@@ -801,32 +873,34 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.globalAlpha = 1;
       }
 
-      /* sketch clouds — fade out as we leave the troposphere */
+      /* chunky pixel clouds — brighter near launch, thinning as we enter space */
       const cloudAlpha = Math.max(0, 1 - skyAlt * 2.5);
-      const cloudScroll = a.scrollFrac * 0.08;
+      const cloudScroll = (a.groundScrollAcc * 0.22) % 1;
       const cloudPositions = [
-        { x: 0.12, y: 0.06, s: 1.1 },
-        { x: 0.35, y: 0.10, s: 0.8 },
-        { x: 0.58, y: 0.04, s: 1.3 },
-        { x: 0.78, y: 0.12, s: 0.9 },
-        { x: 0.92, y: 0.07, s: 1.0 },
+        { x: 0.08, y: 0.13, s: 1.25 },
+        { x: 0.34, y: 0.08, s: 0.85 },
+        { x: 0.58, y: 0.16, s: 1.4 },
+        { x: 0.81, y: 0.1, s: 1.0 },
+        { x: 1.06, y: 0.2, s: 1.18 },
       ];
-      ctx.strokeStyle = `rgba(244,236,216,${0.06 * cloudAlpha})`;
-      ctx.lineWidth = 1.2;
-      for (const c of cloudPositions) {
-        const cx = ((c.x * w + cloudScroll * w * 0.5) % (w + 60)) - 30;
+      ctx.save();
+      ctx.globalAlpha = cloudAlpha;
+      ctx.imageSmoothingEnabled = false;
+      for (let idx = 0; idx < cloudPositions.length; idx++) {
+        const c = cloudPositions[idx];
+        const cx = ((c.x * w - cloudScroll * w * (0.18 + idx * 0.02)) % (w + 130)) - 70;
         const cy = c.y * h;
-        const s = c.s * 18;
-        ctx.beginPath();
-        ctx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(cx - s * 0.45, cy + 2, s * 0.35, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(cx + s * 0.45, cy + 2, s * 0.38, 0, Math.PI * 2);
-        ctx.stroke();
+        const s = Math.round(c.s * 14);
+        ctx.fillStyle = `rgba(244,236,216,${0.07 + skyAlt * 0.03})`;
+        ctx.fillRect(Math.round(cx - s * 1.6), Math.round(cy), s * 3, Math.max(2, Math.round(s * 0.28)));
+        ctx.fillStyle = `rgba(215,231,229,${0.13})`;
+        ctx.fillRect(Math.round(cx - s * 1.15), Math.round(cy - s * 0.42), s, Math.round(s * 0.7));
+        ctx.fillRect(Math.round(cx - s * 0.3), Math.round(cy - s * 0.7), Math.round(s * 1.35), Math.round(s * 0.95));
+        ctx.fillRect(Math.round(cx + s * 0.78), Math.round(cy - s * 0.35), Math.round(s * 0.95), Math.round(s * 0.62));
+        ctx.fillStyle = "rgba(255,248,218,0.12)";
+        ctx.fillRect(Math.round(cx - s * 0.05), Math.round(cy - s * 0.58), Math.round(s * 0.74), 2);
       }
+      ctx.restore();
 
       if (crashDanger > 0.48) {
         const pulse = 0.65 + Math.sin(a.frame * 0.28) * 0.35;
@@ -1857,10 +1931,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         /* Smooth cinematic banking. Rotation follows the trade direction,
            not every tiny velocity wobble, so LIVE flight reads like gliding
            instead of twitching. */
-        const profitLean = clamp(pnlPct * 5, -5, 5);
-        const thrustLean = clamp(a.smoothDelta * -1.25, -4, 4);
-        const floatWobble = Math.sin((time - a.tradeStartTime) * 0.004) * 1.2;
-        const targetRot = clamp(thrustLean - profitLean + floatWobble, -8, 8);
+        const profitLean = clamp(pnlPct * 2.2, -2.6, 2.6);
+        const thrustLean = clamp(a.smoothDelta * -0.65, -2.2, 2.2);
+        const floatWobble = Math.sin((time - a.tradeStartTime) * 0.0028) * 0.65;
+        const targetRot = clamp(thrustLean - profitLean + floatWobble, -4.5, 4.5);
         a.smoothRot = lerp(a.smoothRot, targetRot, LIVE_BANK_LERP * dtNorm);
 
         /* thrust sparks / air streaks */
@@ -1888,11 +1962,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const rawFigY = priceToY(a.figPrice);
           const figY = Math.min(rawFigY, groundYNow - LIVE_MIN_AIR_GAP_PX);
           const alt = a.stageH - figY;
-          a.smoothAlt = lerp(a.smoothAlt, alt, BODY_LERP * dtNorm);
+          a.smoothAlt = lerp(a.smoothAlt, alt, LIVE_BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
         }
 
-        if (a.flightPose === "air") {
+        if (pnlPct > 0.12 || a.smoothDelta > 0.05) {
+          a.flightPose = "boost";
+        } else if (a.flightPose === "boost" && pnlPct > 0.04) {
+          a.flightPose = "boost";
+        } else if (a.flightPose === "boost") {
+          a.flightPose = "air";
+        } else if (a.flightPose === "air") {
           if (a.figPriceVel < LIVE_FALL_ENTER_VEL && pnlPct < -0.01) a.flightPose = "fall";
         } else if (a.figPriceVel > LIVE_FALL_EXIT_VEL || pnlPct > 0.015) {
           a.flightPose = "air";
