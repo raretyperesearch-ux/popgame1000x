@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "scalprunner500x",
+  title: "ScalpRunner500x",
   description: "Arcade price-runner — ride the boost or crash",
 };
 
