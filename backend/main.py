@@ -13,6 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 # load .env BEFORE importing routes — routes/trade.py reads env at module level
 load_dotenv()
 
+# Sentry init must happen before any FastAPI app is created so the SDK
+# can install its instrumentation. Inert without SENTRY_DSN.
+_sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+if _sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("SENTRY_ENVIRONMENT", os.getenv("ENV", "production")),
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        send_default_pii=False,
+    )
+    print(f"✓ Sentry initialized (env={os.getenv('SENTRY_ENVIRONMENT', os.getenv('ENV', 'production'))})")
+
 import auth
 import persistence
 from routes import trade, price, balance, wallet, history

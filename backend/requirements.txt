@@ -16,3 +16,7 @@ eth-utils
 # when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are unset, persistence
 # is a no-op and trades still execute normally.
 supabase>=2.7,<3
+
+# Error monitoring. Inert when SENTRY_DSN is unset, so this dep adds
+# nothing in local dev where the env isn't set.
+sentry-sdk[fastapi]>=2.18,<3

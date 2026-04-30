@@ -21,7 +21,9 @@ SDK call sites match canonical examples at https://sdk.avantisfi.com/trade.html.
 
 import asyncio
 import os
+from collections import deque
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -50,6 +52,32 @@ from models import (
 )
 
 router = APIRouter()
+
+
+# Per-wallet sliding-window rate limit on /trade/open. The Avantis open
+# itself takes 5-7s on-chain so physical throughput is already capped,
+# but pre-tx auth + Privy signing burn resources fast under spam. Keyed
+# on the lowercased wallet address rather than IP — abuse surface is
+# users sharing a single wallet, not many wallets behind one NAT.
+_OPEN_RATE_WINDOW_S = 60.0
+_OPEN_RATE_MAX = int(os.getenv("RATE_LIMIT_OPENS_PER_MIN", "10"))
+_open_rate_history: dict[str, deque[float]] = {}
+
+
+def _check_open_rate_limit(address: str) -> None:
+    now = monotonic()
+    cutoff = now - _OPEN_RATE_WINDOW_S
+    history = _open_rate_history.setdefault(address.lower(), deque())
+    while history and history[0] < cutoff:
+        history.popleft()
+    if len(history) >= _OPEN_RATE_MAX:
+        retry_in = max(1, int(_OPEN_RATE_WINDOW_S - (now - history[0])))
+        raise HTTPException(
+            429,
+            f"Too many opens. Limit is {_OPEN_RATE_MAX} per minute — "
+            f"retry in {retry_in}s.",
+        )
+    history.append(now)
 
 _PROVIDER_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
 _PRIVATE_KEY = os.getenv("PRIVATE_KEY")
@@ -221,6 +249,7 @@ async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
 
 @router.post("/open", response_model=OpenTradeResponse)
 async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_user)):
+    _check_open_rate_limit(user.address)
     client = _require_trader()
     pair_index = _eth_pair_index
     if pair_index is None:
