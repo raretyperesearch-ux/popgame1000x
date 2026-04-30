@@ -149,7 +149,12 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         (a as unknown as { delegated?: boolean }).delegated === true,
     ),
   );
-  const isDelegated = linkedSaysDelegated || locallyDelegated;
+  // Privy's legacy `linkedAccounts.delegated` flag only says SOME signer
+  // exists — not whether it matches the current PRIVY_EXPECTED_SIGNER_ID.
+  // After a quorum rotation, that flag stays true against the old quorum,
+  // skipping re-delegation forever. Require the server to also confirm.
+  const isDelegated =
+    (linkedSaysDelegated || locallyDelegated) && serverDelegated !== false;
   const hasGas = ethBalance === null || ethBalance >= 0.0005;
   const withdrawAmountNumber = Number(withdrawAmount);
   const withdrawAddressValid = withdrawAddress === "" || isAddress(withdrawAddress.trim());
