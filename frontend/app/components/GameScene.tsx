@@ -2123,6 +2123,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const pnlDollars = pnlPct * a.positionWager;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
+        const liveLift = a.skyAlt * a.stageH * 0.25;
+        const liveSpriteScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+        const flightFootY = a.stageH - a.smoothAlt - liveLift;
+        const jetpackX = figScreenX - SPRITE_DISPLAY_W * liveSpriteScale * 0.28;
+        const jetpackY = flightFootY - SPRITE_DISPLAY_H * liveSpriteScale * 0.48;
+
         const liveElapsed = time - (a.tradeStartTime || time);
         const cueEvery = 7800 + (featureNoise(Math.floor(liveElapsed / 7800) * 9.17) * 5200);
         const milestone = Math.floor(liveElapsed / 30000);
@@ -2141,9 +2147,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             const maxLife = kind === "ring" ? 0.78 : 0.62 + Math.random() * 0.5;
             a.flightFx.push({
               kind,
-              x: figScreenX - 12 + (Math.random() - 0.5) * 42,
-              y: a.stageH - (a.smoothAlt - 16) + (Math.random() - 0.5) * 36,
-              vx: -0.6 - Math.random() * 1.8,
+              x: jetpackX - 10 + (Math.random() - 0.5) * 30,
+              y: jetpackY + (Math.random() - 0.5) * 26,
+              vx: -0.45 - Math.random() * 1.05,
               vy: -0.8 + Math.random() * 1.2,
               life: maxLife,
               maxLife,
@@ -2184,13 +2190,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             const maxLife = 0.32 + Math.random() * 0.22;
             a.flightFx.push({
               kind,
-              x: figScreenX - 7 + Math.random() * 8,
-              y: a.stageH - (a.smoothAlt - 21) + (Math.random() - 0.5) * (8 + thrustHeat * 14),
-              vx: -1.1 - Math.random() * (1.0 + thrustHeat * 2.2),
-              vy: (Math.random() - 0.5) * (0.22 + thrustHeat * 0.5),
+              x: jetpackX - 8 - Math.random() * 5,
+              y: jetpackY + (Math.random() - 0.5) * (6 + thrustHeat * 9),
+              vx: -0.55 - Math.random() * (0.45 + thrustHeat * 1.1),
+              vy: (Math.random() - 0.5) * (0.18 + thrustHeat * 0.38),
               life: maxLife,
               maxLife,
-              size: 32 + Math.random() * (20 + thrustHeat * 34),
+              size: 24 + Math.random() * (14 + thrustHeat * 24),
               hue: thrustHeat > 0.45 ? 48 : 205,
               frame: flightFxFrame(kind, a.frame + k * 11),
               rot: (Math.random() - 0.5) * 0.22,
@@ -2201,8 +2207,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const kind: FlightFxKind = "coin";
           a.flightFx.push({
             kind,
-            x: figScreenX + 18,
-            y: a.stageH - a.smoothAlt - 16,
+            x: jetpackX + 16,
+            y: jetpackY - 4,
             vx: -0.8 - Math.random() * 0.8,
             vy: -0.45 - Math.random() * 0.35,
             life: 0.9,
@@ -2450,6 +2456,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           height: "100%",
           zIndex: 2,
           willChange: "transform",
+          pointerEvents: "none",
         }}
       />
 
