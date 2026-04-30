@@ -50,7 +50,7 @@ You represent that:
 
 ## 5. Fees
 
-- **House fee:** 0.8% of each wager, deducted at open and transferred to
+- **House fee:** 2.5% of each wager, deducted at open and transferred to
   the operator's treasury wallet.
 - **Avantis fee:** 2.5% of profits on closed-in-profit positions, paid
   to Avantis.

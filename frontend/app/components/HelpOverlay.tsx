@@ -44,7 +44,7 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
           <div role="listitem"><span>fall</span><strong>price down &times; boost = PnL down</strong></div>
           <div role="listitem"><span>crash line</span><strong>liquidation &mdash; touch it, wager gone</strong></div>
           <div role="listitem"><span>pull chute</span><strong>close the position, keep your PnL</strong></div>
-          <div role="listitem"><span>fees</span><strong>0.8% house on open &middot; 2.5% Avantis on profit</strong></div>
+          <div role="listitem"><span>fees</span><strong>2.5% house on open &middot; 2.5% Avantis on profit</strong></div>
         </div>
         <button className="help-got-it" onClick={onClose}>
           got it

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
-HOUSE_FEE_BPS = 80  # 0.8%
+HOUSE_FEE_BPS = 250  # 2.5%
 MIN_LEVERAGE = 75
 MAX_LEVERAGE = 500
 

@@ -84,7 +84,7 @@ export async function openTrade(
     // longs liquidate when a 1/lev drop wipes the collateral.
     const liquidation_price = entry_price - entry_price / leverage;
     const opened_at = new Date().toISOString();
-    const collateral_usdc = wager * 0.992;
+    const collateral_usdc = wager * 0.975;
     mockTradeState = {
       trade_index: 0,
       avantis_pair_index: 1,
@@ -103,7 +103,7 @@ export async function openTrade(
       avantis_pair_index: 1,
       leverage,
       wager_usdc: wager,
-      house_fee_usdc: wager * 0.008,
+      house_fee_usdc: wager * 0.025,
       collateral_usdc,
       entry_price,
       liquidation_price,
