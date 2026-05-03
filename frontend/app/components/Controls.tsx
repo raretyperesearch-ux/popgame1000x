@@ -16,7 +16,7 @@ interface ControlsProps {
   onAction: () => void;
 }
 
-const CHIPS = [1, 5, 10, 25];
+const CHIPS = [1, 25, 100, 1000];
 
 export default function Controls({
   leverage,
