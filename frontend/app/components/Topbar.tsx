@@ -13,6 +13,7 @@ import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import { getWalletStatus } from "@/lib/api";
+import Leaderboard from "./Leaderboard";
 
 type WithdrawAsset = "USDC" | "ETH";
 
@@ -22,6 +23,10 @@ interface TopbarProps {
   balanceLoading?: boolean;
   onHelpClick: () => void;
   onError?: (msg: string) => void;
+  /* Bumped by the host page after each trade close so the leaderboard
+     dropdown picks up fresh standings without polling. */
+  leaderboardRefreshKey: number;
+  paperMode: boolean;
 }
 
 /* The Privy signerId is generated when the authorization key's public PEM
@@ -43,7 +48,7 @@ const USDC_TRANSFER_ABI = [
   },
 ] as const;
 
-export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
+export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError, leaderboardRefreshKey, paperMode }: TopbarProps) {
   const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
   const { addSigners } = useSigners();
   const { fundWallet } = useFundWallet();
@@ -565,6 +570,17 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 </div>
               )}
             </div>
+            <Leaderboard
+              authenticated={authenticated}
+              walletAddress={walletAddress}
+              getAccessToken={getAccessToken}
+              paperMode={paperMode}
+              refreshKey={leaderboardRefreshKey}
+              onOpen={() => {
+                setWalletMenuOpen(false);
+                setProfileMenuOpen(false);
+              }}
+            />
             <div
               className={`gas-pill ${hasGas ? "ok" : "warn"}`}
               title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
