@@ -73,19 +73,22 @@ export default function Leaderboard({
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  /* Fetch on auth, on wallet change, and whenever the host bumps
-     refreshKey (i.e. after a trade close). Skipped in paper mode and
-     when not authed because /history/leaderboard requires a Privy
-     access token. */
+  /* Fetch on mount, on wallet change, and whenever the host bumps
+     refreshKey (i.e. after a trade close). The /history/leaderboard
+     endpoint is public so we fetch even when not authenticated — a
+     visitor arriving on the marketing-first state should see real
+     standings before being asked to deposit. We still pass the token
+     getter when available so authed users get a faster path through
+     the backend's CORS/auth middleware in case it's later tightened. */
   useEffect(() => {
-    if (!authenticated || paperMode) {
-      setRows(null);
-      return;
-    }
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getLeaderboard(20, getAccessToken, walletAddress ?? undefined)
+    getLeaderboard(
+      20,
+      authenticated ? getAccessToken : undefined,
+      walletAddress ?? undefined,
+    )
       .then((res) => {
         if (cancelled) return;
         setRows(res.rows ?? []);
@@ -159,8 +162,9 @@ export default function Leaderboard({
     });
   }, [onOpen]);
 
-  if (!authenticated || paperMode) return null;
-
+  // No early bail on unauthenticated/paperMode — the leaderboard is a
+  // public conversion surface. `myRank` just falls back to "—" without
+  // a wallet address.
   const lower = walletAddress?.toLowerCase() ?? "";
   const rankLabel = myRank !== null ? `#${myRank}` : "—";
 
@@ -224,12 +228,17 @@ export default function Leaderboard({
           )}
 
           <div className="leaderboard-footer">
-            {myRank === null && rows && rows.length > 0 && (
+            {!authenticated && (
+              <span className="leaderboard-foot-note">
+                log in + close a trade to make the board
+              </span>
+            )}
+            {authenticated && myRank === null && rows && rows.length > 0 && (
               <span className="leaderboard-foot-note">
                 you&apos;re not in the top 20 yet
               </span>
             )}
-            {myRank === null && rows && rows.length === 0 && (
+            {authenticated && myRank === null && rows && rows.length === 0 && (
               <span className="leaderboard-foot-note">
                 close a trade to make the board
               </span>

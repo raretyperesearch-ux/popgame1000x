@@ -5,11 +5,9 @@ Returns 404-free, never 503: when persistence is disabled (no Supabase
 env), we serve empty lists rather than failing. The frontend treats an
 empty history the same way regardless of cause.
 
-  GET /history/me         — paged trade list for the calling user
-  GET /history/leaderboard — top traders by realized net PnL
+  GET /history/me         — paged trade list for the calling user (auth required)
+  GET /history/leaderboard — top traders by realized net PnL (PUBLIC)
 """
-
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -34,11 +32,11 @@ async def my_history(
 @router.get("/leaderboard")
 async def leaderboard(
     limit: int = Query(default=20, ge=1, le=100),
-    # Auth is required to keep the endpoint scoped to actual game users
-    # rather than scraped — Supabase service-role data shouldn't be a
-    # public REST endpoint, even if the data itself is non-sensitive.
-    _user: Optional[AuthedUser] = Depends(require_user),
 ) -> dict:
+    """Public — no auth dependency. The data (wallet addresses + realized
+    PnL) is non-sensitive and showing a populated leaderboard pre-login
+    is part of the conversion funnel: visitors see real activity before
+    being asked to deposit. CORS still scopes which origins can call this."""
     return {
         "enabled": persistence.is_enabled(),
         "rows": persistence.leaderboard(limit=limit),

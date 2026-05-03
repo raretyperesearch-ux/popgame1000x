@@ -506,6 +506,18 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         </a>
       </div>
       <div className="topbar-right">
+        {/* Leaderboard renders in both auth states — public conversion
+            surface. When unauthed, walletAddress is undefined so the
+            "you" highlight + rank just blank out gracefully. */}
+        {!authenticated && (
+          <Leaderboard
+            authenticated={authenticated}
+            walletAddress={walletAddress}
+            getAccessToken={getAccessToken}
+            paperMode={paperMode}
+            refreshKey={leaderboardRefreshKey}
+          />
+        )}
         {!authenticated ? (
           <button className="deposit-btn" onClick={() => { sounds.play("ui-click"); login(); }}>
             <span>deposit to play</span>
