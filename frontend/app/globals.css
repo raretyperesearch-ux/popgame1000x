@@ -2382,6 +2382,170 @@ button.h-tag:focus-visible {
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
 }
+/* ============ LEADERBOARD ============ */
+.leaderboard-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.leaderboard-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border: 1.5px dashed rgba(244, 236, 216, 0.36);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, transform 0.12s, background 0.12s;
+  transform: rotate(-0.4deg);
+}
+.leaderboard-pill:hover {
+  color: #fff;
+  border-color: var(--ink);
+  transform: rotate(-0.4deg) translateY(-1px);
+}
+.leaderboard-pill.open {
+  background: rgba(244, 236, 216, 0.08);
+  border-color: var(--ink);
+  color: #fff;
+}
+.leaderboard-pill:focus-visible {
+  outline: 2px dashed rgba(244, 236, 216, 0.55);
+  outline-offset: 2px;
+}
+.leaderboard-trophy {
+  font-size: 10px;
+  line-height: 1;
+  color: #ffd166;
+  text-shadow: 0 0 8px rgba(255, 209, 102, 0.5);
+}
+.leaderboard-rank {
+  letter-spacing: 0.8px;
+}
+.leaderboard-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Anchored to the right edge of the pill so on narrow screens the
+     menu doesn't blow past the cabinet's right border. The wallet menu
+     uses the same pattern. */
+  right: 0;
+  width: min(280px, calc(100vw - 28px));
+  max-height: min(420px, calc(100dvh - 116px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #0e1018;
+  border: 2px solid rgba(244, 236, 216, 0.18);
+  border-radius: 10px;
+  padding: 8px 8px 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  /* Same z-index tier as the wallet/avatar dropdowns so all three
+     menus stack predictably (above stage at 20, below help overlay
+     at 100). */
+  z-index: 30;
+  font-family: 'Caveat', cursive;
+  animation: leaderboard-menu-pop 0.15s ease-out;
+}
+@keyframes leaderboard-menu-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.leaderboard-header {
+  padding: 4px 6px 8px;
+  border-bottom: 1px dashed rgba(244, 236, 216, 0.12);
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.leaderboard-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: var(--ink);
+}
+.leaderboard-sub {
+  font-family: 'Caveat', cursive;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 6px;
+  border-bottom: 1px dashed rgba(244, 236, 216, 0.08);
+  font-family: 'VT323', monospace;
+}
+.leaderboard-row:last-child { border-bottom: none; }
+.leaderboard-row.me {
+  background: rgba(244, 236, 216, 0.06);
+  border-radius: 4px;
+}
+.leaderboard-row.me .leaderboard-addr {
+  color: #fff;
+  font-weight: 700;
+}
+.leaderboard-pos {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--muted);
+  text-align: right;
+}
+.leaderboard-row:nth-child(1) .leaderboard-pos { color: #ffd166; }
+.leaderboard-row:nth-child(2) .leaderboard-pos { color: #d8d8d8; }
+.leaderboard-row:nth-child(3) .leaderboard-pos { color: #cd7f32; }
+.leaderboard-addr {
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leaderboard-pnl {
+  font-family: 'Caveat', cursive;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.4px;
+}
+.leaderboard-pnl.win { color: #76ff69; text-shadow: 0 0 8px rgba(126,255,91,0.32); }
+.leaderboard-pnl.loss { color: #ff5f56; text-shadow: 0 0 8px rgba(255,95,86,0.32); }
+.leaderboard-state {
+  padding: 18px 6px;
+  text-align: center;
+  font-family: 'Caveat', cursive;
+  font-size: 16px;
+  color: var(--muted);
+}
+.leaderboard-state.error {
+  color: #ffb4a8;
+}
+.leaderboard-footer {
+  padding: 6px 6px 2px;
+  border-top: 1px dashed rgba(244, 236, 216, 0.08);
+  margin-top: 4px;
+  min-height: 0;
+}
+.leaderboard-foot-note {
+  display: block;
+  font-family: 'Caveat', cursive;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
 .user-wrap {
   position: relative;
 }

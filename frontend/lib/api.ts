@@ -268,6 +268,39 @@ export async function getHistory(
   );
 }
 
+export interface LeaderboardRow {
+  wallet_address: string;
+  net_pnl_usdc: number;
+  trade_count: number;
+  liquidations: number;
+  last_closed_at: string | null;
+}
+
+export interface LeaderboardResponse {
+  enabled: boolean;
+  rows: LeaderboardRow[];
+}
+
+/* Top traders by realized net PnL across closed trades. Backed by the
+   pg_trade_leaderboard view in 0001_init.sql. Empty list when
+   persistence is disabled (no Supabase env on the backend) or when no
+   one has closed a trade yet. */
+export async function getLeaderboard(
+  limit: number = 20,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<LeaderboardResponse> {
+  if (isMock()) {
+    return { enabled: false, rows: [] };
+  }
+  return apiFetch<LeaderboardResponse>(
+    `/history/leaderboard?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
 export interface WalletStatus {
   address: string;
   delegated: boolean;
