@@ -261,7 +261,15 @@ export default function Home() {
   }, []);
 
   const handleAction = useCallback(async () => {
-    if (gameState === "IDLE" && balance >= wager && !openInFlight) {
+    if (gameState === "IDLE" && !openInFlight) {
+      // No client-side balance gate on the wager — let the user pick any
+      // amount they want, then surface a clear "needs more USDC" hint
+      // when they're short rather than silently no-op'ing the JUMP.
+      if (wager > balance) {
+        const need = (wager - balance).toFixed(2);
+        showTradeError(`Not enough USDC for a $${wager} wager — need $${need} more.`);
+        return;
+      }
       setOpenInFlight(true);
       try {
         let entryPrice = 0;
@@ -335,9 +343,11 @@ export default function Home() {
   const handleWagerChange = useCallback(
     (v: number) => {
       if (gameState !== "IDLE") return;
-      setWager(Math.max(1, Math.min(balance, v)));
+      // No upper cap — the user can pick any wager. Insufficient balance
+      // is surfaced at JUMP time, not by silently clamping their input.
+      setWager(Math.max(1, Math.floor(v)));
     },
-    [gameState, balance],
+    [gameState],
   );
 
   return (

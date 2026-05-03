@@ -31,7 +31,12 @@ export default function Controls({
 }: ControlsProps) {
   const opening = busy && state === "IDLE";
   const disabled = state !== "IDLE" || opening;
-  const wagerMax = Math.max(1, Math.floor(balance));
+  // Slider range scales to whichever is largest: the chip ceiling ($1000),
+  // the user's actual balance, or the currently-set wager. This way the
+  // slider thumb always reaches the active chip selection even on a
+  // small balance — it just signals "not enough USDC" via the JUMP
+  // button copy when the wager exceeds balance.
+  const wagerMax = Math.max(1000, Math.floor(balance), wager);
   const boostHeat = Math.max(0, Math.min(1, (leverage - 75) / (500 - 75)));
   const wagerHeat = Math.max(0, Math.min(1, wager / Math.max(1, wagerMax)));
   const estimatedNetPnl = pnl === null ? null : pnl > 0 ? pnl * 0.975 : pnl;
@@ -54,6 +59,11 @@ export default function Controls({
     actionLabel = "out";
     actionClass = "action disabled";
     actionLocked = true;
+  } else if (state === "IDLE" && wager > balance) {
+    // Wager exceeds balance — keep the button live so the click
+    // surfaces page.tsx's "need $X more" toast, but swap the label
+    // so the gap is visible without needing to click.
+    actionLabel = `fund $${(wager - balance).toFixed(0)} to jump`;
   } else if (disabled) {
     actionClass = "action disabled";
     actionLocked = true;
