@@ -3118,31 +3118,30 @@ button.h-tag:focus-visible {
   .docs-body h2 { font-size: 22px; }
 }
 
-/* ---------- Site footer (under the game cabinet) ---------- */
-.site-footer {
+/* ---------- Doc links inside HelpOverlay ----------
+   Sits between the help-list and the "got it" button. Trust surface
+   (full how-it-works / terms / privacy) is one tap away from the
+   already-discoverable ? button without needing a separate footer
+   that fights the cabinet's fixed-aspect layout on mobile. */
+.help-doclinks {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: center;
   align-items: center;
   flex-wrap: wrap;
-  gap: 14px;
-  padding: 14px 16px 22px;
+  gap: 8px;
+  margin: 0 auto 12px;
   font-family: 'Tiny5', monospace;
-  font-size: 11px;
-  text-transform: lowercase;
+  font-size: 10px;
   letter-spacing: 0.5px;
-  color: rgba(244, 236, 216, 0.42);
+  text-transform: lowercase;
+  color: rgba(244, 236, 216, 0.32);
 }
-.site-footer a {
-  color: rgba(244, 236, 216, 0.7);
-  text-decoration: none;
-}
-.site-footer a:hover {
+.help-doclinks a {
   color: var(--cyan, #00daff);
   text-decoration: underline;
   text-decoration-style: dotted;
-  text-underline-offset: 3px;
+  text-underline-offset: 2px;
 }
-.site-footer-sep {
-  color: rgba(244, 236, 216, 0.2);
-  user-select: none;
-}
+.help-doclinks a:hover { color: var(--gold, #ffd55d); }

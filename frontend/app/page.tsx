@@ -351,7 +351,6 @@ export default function Home() {
   );
 
   return (
-    <>
     <div className="cabinet">
       <Topbar
         balance={balance}
@@ -427,26 +426,5 @@ export default function Home() {
         </div>
       )}
     </div>
-    {/* Site footer with doc/legal links + Avantis attribution.
-        Sits under the cabinet rather than inside it so the game UI keeps
-        its tight arcade framing while still surfacing the trust signals
-        new visitors look for ("how does this work?", "is this on chain?",
-        "TOS / privacy"). Pure HTML — no client behavior. */}
-    <footer className="site-footer">
-      <a href="/how-it-works">how it works</a>
-      <span className="site-footer-sep">·</span>
-      <a href="/terms">terms</a>
-      <span className="site-footer-sep">·</span>
-      <a href="/privacy">privacy</a>
-      <span className="site-footer-sep">·</span>
-      <a href="https://avantisfi.com" target="_blank" rel="noreferrer">
-        powered by avantis ↗
-      </a>
-      <span className="site-footer-sep">·</span>
-      <a href="https://discord.gg/DjGgNUKhZ" target="_blank" rel="noreferrer">
-        discord
-      </a>
-    </footer>
-    </>
   );
 }
