@@ -3070,6 +3070,14 @@ button.h-tag:focus-visible {
   text-transform: lowercase;
   letter-spacing: 0.4px;
 }
+.docs-body .docs-h3 {
+  font-family: 'Tiny5', monospace;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--gold, #ffd55d);
+  margin: 18px 0 6px;
+}
 .docs-body p { margin: 0 0 10px; }
 .docs-body ul, .docs-body ol {
   margin: 0 0 12px;
@@ -3116,6 +3124,69 @@ button.h-tag:focus-visible {
   .docs-title { font-size: 32px; }
   .docs-body { font-size: 12.5px; }
   .docs-body h2 { font-size: 22px; }
+}
+
+/* ---------- First-login "pick a name" nudge ----------
+   Sits in the topbar between the leaderboard pill and gas pill while
+   the user has no username yet. Soft dashed pill — visible enough to
+   notice, quiet enough not to feel like a modal. Inherits the gold
+   accent so it pairs visually with the leaderboard star. */
+.username-nudge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 1.5px dashed rgba(255, 213, 93, 0.55);
+  border-radius: 999px;
+  background: rgba(255, 213, 93, 0.06);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  transform: rotate(-0.4deg);
+  animation: username-nudge-pulse 2.4s ease-in-out infinite;
+}
+@keyframes username-nudge-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 213, 93, 0); }
+  50%      { box-shadow: 0 0 12px rgba(255, 213, 93, 0.32); }
+}
+.username-nudge-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 4px 4px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--gold, #ffd55d);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.username-nudge-cta:hover { filter: brightness(1.2); }
+.username-nudge-spark {
+  font-size: 9px;
+  text-shadow: 0 0 6px rgba(255, 213, 93, 0.7);
+}
+.username-nudge-dismiss {
+  background: transparent;
+  border: 0;
+  color: rgba(244, 236, 216, 0.42);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 0 8px 0 2px;
+  cursor: pointer;
+  line-height: 1;
+}
+.username-nudge-dismiss:hover { color: var(--ink, #f4ecd8); }
+@media (max-width: 600px) {
+  /* Mobile: shrink the nudge so the topbar still fits the wallet pill +
+     leaderboard + nudge + avatar without wrapping. The "pick a name"
+     phrase compresses to "name?" so the visual weight stays balanced. */
+  .username-nudge-cta { padding: 3px 3px 3px 7px; gap: 4px; }
+  .username-nudge-cta .username-nudge-text::before { content: "name?"; }
+  .username-nudge-cta .username-nudge-text { font-size: 0; }
+  .username-nudge-cta .username-nudge-text::before { font-size: 7px; }
 }
 
 /* ---------- Doc links inside HelpOverlay ----------

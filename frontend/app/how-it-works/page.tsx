@@ -122,6 +122,28 @@ export default function HowItWorksPage() {
           no &ldquo;house wins more than it loses&rdquo; mechanic baked
           in &mdash; a losing trade pays Avantis&rsquo;s LPs, not us.
         </p>
+        <h3 className="docs-h3">verify the treasury yourself</h3>
+        <p>
+          The 2.5% open fee sweeps to the operator treasury wallet
+          immediately after each open. The address is public:
+        </p>
+        <p>
+          <a
+            href="https://basescan.org/address/0xa660a38f40a519f2e351cc9a5ca2f5fee1a9be0d"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <code>0xa660a38f40a519f2e351cc9a5ca2f5fee1a9be0d</code>
+          </a>{" "}
+          (basescan)
+        </p>
+        <p>
+          Pick any open transaction from a SR trader on basescan and
+          you&rsquo;ll see two USDC transfers: collateral to the Avantis
+          vault, and the 2.5% fee to the treasury above. Nothing else
+          flows to us &mdash; that&rsquo;s the entire revenue side of the
+          product.
+        </p>
       </section>
 
       <section>
