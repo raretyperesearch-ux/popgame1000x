@@ -730,9 +730,9 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                           <input
                             value={usernameDraft}
                             onChange={(e) => setUsernameDraft(e.target.value)}
-                            placeholder="3-20 chars: a-z, 0-9, _ -"
+                            placeholder="3-32 chars: a-z, 0-9, _ -"
                             spellCheck={false}
-                            maxLength={20}
+                            maxLength={32}
                             autoFocus
                           />
                         </label>

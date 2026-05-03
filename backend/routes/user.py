@@ -30,7 +30,7 @@ router = APIRouter()
 
 
 class SetUsernameRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=20)
+    username: str = Field(min_length=3, max_length=32)
 
 
 def _registry_required() -> None:

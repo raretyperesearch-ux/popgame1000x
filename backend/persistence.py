@@ -276,19 +276,32 @@ def _leaderboard_fallback(limit: int) -> list[dict]:
 
 
 def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]:
-    """Idempotent upsert of a Hiscore identity row keyed on privy_id.
+    """Idempotent registration of a Hiscore identity row keyed on privy_id.
 
     Mirrors the canonical register pattern from the Hiscore main repo's
     Swallow Me route. Run with the service-role client (we already are —
     `_client` was created with SUPABASE_SERVICE_ROLE_KEY in init()), so
     RLS doesn't block the write.
 
-    A pg_trades trigger may have already inserted a row keyed on
-    evm_wallet_address (with privy_id NULL) for this wallet from prior
-    SR play. The onConflict=privy_id upsert wouldn't see that row — but
-    Postgres also has unique(lower(evm_wallet_address)), so the insert
-    would 23505 with a duplicate-key error. We swallow that and patch
-    the wallet-keyed row's privy_id instead, completing the linkage.
+    Why we don't use ON CONFLICT (privy_id):
+      bm_players_privy_id_key is a PARTIAL unique index
+      (`WHERE privy_id IS NOT NULL`). Postgres can't infer a partial
+      unique index from `ON CONFLICT (privy_id)` alone — the matching
+      WHERE predicate must be specified, but PostgREST's `on_conflict`
+      query parameter doesn't accept it. The probe `INSERT ... ON
+      CONFLICT (privy_id) DO UPDATE` returns 42P10 ("there is no unique
+      or exclusion constraint matching the ON CONFLICT specification").
+      So we do try-update-then-insert manually.
+
+    Branch logic:
+      1. UPDATE by privy_id. If a row exists, we're done (also covers
+         re-login: just bumps last_active_at).
+      2. Otherwise INSERT a new row. Two ways that INSERT can 23505:
+         a) lower(evm_wallet_address) conflict — the trigger already
+            backfilled a row for this wallet (the 3 existing SR users).
+            Patch THAT row's privy_id instead.
+         b) privy_id conflict — a concurrent register won the race;
+            our second UPDATE-by-privy_id will succeed.
     """
     if not is_enabled():
         return None
@@ -297,34 +310,48 @@ def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]
         return None
     wallet = evm_wallet_address.lower()
     now = datetime.utcnow().isoformat()
-    row = {
-        "privy_id": privy_id,
-        "evm_wallet_address": wallet,
-        "last_active_at": now,
-    }
+
+    # Step 1: try UPDATE by privy_id.
+    try:
+        upd = (
+            _client.table(_BM_PLAYERS)
+            .update({"evm_wallet_address": wallet, "last_active_at": now})
+            .eq("privy_id", privy_id)
+            .execute()
+        )
+        if list(upd.data or []):
+            return get_player_by_privy_id(privy_id)
+    except Exception as e:  # noqa: BLE001
+        # An UPDATE can still 23505 if our wallet collides with another
+        # row's evm_wallet_address. That's a real merge conflict (split
+        # rows for one human across games) — log and fall through; the
+        # caller can still surface the SM-side data via /me.
+        msg = str(e).lower()
+        if "lower(evm_wallet_address)" in msg or "evm_wallet_address" in msg:
+            print(f"[bm_players] register_player: wallet collision on UPDATE for {privy_id} / {wallet}: {e}")
+            return get_player_by_privy_id(privy_id)
+        print(f"[bm_players] register_player: UPDATE-by-privy_id failed for {privy_id}: {e}")
+        # Continue to INSERT path — UPDATE might have failed for an
+        # unrelated reason and INSERT may still succeed.
+
+    # Step 2: no row matched privy_id, try INSERT.
     try:
         (
             _client.table(_BM_PLAYERS)
-            .upsert(row, on_conflict="privy_id", ignore_duplicates=False)
+            .insert(
+                {
+                    "privy_id": privy_id,
+                    "evm_wallet_address": wallet,
+                    "last_active_at": now,
+                }
+            )
             .execute()
         )
-        # Always re-select after the upsert. supabase-py's default Prefer
-        # header has flipped between versions; we don't want our /user/register
-        # caller to think a successful upsert failed just because .data came
-        # back empty. The select also makes us robust to the patch path below
-        # (which writes by wallet, not privy_id, so the upsert response
-        # wouldn't reflect the linked row anyway).
         return get_player_by_privy_id(privy_id)
     except Exception as e:  # noqa: BLE001
-        msg = str(e)
-        # Trigger-backfilled row already exists for this wallet (privy_id
-        # NULL). Patch it: set privy_id + bump last_active_at on the row
-        # the unique-wallet index pointed to.
-        if (
-            "bm_players_evm_wallet_address" in msg
-            or "lower(evm_wallet_address)" in msg
-            or "duplicate key" in msg
-        ):
+        msg = str(e).lower()
+        # 2a) Trigger-backfilled wallet row: patch its privy_id.
+        if "lower(evm_wallet_address)" in msg or "bm_players_evm_wallet_address" in msg:
             try:
                 (
                     _client.table(_BM_PLAYERS)
@@ -336,7 +363,21 @@ def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]
             except Exception as patch_err:  # noqa: BLE001
                 print(f"[bm_players] wallet-keyed patch failed for {wallet}: {patch_err}")
                 return None
-        print(f"[bm_players] register_player upsert failed for {privy_id} / {wallet}: {e}")
+        # 2b) Privy_id race — another concurrent register beat us to the
+        # insert. Re-run the UPDATE we tried in step 1.
+        if "privy_id" in msg and ("duplicate key" in msg or "23505" in msg):
+            try:
+                (
+                    _client.table(_BM_PLAYERS)
+                    .update({"evm_wallet_address": wallet, "last_active_at": now})
+                    .eq("privy_id", privy_id)
+                    .execute()
+                )
+                return get_player_by_privy_id(privy_id)
+            except Exception as race_err:  # noqa: BLE001
+                print(f"[bm_players] privy_id race retry failed for {privy_id}: {race_err}")
+                return None
+        print(f"[bm_players] register_player INSERT failed for {privy_id} / {wallet}: {e}")
         return None
 
 
@@ -361,30 +402,45 @@ def get_player_by_privy_id(privy_id: str) -> Optional[dict]:
 def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optional[str]]:
     """Set the player's display name. Returns (row, error_msg).
 
-    Usernames are unique across ALL games (the bm_players.username unique
-    constraint enforces that), so we report a clear "taken" error rather
-    than letting a 23505 surface raw to the user. Returns the updated
-    row on success, or (None, "<reason>") on validation/conflict failure.
+    Usernames are unique across ALL games via the bm_players_username_unique
+    index on LOWER(username), so "Alice" and "alice" collide. We report
+    a clear "taken" error rather than letting a 23505 surface raw.
+
+    The existing 331 rows in bm_players have username == display_name
+    (Swallow Me / Holy Liquid keep both in sync). We mirror that pattern
+    so SR-set names render identically on hiscore.me regardless of which
+    column the unified leaderboard reads.
+
+    Returns the updated row on success, or (None, "<reason>") on
+    validation/conflict failure.
     """
     if not is_enabled():
         return None, "registry disabled"
     if not privy_id:
         return None, "missing privy_id"
     name = (username or "").strip()
-    # Mild input policing — server-side guard since the public client
-    # could call this directly. The DB constraints are still the source
-    # of truth on uniqueness.
-    if len(name) < 3 or len(name) > 20:
-        return None, "username must be 3-20 characters"
+    # Server-side input policing. Length window matches what the existing
+    # 331 rows fit into for typical traffic; the DB has no CHECK so any
+    # cap here is a UX choice, not a DB safety net.
+    if len(name) < 3 or len(name) > 32:
+        return None, "username must be 3-32 characters"
     # ASCII-only — Python's isalnum() is Unicode-aware and would let
-    # confusables through ("admin" vs Cyrillic "аdmin"). The cross-game
-    # uniqueness is by raw bytes, so we lock the alphabet here too.
+    # confusables through ("admin" vs Cyrillic "аdmin"). Cross-game
+    # uniqueness compares raw bytes (LOWER(username)), so we lock the
+    # alphabet here too. Allowed: A-Z a-z 0-9 _ - . All existing 331
+    # usernames pass this regex (verified against prod data).
     if not all((c.isascii() and c.isalnum()) or c in "_-" for c in name):
         return None, "username can only contain letters, numbers, _ and -"
     try:
         res = (
             _client.table(_BM_PLAYERS)
-            .update({"username": name, "last_active_at": datetime.utcnow().isoformat()})
+            .update(
+                {
+                    "username": name,
+                    "display_name": name,
+                    "last_active_at": datetime.utcnow().isoformat(),
+                }
+            )
             .eq("privy_id", privy_id)
             .execute()
         )
