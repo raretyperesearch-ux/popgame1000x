@@ -385,9 +385,16 @@ export async function setUsername(
     return { ok: true, player: res.player ?? null };
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
-    const m = raw.match(/^API (\d+):\s*(.*)$/s);
-    const status = m ? Number(m[1]) : 0;
-    let detail = m ? m[2] : raw;
+    // Parse "API <status>: <body>" without the /s regex flag — tsconfig
+    // targets ES2017 and dotAll isn't available there. Split manually
+    // so the body can still contain newlines.
+    let status = 0;
+    let detail = raw;
+    const apiMatch = /^API (\d+):/.exec(raw);
+    if (apiMatch) {
+      status = Number(apiMatch[1]);
+      detail = raw.slice(apiMatch[0].length).trimStart();
+    }
     const jsonMatch = detail.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
