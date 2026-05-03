@@ -34,6 +34,7 @@ _client: Any = None
 _enabled: bool = False
 _TABLE = "pg_trades"
 _LEADERBOARD_VIEW = "pg_trade_leaderboard"
+_BM_PLAYERS = "bm_players"
 
 
 def init() -> None:
@@ -263,3 +264,126 @@ def _leaderboard_fallback(limit: int) -> list[dict]:
             slot["liquidations"] += 1
     out = sorted(agg.values(), key=lambda x: x["net_pnl_usdc"], reverse=True)
     return out[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Cross-game identity (bm_players) — shared with Swallow Me / Holy Liquid.
+#
+# privy_id is the canonical join key across all Hiscore games. evm_wallet_address
+# is the secondary key used by the pg_trades_sync_bm_players trigger when a
+# trade lands before the user has logged in via this register flow.
+# ---------------------------------------------------------------------------
+
+
+def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]:
+    """Idempotent upsert of a Hiscore identity row keyed on privy_id.
+
+    Mirrors the canonical register pattern from the Hiscore main repo's
+    Swallow Me route. Run with the service-role client (we already are —
+    `_client` was created with SUPABASE_SERVICE_ROLE_KEY in init()), so
+    RLS doesn't block the write.
+
+    A pg_trades trigger may have already inserted a row keyed on
+    evm_wallet_address (with privy_id NULL) for this wallet from prior
+    SR play. The onConflict=privy_id upsert wouldn't see that row — but
+    Postgres also has unique(lower(evm_wallet_address)), so the insert
+    would 23505 with a duplicate-key error. We swallow that and patch
+    the wallet-keyed row's privy_id instead, completing the linkage.
+    """
+    if not is_enabled():
+        return None
+    if not privy_id or not evm_wallet_address:
+        print(f"[bm_players] register_player: missing privy_id={privy_id!r} or wallet={evm_wallet_address!r}")
+        return None
+    wallet = evm_wallet_address.lower()
+    now = datetime.utcnow().isoformat()
+    row = {
+        "privy_id": privy_id,
+        "evm_wallet_address": wallet,
+        "last_active_at": now,
+    }
+    try:
+        res = (
+            _client.table(_BM_PLAYERS)
+            .upsert(row, on_conflict="privy_id")
+            .execute()
+        )
+        data = list(res.data or [])
+        return data[0] if data else None
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        # Trigger-backfilled row already exists for this wallet (privy_id
+        # NULL). Patch it: set privy_id + bump last_active_at on the row
+        # the unique-wallet index pointed to.
+        if "bm_players_evm_wallet_address" in msg or "lower(evm_wallet_address)" in msg or "duplicate key" in msg:
+            try:
+                patch_res = (
+                    _client.table(_BM_PLAYERS)
+                    .update({"privy_id": privy_id, "last_active_at": now})
+                    .eq("evm_wallet_address", wallet)
+                    .execute()
+                )
+                data = list(patch_res.data or [])
+                return data[0] if data else None
+            except Exception as patch_err:  # noqa: BLE001
+                print(f"[bm_players] wallet-keyed patch failed for {wallet}: {patch_err}")
+                return None
+        print(f"[bm_players] register_player upsert failed for {privy_id} / {wallet}: {e}")
+        return None
+
+
+def get_player_by_privy_id(privy_id: str) -> Optional[dict]:
+    if not is_enabled() or not privy_id:
+        return None
+    try:
+        res = (
+            _client.table(_BM_PLAYERS)
+            .select("privy_id,evm_wallet_address,wallet_address,username,created_at,last_active_at")
+            .eq("privy_id", privy_id)
+            .limit(1)
+            .execute()
+        )
+        rows = list(res.data or [])
+        return rows[0] if rows else None
+    except Exception as e:  # noqa: BLE001
+        print(f"[bm_players] get_player_by_privy_id {privy_id} failed: {e}")
+        return None
+
+
+def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optional[str]]:
+    """Set the player's display name. Returns (row, error_msg).
+
+    Usernames are unique across ALL games (the bm_players.username unique
+    constraint enforces that), so we report a clear "taken" error rather
+    than letting a 23505 surface raw to the user. Returns the updated
+    row on success, or (None, "<reason>") on validation/conflict failure.
+    """
+    if not is_enabled():
+        return None, "registry disabled"
+    if not privy_id:
+        return None, "missing privy_id"
+    name = (username or "").strip()
+    # Mild input policing — server-side guard since the public client
+    # could call this directly. The DB constraints are still the source
+    # of truth on uniqueness.
+    if len(name) < 3 or len(name) > 20:
+        return None, "username must be 3-20 characters"
+    if not all(c.isalnum() or c in "_-" for c in name):
+        return None, "username can only contain letters, numbers, _ and -"
+    try:
+        res = (
+            _client.table(_BM_PLAYERS)
+            .update({"username": name, "last_active_at": datetime.utcnow().isoformat()})
+            .eq("privy_id", privy_id)
+            .execute()
+        )
+        rows = list(res.data or [])
+        if not rows:
+            return None, "player not registered yet"
+        return rows[0], None
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "duplicate key" in msg or "username" in msg.lower() and "unique" in msg.lower():
+            return None, "username already taken"
+        print(f"[bm_players] set_username failed for {privy_id}: {e}")
+        return None, "could not set username"

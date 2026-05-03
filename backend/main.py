@@ -15,7 +15,7 @@ load_dotenv()
 
 import auth
 import persistence
-from routes import trade, price, balance, wallet, history
+from routes import trade, price, balance, wallet, history, user
 
 
 def _init_privy_client():
@@ -378,6 +378,7 @@ app.include_router(price.router, prefix="/price", tags=["price"])
 app.include_router(balance.router, prefix="/balance", tags=["balance"])
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 app.include_router(history.router, prefix="/history", tags=["history"])
+app.include_router(user.router, prefix="/user", tags=["user"])
 
 
 @app.get("/")

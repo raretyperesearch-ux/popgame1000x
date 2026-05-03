@@ -12,7 +12,7 @@ import { encodeFunctionData, isAddress, parseEther, parseUnits } from "viem";
 import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
-import { getWalletStatus } from "@/lib/api";
+import { getWalletStatus, registerUser, getMe, setUsername, type BmPlayer } from "@/lib/api";
 import Leaderboard from "./Leaderboard";
 
 type WithdrawAsset = "USDC" | "ETH";
@@ -72,6 +72,14 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   // because that's what gates trade signing. `null` until first poll.
   const [serverDelegated, setServerDelegated] = useState<boolean | null>(null);
   const [serverDelegationMismatch, setServerDelegationMismatch] = useState<string | null>(null);
+  // Cross-game Hiscore identity row. null = not yet fetched / not registered;
+  // populated after the register-on-login effect runs. Drives the "set
+  // username" UI in the profile menu.
+  const [profile, setProfile] = useState<BmPlayer | null>(null);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameEditing, setUsernameEditing] = useState(false);
   const walletWrapRef = useRef<HTMLDivElement>(null);
   const profileWrapRef = useRef<HTMLDivElement>(null);
 
@@ -100,7 +108,35 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setLocallyDelegated(false);
     setServerDelegated(null);
     setServerDelegationMismatch(null);
+    setProfile(null);
+    setUsernameDraft("");
+    setUsernameError(null);
+    setUsernameEditing(false);
   }, [walletAddress]);
+
+  /* Register the user into the shared Hiscore bm_players table on every
+     authenticated session. Idempotent — the backend upserts on privy_id
+     and just bumps last_active_at on repeat logins. Without this, SR
+     users never appear on the unified leaderboard at hiscore.me. We
+     also fetch the row back so the profile menu can show the current
+     username (or prompt to pick one). */
+  useEffect(() => {
+    if (!ready || !authenticated || !walletAddress) return;
+    let cancelled = false;
+    void (async () => {
+      const registered = await registerUser(getAccessToken, walletAddress);
+      if (cancelled) return;
+      // Prefer the freshly-registered row; if register hit a transport
+      // failure it returned null, so fall back to /me to at least know
+      // whether a username already exists for this user.
+      const row = registered ?? (await getMe(getAccessToken, walletAddress));
+      if (cancelled) return;
+      setProfile(row);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, authenticated, walletAddress, getAccessToken]);
 
   /* Authoritative delegation check: ask the backend whether this wallet
      has the expected signer registered. This catches the silent-401
@@ -306,6 +342,32 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     } finally {
       setDelegating(false);
     }
+  };
+
+  const submitUsername = async () => {
+    const candidate = usernameDraft.trim();
+    if (!candidate || usernameSaving) return;
+    setUsernameSaving(true);
+    setUsernameError(null);
+    try {
+      const res = await setUsername(candidate, getAccessToken, walletAddress);
+      if (!res.ok) {
+        setUsernameError(res.error || "couldn't set username");
+        return;
+      }
+      setProfile(res.player);
+      setUsernameEditing(false);
+      setUsernameDraft("");
+      onError?.(`Username set: ${res.player?.username ?? candidate}`);
+    } finally {
+      setUsernameSaving(false);
+    }
+  };
+
+  const startEditUsername = () => {
+    setUsernameDraft(profile?.username ?? "");
+    setUsernameError(null);
+    setUsernameEditing(true);
   };
 
   const copyAddress = async () => {
@@ -646,6 +708,60 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                       {delegating ? "waiting for popup…" : serverDelegationMismatch ? "retry delegation" : "enable trading"}
                     </button>
                   )}
+                  <div className="user-menu-section">
+                    <div className="user-menu-section-title">
+                      <span className="section-arrow" aria-hidden="true">★</span>
+                      hiscore name
+                    </div>
+                    {!usernameEditing ? (
+                      <button
+                        className="user-menu-item"
+                        role="menuitem"
+                        onClick={() => { sounds.play("ui-click"); startEditUsername(); }}
+                      >
+                        {profile?.username
+                          ? `${profile.username} — change`
+                          : "pick a username"}
+                      </button>
+                    ) : (
+                      <div className="withdraw-panel">
+                        <label className="withdraw-field">
+                          <span>username</span>
+                          <input
+                            value={usernameDraft}
+                            onChange={(e) => setUsernameDraft(e.target.value)}
+                            placeholder="3-20 chars: a-z, 0-9, _ -"
+                            spellCheck={false}
+                            maxLength={20}
+                            autoFocus
+                          />
+                        </label>
+                        {usernameError && (
+                          <div className="withdraw-hint warn">{usernameError}</div>
+                        )}
+                        {!usernameError && (
+                          <div className="withdraw-hint">
+                            shown on hiscore.me leaderboard across all games.
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="user-menu-item primary withdraw-submit"
+                          disabled={usernameSaving || usernameDraft.trim().length < 3}
+                          onClick={() => { sounds.play("ui-click"); void submitUsername(); }}
+                        >
+                          {usernameSaving ? "saving…" : "save username"}
+                        </button>
+                        <button
+                          type="button"
+                          className="user-menu-item"
+                          onClick={() => { setUsernameEditing(false); setUsernameError(null); }}
+                        >
+                          cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
                     copy address
                   </button>

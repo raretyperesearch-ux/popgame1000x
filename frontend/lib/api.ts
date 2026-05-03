@@ -301,6 +301,104 @@ export async function getLeaderboard(
   );
 }
 
+export interface BmPlayer {
+  privy_id: string | null;
+  evm_wallet_address: string | null;
+  wallet_address: string | null;
+  username: string | null;
+  created_at?: string | null;
+  last_active_at?: string | null;
+}
+
+/* Cross-game Hiscore identity. Idempotent — safe to call on every
+   login. The backend upserts (privy_id, evm_wallet_address) into the
+   shared bm_players table; subsequent calls just bump last_active_at.
+
+   Never throws on transport failures — registration is a best-effort
+   side-effect of login, not a gate to playing. The backend will return
+   503 if Supabase isn't configured (e.g. local dev), in which case we
+   silently no-op. Real errors are logged for debugging. */
+export async function registerUser(
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<BmPlayer | null> {
+  if (isMock()) return null;
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/register",
+      { method: "POST" },
+      getAccessToken,
+      walletAddress,
+    );
+    return res.player ?? null;
+  } catch (e) {
+    console.warn("[user] register failed:", e);
+    return null;
+  }
+}
+
+export async function getMe(
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<BmPlayer | null> {
+  if (isMock()) return null;
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/me",
+      { method: "GET" },
+      getAccessToken,
+      walletAddress,
+    );
+    return res.player ?? null;
+  } catch (e) {
+    console.warn("[user] /me failed:", e);
+    return null;
+  }
+}
+
+export interface SetUsernameResult {
+  ok: boolean;
+  player: BmPlayer | null;
+  error?: string;
+  status?: number;
+}
+
+/* Set the player's display name. The username unique constraint spans
+   ALL Hiscore games (Swallow Me, Holy Liquid, Scalp Runner), so callers
+   need to surface the "taken" case distinctly from generic failure —
+   that's what the status field is for. 409 = taken, 400 = validation. */
+export async function setUsername(
+  username: string,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<SetUsernameResult> {
+  if (isMock()) {
+    return { ok: true, player: { privy_id: null, evm_wallet_address: null, wallet_address: null, username } };
+  }
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/set-username",
+      { method: "POST", body: JSON.stringify({ username }) },
+      getAccessToken,
+      walletAddress,
+    );
+    return { ok: true, player: res.player ?? null };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    const m = raw.match(/^API (\d+):\s*(.*)$/s);
+    const status = m ? Number(m[1]) : 0;
+    let detail = m ? m[2] : raw;
+    const jsonMatch = detail.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
+        if (parsed.detail) detail = parsed.detail;
+      } catch { /* fall through */ }
+    }
+    return { ok: false, player: null, error: detail, status };
+  }
+}
+
 export interface WalletStatus {
   address: string;
   delegated: boolean;
