@@ -20,8 +20,6 @@ user logged in (the 3 existing SR wallets case), register_player patches
 the row's privy_id rather than failing on the unique-wallet index.
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 

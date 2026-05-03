@@ -303,28 +303,36 @@ def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]
         "last_active_at": now,
     }
     try:
-        res = (
+        (
             _client.table(_BM_PLAYERS)
-            .upsert(row, on_conflict="privy_id")
+            .upsert(row, on_conflict="privy_id", ignore_duplicates=False)
             .execute()
         )
-        data = list(res.data or [])
-        return data[0] if data else None
+        # Always re-select after the upsert. supabase-py's default Prefer
+        # header has flipped between versions; we don't want our /user/register
+        # caller to think a successful upsert failed just because .data came
+        # back empty. The select also makes us robust to the patch path below
+        # (which writes by wallet, not privy_id, so the upsert response
+        # wouldn't reflect the linked row anyway).
+        return get_player_by_privy_id(privy_id)
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         # Trigger-backfilled row already exists for this wallet (privy_id
         # NULL). Patch it: set privy_id + bump last_active_at on the row
         # the unique-wallet index pointed to.
-        if "bm_players_evm_wallet_address" in msg or "lower(evm_wallet_address)" in msg or "duplicate key" in msg:
+        if (
+            "bm_players_evm_wallet_address" in msg
+            or "lower(evm_wallet_address)" in msg
+            or "duplicate key" in msg
+        ):
             try:
-                patch_res = (
+                (
                     _client.table(_BM_PLAYERS)
                     .update({"privy_id": privy_id, "last_active_at": now})
                     .eq("evm_wallet_address", wallet)
                     .execute()
                 )
-                data = list(patch_res.data or [])
-                return data[0] if data else None
+                return get_player_by_privy_id(privy_id)
             except Exception as patch_err:  # noqa: BLE001
                 print(f"[bm_players] wallet-keyed patch failed for {wallet}: {patch_err}")
                 return None
@@ -368,7 +376,10 @@ def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optio
     # of truth on uniqueness.
     if len(name) < 3 or len(name) > 20:
         return None, "username must be 3-20 characters"
-    if not all(c.isalnum() or c in "_-" for c in name):
+    # ASCII-only — Python's isalnum() is Unicode-aware and would let
+    # confusables through ("admin" vs Cyrillic "аdmin"). The cross-game
+    # uniqueness is by raw bytes, so we lock the alphabet here too.
+    if not all((c.isascii() and c.isalnum()) or c in "_-" for c in name):
         return None, "username can only contain letters, numbers, _ and -"
     try:
         res = (
@@ -383,7 +394,12 @@ def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optio
         return rows[0], None
     except Exception as e:  # noqa: BLE001
         msg = str(e)
-        if "duplicate key" in msg or "username" in msg.lower() and "unique" in msg.lower():
+        lo = msg.lower()
+        if (
+            "duplicate key" in lo
+            or "bm_players_username" in lo
+            or ("username" in lo and "unique" in lo)
+        ):
             return None, "username already taken"
         print(f"[bm_players] set_username failed for {privy_id}: {e}")
         return None, "could not set username"
