@@ -2390,14 +2390,14 @@ button.h-tag:focus-visible {
 .leaderboard-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 7px;
+  gap: 4px;
+  padding: 2px 7px 2px 6px;
   border: 1.5px dashed rgba(244, 236, 216, 0.36);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.18);
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  letter-spacing: 0.6px;
+  font-size: 6px;
+  letter-spacing: 0.5px;
   color: var(--ink);
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, transform 0.12s, background 0.12s;
@@ -2418,29 +2418,29 @@ button.h-tag:focus-visible {
   outline-offset: 2px;
 }
 .leaderboard-trophy {
-  font-size: 10px;
+  font-size: 8px;
   line-height: 1;
   color: #ffd166;
-  text-shadow: 0 0 8px rgba(255, 209, 102, 0.5);
+  text-shadow: 0 0 6px rgba(255, 209, 102, 0.5);
 }
 .leaderboard-rank {
-  letter-spacing: 0.8px;
+  letter-spacing: 0.6px;
 }
 .leaderboard-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   /* Anchored to the right edge of the pill so on narrow screens the
      menu doesn't blow past the cabinet's right border. The wallet menu
      uses the same pattern. */
   right: 0;
-  width: min(280px, calc(100vw - 28px));
-  max-height: min(420px, calc(100dvh - 116px));
+  width: min(244px, calc(100vw - 28px));
+  max-height: min(380px, calc(100dvh - 116px));
   overflow-y: auto;
   overscroll-behavior: contain;
   background: #0e1018;
   border: 2px solid rgba(244, 236, 216, 0.18);
-  border-radius: 10px;
-  padding: 8px 8px 6px;
+  border-radius: 9px;
+  padding: 6px 7px 5px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
   /* Same z-index tier as the wallet/avatar dropdowns so all three
      menus stack predictably (above stage at 20, below help overlay
@@ -2454,24 +2454,24 @@ button.h-tag:focus-visible {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .leaderboard-header {
-  padding: 4px 6px 8px;
+  padding: 3px 5px 6px;
   border-bottom: 1px dashed rgba(244, 236, 216, 0.12);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .leaderboard-title {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
-  letter-spacing: 1.5px;
+  font-size: 7px;
+  letter-spacing: 1.4px;
   color: var(--ink);
 }
 .leaderboard-sub {
   font-family: 'Caveat', cursive;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 .leaderboard-list {
   list-style: none;
@@ -2480,10 +2480,10 @@ button.h-tag:focus-visible {
 }
 .leaderboard-row {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 18px 1fr auto;
   align-items: baseline;
-  gap: 8px;
-  padding: 5px 6px;
+  gap: 6px;
+  padding: 3px 5px;
   border-bottom: 1px dashed rgba(244, 236, 216, 0.08);
   font-family: 'VT323', monospace;
 }
@@ -2498,7 +2498,7 @@ button.h-tag:focus-visible {
 }
 .leaderboard-pos {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 7px;
   color: var(--muted);
   text-align: right;
 }
@@ -2506,9 +2506,9 @@ button.h-tag:focus-visible {
 .leaderboard-row:nth-child(2) .leaderboard-pos { color: #d8d8d8; }
 .leaderboard-row:nth-child(3) .leaderboard-pos { color: #cd7f32; }
 .leaderboard-addr {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--ink);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2516,8 +2516,8 @@ button.h-tag:focus-visible {
 .leaderboard-pnl {
   font-family: 'Caveat', cursive;
   font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.4px;
+  font-size: 16px;
+  letter-spacing: 0.3px;
 }
 .leaderboard-pnl.win { color: #76ff69; text-shadow: 0 0 8px rgba(126,255,91,0.32); }
 .leaderboard-pnl.loss { color: #ff5f56; text-shadow: 0 0 8px rgba(255,95,86,0.32); }
