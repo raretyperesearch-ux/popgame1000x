@@ -104,11 +104,24 @@ def record_open(
 ) -> None:
     """Insert a row when a trade opens. Best-effort — never raises.
 
-    Uses upsert on (wallet_address, trade_index) so if the same trade
-    index ever cycles for the same wallet (Avantis recycles indices on
-    close), a re-open won't 23505 us; the older row's `closed_at` will
-    already be set, so we'll just overwrite it with fresh open data."""
+    Conflict key is open_tx_hash, which is globally unique on-chain. An
+    earlier scheme keyed on (wallet_address, trade_index) but Avantis
+    recycles trade_index per wallet on close, so every reopen of a
+    recycled index silently overwrote the previous trade's row. Keying
+    on the tx hash gives every real trade its own row; idempotent retries
+    of the same record_open just re-update the same row."""
     if not is_enabled():
+        return
+    # Defensive: if the receipt unwrap upstream ever returns "" (web3.py
+    # receipt without a transactionHash attribute), every empty-hash
+    # record_open would collide on the unique index and silently
+    # overwrite the previous one — re-introducing the original bug.
+    # Skip loudly instead.
+    if not open_tx_hash:
+        print(
+            f"[persistence] record_open skipped: empty open_tx_hash for "
+            f"{wallet_address} #{trade_index}"
+        )
         return
     row = {
         "did": did,
@@ -123,20 +136,11 @@ def record_open(
         "liquidation_price": liquidation_price,
         "opened_at": _iso(opened_at),
         "open_tx_hash": open_tx_hash,
-        # Reset close fields so a recycled index doesn't carry over
-        # stale close data from a previous trade with the same index.
-        "closed_at": None,
-        "exit_price": None,
-        "gross_pnl_usdc": None,
-        "avantis_win_fee_usdc": None,
-        "net_pnl_usdc": None,
-        "was_liquidated": None,
-        "close_tx_hash": None,
     }
     try:
         _client.table(_TABLE).upsert(
             row,
-            on_conflict="wallet_address,trade_index",
+            on_conflict="open_tx_hash",
         ).execute()
     except Exception as e:  # noqa: BLE001
         print(f"[persistence] record_open failed for {wallet_address} #{trade_index}: {e}")
@@ -154,11 +158,18 @@ def record_close(
     closed_at: datetime,
     close_tx_hash: str,
 ) -> None:
-    """Patch the close fields on the existing open row.
+    """Patch the close fields on the still-open row.
 
-    If the open row never made it (Supabase was down at open time), we
-    silently skip — leaderboard/history will just be missing this
-    trade. Failing the close response on a logging miss isn't worth it."""
+    The (wallet_address, trade_index) pair alone is ambiguous: Avantis
+    recycles trade_index, so historical rows can share that pair with
+    the current open trade. The `closed_at IS NULL` filter narrows the
+    update to the one row that's actually open right now — guaranteed
+    unique by the partial-unique index added in migration 0002.
+
+    If no row matches (Supabase was down at open, so there's no row to
+    patch), the update is a silent no-op — leaderboard/history will be
+    missing this trade. Not worth failing the close response over a
+    logging miss."""
     if not is_enabled():
         return
     patch = {
@@ -173,7 +184,7 @@ def record_close(
     try:
         _client.table(_TABLE).update(patch).eq(
             "wallet_address", wallet_address.lower()
-        ).eq("trade_index", trade_index).execute()
+        ).eq("trade_index", trade_index).is_("closed_at", "null").execute()
     except Exception as e:  # noqa: BLE001
         print(f"[persistence] record_close failed for {wallet_address} #{trade_index}: {e}")
 

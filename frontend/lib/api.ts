@@ -220,6 +220,54 @@ export async function getBalance(
   );
 }
 
+export interface HistoryTrade {
+  id: string;
+  wallet_address: string;
+  trade_index: number;
+  pair_index: number;
+  leverage: number;
+  wager_usdc: number;
+  collateral_usdc: number;
+  entry_price: number;
+  liquidation_price: number;
+  opened_at: string;
+  open_tx_hash: string;
+  exit_price: number | null;
+  gross_pnl_usdc: number | null;
+  avantis_win_fee_usdc: number | null;
+  net_pnl_usdc: number | null;
+  was_liquidated: boolean | null;
+  closed_at: string | null;
+  close_tx_hash: string | null;
+}
+
+export interface HistoryResponse {
+  enabled: boolean;
+  wallet_address: string;
+  trades: HistoryTrade[];
+}
+
+/* Persisted trade history for the calling user. Returns most-recent
+   first. Empty list when persistence is disabled on the backend
+   (SUPABASE_URL/SERVICE_ROLE_KEY unset) or when the wallet has no
+   recorded trades — both cases reach the frontend as an empty array
+   from the /history/me handler, so callers don't have to distinguish. */
+export async function getHistory(
+  limit: number = 5,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<HistoryResponse> {
+  if (isMock()) {
+    return { enabled: false, wallet_address: walletAddress ?? "", trades: [] };
+  }
+  return apiFetch<HistoryResponse>(
+    `/history/me?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
 export interface WalletStatus {
   address: string;
   delegated: boolean;
