@@ -351,6 +351,98 @@ body::before {
     inset 0 0 12px rgba(255,95,86,0.08),
     0 0 12px rgba(255,95,86,0.14);
 }
+.h-tag.liq {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(255,95,86,0.85);
+}
+/* Reset button-element defaults so .h-tag stays visually identical
+   when rendered as <button> (needed for click-to-pin a detail card). */
+button.h-tag {
+  font: inherit;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+}
+button.h-tag.has-detail {
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.18s ease;
+}
+button.h-tag.has-detail:hover {
+  transform: translateY(-1px);
+}
+button.h-tag.open {
+  background: rgba(244,236,216,0.08);
+}
+button.h-tag:disabled {
+  cursor: default;
+}
+button.h-tag:focus-visible {
+  outline: 2px dashed rgba(244,236,216,0.55);
+  outline-offset: 2px;
+}
+.h-tag-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.h-tag-wrap > .h-tag {
+  width: 100%;
+}
+/* Detail popover: anchored above the chip, dashed border, transparent
+   enough to feel like the rest of the cabinet UI. Click outside or
+   Escape to dismiss (handled in HistoryStrip.tsx). */
+.h-detail {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  /* Above the game stage (max z-index 20: trade-error-banner) but
+     below the topbar dropdowns (30) and help overlay (100). Lets the
+     popover read over the chart while never blocking those overlays. */
+  z-index: 25;
+  min-width: 168px;
+  padding: 8px 10px 9px;
+  background: #08080f;
+  border: 2px dashed rgba(244,236,216,0.65);
+  box-shadow:
+    0 8px 22px rgba(0,0,0,0.55),
+    inset 0 0 12px rgba(0,0,0,0.4);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: rgba(244,236,216,0.85);
+  letter-spacing: 0.5px;
+  pointer-events: auto;
+}
+.h-detail::after {
+  /* downward-pointing notch so the popover reads as anchored to its chip */
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(244,236,216,0.65);
+}
+.h-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(244,236,216,0.12);
+}
+.h-detail-row:last-child { border-bottom: none; }
+.h-detail-label {
+  color: rgba(244,236,216,0.45);
+  text-transform: uppercase;
+}
+.h-detail-value {
+  color: rgba(244,236,216,0.95);
+  text-align: right;
+}
+.h-detail-value.win { color: #76ff69; }
+.h-detail-value.loss { color: #ff5f56; }
 
 /* ============ STAGE ============ */
 .stage {

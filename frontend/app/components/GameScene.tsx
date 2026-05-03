@@ -1552,7 +1552,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number | null,
     ) => {
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+      onHistoryPush({
+        amt: pnlDollars,
+        win: pnlDollars >= 0,
+        entry: entryPrice,
+        exit: exitPrice,
+        leverage: positionLev,
+        wager: positionWager,
+        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+        closedAt: new Date().toISOString(),
+        liquidated: true,
+      });
       setEndOfGame({
         kind: "rekt",
         pnlDollars,
@@ -1619,7 +1629,17 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       exitPrice: number,
     ) => {
       setBalance((prev: number) => prev + positionWager + pnlDollars);
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+      onHistoryPush({
+        amt: pnlDollars,
+        win: pnlDollars >= 0,
+        entry: entryPrice,
+        exit: exitPrice,
+        leverage: positionLev,
+        wager: positionWager,
+        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+        closedAt: new Date().toISOString(),
+        liquidated: false,
+      });
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       if (kind === "win") {

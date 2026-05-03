@@ -9,11 +9,29 @@ import GameScene, { type GameSceneHandle } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade, getHistory, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+
+/* Map a persisted backend trade to the strip's entry shape. Discards
+   open trades (no exit / net_pnl yet) — caller is responsible for
+   filtering before mapping. */
+function historyTradeToEntry(t: HistoryTrade): HistoryEntry {
+  const net = t.net_pnl_usdc ?? 0;
+  return {
+    amt: net,
+    win: net >= 0,
+    entry: t.entry_price,
+    exit: t.exit_price,
+    leverage: t.leverage,
+    wager: t.wager_usdc,
+    openedAt: t.opened_at,
+    closedAt: t.closed_at,
+    liquidated: t.was_liquidated === true,
+  };
+}
 
 export default function Home() {
   const { authenticated, getAccessToken, user } = usePrivy();
@@ -155,6 +173,37 @@ export default function Home() {
       cancelled = true;
     };
   }, [gameState, getAccessToken, walletAddress, paperMode]);
+
+  /* Seed the LAST 5 SCALPS strip with persisted history on auth/wallet
+     ready. Without this, the strip is in-memory only and resets on
+     every refresh — players had no way to see prior trades. Skipped in
+     paper mode (no real wallet) and mock mode (no backend / getHistory
+     returns empty). The in-memory `handleHistoryPush` continues to
+     update the strip during play; this just gives it an initial state.
+
+     Order matches handleHistoryPush's append-end convention: oldest at
+     index 0 (visually left), newest at index 4 (visually right). The
+     backend returns newest-first, so we reverse after slicing. */
+  useEffect(() => {
+    if (!authenticated || paperMode || !walletAddress) return;
+    let cancelled = false;
+    getHistory(5, getAccessToken, walletAddress)
+      .then((res) => {
+        if (cancelled) return;
+        const seeded = res.trades
+          .filter((t) => t.closed_at !== null && t.net_pnl_usdc !== null)
+          .slice(0, 5)
+          .reverse()
+          .map(historyTradeToEntry);
+        if (seeded.length > 0) setHistory(seeded);
+      })
+      .catch((e) => {
+        console.warn("[history] seed fetch failed:", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, paperMode, walletAddress, getAccessToken]);
 
   /* first-launch help overlay */
   useEffect(() => {
