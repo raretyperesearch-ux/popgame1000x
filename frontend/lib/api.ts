@@ -210,7 +210,7 @@ export async function getBalance(
   walletAddress?: string,
 ): Promise<BalanceResponse> {
   if (isMock()) {
-    return { usdc_balance: 100, eth_balance: 0.01, wallet_address: "0xstub" };
+    return { usdc_balance: 1000, eth_balance: 0.01, wallet_address: "0xstub" };
   }
   return apiFetch<BalanceResponse>(
     "/balance",

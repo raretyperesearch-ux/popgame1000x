@@ -37,7 +37,10 @@ export default function Home() {
   const { authenticated, getAccessToken, user } = usePrivy();
   // Always the embedded wallet — see Topbar.tsx for rationale.
   const walletAddress = getEmbeddedEthereumAddress(user);
-  const [balance, setBalance] = useState(100);
+  // Initial paper-mode / mock-mode balance. Real wallets get overwritten
+  // on mount by readOnchainBalances. $1000 lets the wager slider exercise
+  // its full $1-$1000 range without exhausting the test bankroll.
+  const [balance, setBalance] = useState(1000);
   const [ethBalance, setEthBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [leverage, setLeverage] = useState(100);
