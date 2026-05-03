@@ -2453,6 +2453,22 @@ button.h-tag:focus-visible {
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+@media (max-width: 600px) {
+  /* On mobile the leaderboard pill sits mid-topbar; with right:0 anchored
+     to that pill's right edge, the 280px menu would extend leftward past
+     the viewport (left side gets clipped). Switch to viewport-fixed
+     positioning with safe gutters so the menu always fits regardless of
+     where the pill ends up in the flex row. */
+  .leaderboard-menu {
+    position: fixed;
+    top: 60px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 80px);
+  }
+}
 .leaderboard-header {
   padding: 4px 6px 8px;
   border-bottom: 1px dashed rgba(244, 236, 216, 0.12);
