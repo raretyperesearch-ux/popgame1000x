@@ -41,12 +41,16 @@ const DUST_LIFE = 0.45; // seconds each dust particle lives
 const RUN_DURATION = 1200; // ms of running before jump
 const PREPARE_DURATION = 300; // ms of charge + ground-break anticipation
 const JUMP_DURATION = 500; // ms of jump liftoff before LIVE
+const DIVE_JUMP_DURATION = 850; // short-mode shoreline hop into the water
 const BODY_HEIGHT_PX = 80;
 const GAME_SPEED = 0.45;
 const GRASS_GROUND_SRC = "/assets/grass-ground.png";
 const WATER_HAZARD_SRC = "/assets/water-hazard.png";
 const MONEY_PROPS_SRC = "/assets/money-props.png";
 const FLIGHT_HYPE_FX_SRC = "/assets/fx/flight-hype/sheet-transparent.png";
+const SKY_SPRITESHEET_SRC = "/spritesheet.png";
+const DIVE_SPRITESHEET_SRC = "/assets/underwater-spritesheet.png";
+const UNDERWATER_BG_SRC = "/assets/underwater-backdrop.png";
 const WATER_SRC_W = 2172;
 const WATER_SRC_H = 350;
 const GRASS_SRC_H = 256;
@@ -87,6 +91,10 @@ const BOOST_FRAMES = [35, 36, 34, 39, 28, 31];
 const BOOST_FRAME_MS = 78;
 const FALL_FRAMES = [32, 33];
 const FALL_FRAME_MS = 110;
+const DIVE_AIR_FRAMES = [22, 23, 24, 25, 26, 36, 38];
+const DIVE_BOOST_FRAMES = [23, 24, 25, 26, 36, 38];
+const DIVE_FALL_FRAMES = [17, 18];
+const DIVE_KICK_FRAME_MS = 105;
 const LAND_FRAMES = [14, 15];
 const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
@@ -114,6 +122,10 @@ const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
 const SETTLE_TIMEOUT_MS = 4500;
+const HOUSE_FEE_RATE = 0.025;
+const COLLATERAL_RATE = 1 - HOUSE_FEE_RATE;
+const LOCAL_MOCK_MODE = !process.env.NEXT_PUBLIC_API_URL;
+const MOCK_LIQUIDATION_PNL_FLOOR = -8;
 const FLIGHT_CUE_LINES = [
   "LET IT COOK!",
   "STAY AIRBORNE",
@@ -124,10 +136,21 @@ const FLIGHT_CUE_LINES = [
   "KEEP IT CLEAN",
   "WATCH THE RED!",
 ];
+const DIVE_CUE_LINES = [
+  "DIVE DEEPER!",
+  "RED CANDLE REEF!",
+  "PRESSURE PAYS!",
+  "SINK IT!",
+  "TREASURE LINE!",
+  "DOWN ONLY!",
+  "HOLD DEPTH!",
+  "WATCH THE SURFACE!",
+];
 
 type FlightFxKind = "streak" | "spark" | "coin" | "ring";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+export type TradeDirection = "long" | "short";
 
 /* ============ UTILITY ============ */
 function lerp(a: number, b: number, t: number): number {
@@ -181,6 +204,15 @@ function buildTerrainPoints(count: number, startWorldX: number, stageH: number, 
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function tradeMove(price: number, entry: number, direction: TradeDirection): number {
+  if (entry <= 0) return 0;
+  return direction === "short" ? (entry - price) / entry : (price - entry) / entry;
+}
+
+function directionPriceDelta(priceDelta: number, direction: TradeDirection): number {
+  return direction === "short" ? -priceDelta : priceDelta;
 }
 
 function terrainifyNorm(t: number): number {
@@ -292,6 +324,7 @@ export interface GameSceneHandle {
     wager: number,
     entryPrice: number,
     liquidationPrice: number,
+    direction: TradeDirection,
   ) => void;
   stopTrade: () => void;
 }
@@ -302,6 +335,7 @@ interface GameSceneProps {
   leverage: number;
   wager: number;
   gameState: GameState;
+  direction: TradeDirection;
   setGameState: (s: GameState) => void;
   onHistoryPush: (entry: HistoryEntry) => void;
   onPnlChange: (pnl: number | null) => void;
@@ -313,6 +347,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   {
     setBalance,
     gameState,
+    direction,
     setGameState,
     onHistoryPush,
     onPnlChange,
@@ -334,6 +369,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   const spriteCanvasRef = useRef<HTMLCanvasElement>(null);
   const spriteImageRef = useRef<HTMLImageElement | null>(null);
   const spriteImageReadyRef = useRef(false);
+  const diveSpriteImageRef = useRef<HTMLImageElement | null>(null);
+  const diveSpriteImageReadyRef = useRef(false);
+  const underwaterBgImageRef = useRef<HTMLImageElement | null>(null);
+  const underwaterBgImageReadyRef = useRef(false);
   const groundImageRef = useRef<HTMLImageElement | null>(null);
   const groundImageReadyRef = useRef(false);
   const waterImageRef = useRef<HTMLImageElement | HTMLCanvasElement | null>(null);
@@ -361,6 +400,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     entry: 3500,
     positionLev: 100,
     positionWager: 5,
+    tradeDirection: "long" as TradeDirection,
     /* backend-provided values from /trade/open. pendingEntry/pendingLiq are
        captured at startJump and snapped onto a.entry / a.liquidationPrice
        at the LIVE-state transition. */
@@ -530,11 +570,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
   const drawSprite = useCallback((time: number) => {
     const canvas = spriteCanvasRef.current;
-    const img = spriteImageRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const a = anim.current;
+    const isDive = a.tradeDirection === "short" && (a.state === "JUMPING" || a.state === "LIVE" || a.state === "STOPPED" || a.state === "DEAD");
+    const img = isDive ? diveSpriteImageRef.current : spriteImageRef.current;
+    const imageReady = isDive ? diveSpriteImageReadyRef.current : spriteImageReadyRef.current;
 
     let frameIdx: number;
     const totalFrames = img
@@ -561,13 +603,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       frameIdx = frames[Math.min(frames.length - 1, Math.floor(elapsed / (JUMP_DURATION / frames.length)))];
     } else if (a.spriteState === "air") {
       const elapsed = time - (a.spriteAirStart || time);
-      frameIdx = AIR_FRAMES[Math.floor(elapsed / AIR_FRAME_MS) % AIR_FRAMES.length];
+      const frames = a.tradeDirection === "short" ? safeFrames(DIVE_AIR_FRAMES, AIR_FRAMES) : AIR_FRAMES;
+      const frameMs = a.tradeDirection === "short" ? DIVE_KICK_FRAME_MS : AIR_FRAME_MS;
+      frameIdx = frames[Math.floor(elapsed / frameMs) % frames.length];
     } else if (a.spriteState === "boost") {
       const elapsed = time - (a.spriteAirStart || time);
-      frameIdx = BOOST_FRAMES[Math.floor(elapsed / BOOST_FRAME_MS) % BOOST_FRAMES.length];
+      const frames = a.tradeDirection === "short" ? safeFrames(DIVE_BOOST_FRAMES, BOOST_FRAMES) : BOOST_FRAMES;
+      const frameMs = a.tradeDirection === "short" ? DIVE_KICK_FRAME_MS : BOOST_FRAME_MS;
+      frameIdx = frames[Math.floor(elapsed / frameMs) % frames.length];
     } else if (a.spriteState === "fall") {
       const elapsed = time - (a.spriteFallStart || time);
-      frameIdx = FALL_FRAMES[Math.floor(elapsed / FALL_FRAME_MS) % FALL_FRAMES.length];
+      const frames = a.tradeDirection === "short" ? safeFrames(DIVE_FALL_FRAMES, FALL_FRAMES) : FALL_FRAMES;
+      frameIdx = frames[Math.floor(elapsed / FALL_FRAME_MS) % frames.length];
     } else if (a.spriteState === "land") {
       const elapsed = time - (a.spriteLandStart || time);
       frameIdx = LAND_FRAMES[Math.min(LAND_FRAMES.length - 1, Math.floor(elapsed / LAND_FRAME_MS))];
@@ -588,7 +635,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       canvas.height = targetH;
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!img || !spriteImageReadyRef.current) return;
+    if (!img || !imageReady) return;
     const sx = (frameIdx % SPRITE_COLS) * SPRITE_FRAME_W;
     const sy = Math.floor(frameIdx / SPRITE_COLS) * SPRITE_FRAME_H;
     ctx.imageSmoothingEnabled = false;
@@ -774,8 +821,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
             1,
           )
         : 0;
+      const isDiveScene = a.tradeDirection === "short" && isLive;
       const crashLevel = crashDanger >= 0.9 ? "red" : crashDanger >= 0.75 ? "orange" : crashDanger >= 0.5 ? "yellow" : "";
-      const crashCopy = crashDanger >= 0.9 ? "PULL UP" : crashDanger >= 0.75 ? "STALL WARNING" : crashDanger >= 0.5 ? "LOW FUEL" : "";
+      const crashCopy = isDiveScene
+        ? crashDanger >= 0.9 ? "SURFACE NOW" : crashDanger >= 0.75 ? "PRESSURE WARNING" : crashDanger >= 0.5 ? "RISING FAST" : ""
+        : crashDanger >= 0.9 ? "PULL UP" : crashDanger >= 0.75 ? "STALL WARNING" : crashDanger >= 0.5 ? "LOW FUEL" : "";
       const warningEl = crashWarningRef.current;
       if (warningEl) {
         warningEl.className = `crash-warning${crashLevel ? ` show ${crashLevel}` : ""}`;
@@ -786,7 +836,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* altitude-driven sky: 4 layers blended by skyAlt (0=night, 1=galaxies) */
       const skyAlt = a.skyAlt;
-      const layerColors = [
+      const layerColors = isDiveScene ? [
+        ["#001824", "#003c54", "#075f76", "#043344", "#001018"],
+        ["#002c42", "#005f76", "#0b8fa0", "#074c65", "#001620"],
+        ["#00131f", "#00283d", "#003c5a", "#001d32", "#000912"],
+        ["#000814", "#00111f", "#001c32", "#000d1b", "#00040b"],
+      ] : [
         // night (default ground level)
         ["#000208", "#050818", "#0a1a30", "#0a1828", "#060a14"],
         // stratosphere (sun, warm horizon)
@@ -814,9 +869,158 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
+      if (isDiveScene) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        const depth = clamp(a.skyAlt, 0, 1);
+        const bgImg = underwaterBgImageReadyRef.current ? underwaterBgImageRef.current : null;
+        if (bgImg?.complete && bgImg.naturalWidth > 0) {
+          const srcY = bgImg.naturalHeight * 0.02;
+          const srcH = bgImg.naturalHeight * 0.52;
+          const cover = Math.max(w / bgImg.naturalWidth, h / srcH);
+          const dw = bgImg.naturalWidth * cover;
+          const dh = srcH * cover;
+          const parallaxX = ((a.groundScrollAcc * 0.35) % Math.max(1, dw - w + 1));
+          ctx.globalAlpha = 0.72;
+          ctx.drawImage(
+            bgImg,
+            0,
+            srcY,
+            bgImg.naturalWidth,
+            srcH,
+            Math.round((w - dw) / 2 - parallaxX * 0.18),
+            Math.round((h - dh) / 2),
+            Math.round(dw),
+            Math.round(dh),
+          );
+          const veil = ctx.createLinearGradient(0, 0, 0, h);
+          veil.addColorStop(0, "rgba(0,38,54,0.04)");
+          veil.addColorStop(0.42, "rgba(0,22,35,0.14)");
+          veil.addColorStop(1, "rgba(0,8,16,0.46)");
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = veil;
+          ctx.fillRect(0, 0, w, h);
+        }
+        const surfaceY = h * (0.08 + depth * 0.08);
+        ctx.globalAlpha = 0.38;
+        ctx.fillStyle = "#9ffcff";
+        for (let x = -80; x < w + 80; x += 34) {
+          const y = surfaceY + Math.sin(x * 0.045 + a.frame * 0.045) * 4;
+          ctx.fillRect(Math.round(x + (a.groundScrollAcc * 0.35) % 34), Math.round(y), 22, 2);
+        }
+        ctx.globalAlpha = 0.16 + depth * 0.16;
+        ctx.strokeStyle = "#aefcff";
+        ctx.lineWidth = 1;
+        for (let r = 0; r < 9; r++) {
+          const x0 = ((r * 97 - a.groundScrollAcc * (9 + r)) % (w + 120)) - 60;
+          ctx.beginPath();
+          ctx.moveTo(x0, surfaceY + 8);
+          ctx.lineTo(x0 + 38 + depth * 35, h * (0.78 + (r % 3) * 0.04));
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.12 + depth * 0.12;
+        ctx.strokeStyle = "#6ff3ff";
+        ctx.lineWidth = 1;
+        for (let band = 0; band < 7; band++) {
+          const y = h * (0.22 + band * 0.075);
+          ctx.beginPath();
+          for (let x = 0; x <= w; x += 12) {
+            const wave = Math.sin(x * 0.035 + a.frame * 0.025 + band * 1.7) * (5 + band);
+            if (x === 0) ctx.moveTo(x, y + wave);
+            else ctx.lineTo(x, y + wave);
+          }
+          ctx.stroke();
+        }
+        for (let i = 0; i < 44; i++) {
+          const bx = ((i * 53 + Math.sin(a.frame * 0.01 + i) * 18 - a.groundScrollAcc * (0.7 + (i % 5) * 0.16)) % (w + 40)) - 20;
+          const by = (h * (0.18 + ((i * 0.137 + a.frame * 0.0018) % 0.72)));
+          const s = 1 + (i % 4);
+          ctx.globalAlpha = 0.13 + (i % 3) * 0.045;
+          ctx.strokeStyle = "#b8fdff";
+          ctx.beginPath();
+          ctx.arc(bx, by, s, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.42;
+        for (let i = 0; i < 10; i++) {
+          const x = ((i * 79 - a.groundScrollAcc * 1.8) % (w + 90)) - 45;
+          const y = h * (0.68 + featureNoise(i * 5.23) * 0.22);
+          ctx.fillStyle = i % 2 ? "#0d5960" : "#0a4652";
+          ctx.fillRect(Math.round(x), Math.round(y), 14 + (i % 3) * 5, 5);
+          ctx.fillRect(Math.round(x + 5), Math.round(y - 3), 6, 11);
+        }
+        ctx.globalAlpha = 0.58;
+        for (let i = 0; i < 8; i++) {
+          const x = ((i * 101 - a.groundScrollAcc * 2.7) % (w + 80)) - 40;
+          const y = h * (0.36 + featureNoise(i * 2.9) * 0.26);
+          ctx.fillStyle = i % 2 ? "#123f5c" : "#0e3348";
+          ctx.fillRect(Math.round(x), Math.round(y), 11, 3);
+          ctx.fillRect(Math.round(x + 9), Math.round(y - 2), 4, 7);
+          ctx.fillStyle = "#6ff3ff";
+          ctx.fillRect(Math.round(x + 2), Math.round(y + 1), 2, 1);
+        }
+
+        ctx.globalAlpha = 0.9;
+        const drawCoral = (x: number, y: number, color: string) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x, y + 22);
+          ctx.lineTo(x, y);
+          ctx.moveTo(x, y + 9);
+          ctx.lineTo(x - 8, y + 1);
+          ctx.moveTo(x, y + 13);
+          ctx.lineTo(x + 9, y + 4);
+          ctx.stroke();
+          ctx.fillStyle = color;
+          ctx.fillRect(Math.round(x - 2), Math.round(y - 2), 5, 5);
+        };
+        drawCoral(w * 0.18 - (a.groundScrollAcc * 0.9) % 32, h * 0.78, "#ff6f83");
+        drawCoral(w * 0.82 - (a.groundScrollAcc * 0.7) % 28, h * 0.72, "#ffb347");
+        drawCoral(w * 0.46 - (a.groundScrollAcc * 0.6) % 24, h * 0.82, "#9b7cff");
+
+        ctx.globalAlpha = 0.74;
+        const chestX = ((w * 0.58 - a.groundScrollAcc * 1.35) % (w + 80)) - 40;
+        const chestY = h * 0.82;
+        ctx.fillStyle = "#5a3212";
+        ctx.fillRect(Math.round(chestX), Math.round(chestY), 24, 12);
+        ctx.fillStyle = "#d59a2f";
+        ctx.fillRect(Math.round(chestX + 2), Math.round(chestY - 4), 20, 5);
+        ctx.fillRect(Math.round(chestX + 11), Math.round(chestY - 4), 3, 16);
+        ctx.globalAlpha = 0.42 + Math.sin(a.frame * 0.08) * 0.12;
+        ctx.fillStyle = "#ffe680";
+        ctx.fillRect(Math.round(chestX + 8), Math.round(chestY - 8), 10, 2);
+
+        ctx.globalAlpha = 0.24;
+        ctx.strokeStyle = "#93f7ff";
+        ctx.lineWidth = 2;
+        for (let j = 0; j < 3; j++) {
+          const jellyX = ((w * (0.23 + j * 0.24) - a.groundScrollAcc * (0.45 + j * 0.12)) % (w + 60)) - 30;
+          const jellyY = h * (0.32 + featureNoise(j * 8.7) * 0.2) + Math.sin(a.frame * 0.025 + j) * 7;
+          ctx.beginPath();
+          ctx.arc(jellyX, jellyY, 9 + j * 2, Math.PI, 0);
+          ctx.stroke();
+          for (let t = 0; t < 4; t++) {
+            ctx.beginPath();
+            ctx.moveTo(jellyX - 7 + t * 5, jellyY + 2);
+            ctx.lineTo(jellyX - 10 + t * 6 + Math.sin(a.frame * 0.06 + t) * 3, jellyY + 22);
+            ctx.stroke();
+          }
+        }
+
+        ctx.globalAlpha = clamp(0.08 + depth * 0.28, 0, 0.42);
+        const depthGrad = ctx.createLinearGradient(0, h * 0.38, 0, h);
+        depthGrad.addColorStop(0, "rgba(0,20,32,0)");
+        depthGrad.addColorStop(0.7, "rgba(0,8,16,0.3)");
+        depthGrad.addColorStop(1, "rgba(0,4,10,0.58)");
+        ctx.fillStyle = depthGrad;
+        ctx.fillRect(0, h * 0.38, w, h * 0.62);
+        ctx.restore();
+      }
+
       /* horizon glow + atmospheric bands, so climbs feel layered instead of flat */
       const horizonGlow = clamp(1 - Math.abs(skyAlt - 0.28) * 2.8, 0, 1);
-      if (horizonGlow > 0.01) {
+      if (!isDiveScene && horizonGlow > 0.01) {
         const hg = ctx.createLinearGradient(0, h * 0.28, 0, h * 0.74);
         hg.addColorStop(0, "rgba(255,238,190,0)");
         hg.addColorStop(0.52, `rgba(255,183,93,${0.18 * horizonGlow})`);
@@ -825,7 +1029,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.fillRect(0, h * 0.2, w, h * 0.56);
       }
       const auroraAlpha = clamp((skyAlt - 0.58) * 2.2, 0, 0.55);
-      if (auroraAlpha > 0.02) {
+      if (!isDiveScene && auroraAlpha > 0.02) {
         ctx.save();
         ctx.globalAlpha = auroraAlpha;
         for (let band = 0; band < 3; band++) {
@@ -859,7 +1063,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ctx.globalAlpha = 1;
 
       /* extra deep-space stars (only visible past stratosphere) */
-      if (skyAlt > 0.35) {
+      if (!isDiveScene && skyAlt > 0.35) {
         const deepAlpha = clamp((skyAlt - 0.35) * 1.6, 0, 1);
         ctx.fillStyle = "#ffffff";
         for (let i = 0; i < 80; i++) {
@@ -885,7 +1089,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* moon — fades out as we leave the troposphere */
       const moonAlpha = Math.max(0, 0.18 - skyAlt * 0.4);
-      if (moonAlpha > 0.01) {
+      if (!isDiveScene && moonAlpha > 0.01) {
         const moonX = w * 0.82, moonY = h * 0.09, moonR = 14;
         ctx.globalAlpha = moonAlpha;
         ctx.fillStyle = "#f4ecd8";
@@ -902,7 +1106,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* sun — peaks in the stratosphere band (skyAlt 0.2 - 0.6) */
       const sunAlpha = Math.max(0, 1 - Math.abs(skyAlt - 0.4) * 3.2);
-      if (sunAlpha > 0.01) {
+      if (!isDiveScene && sunAlpha > 0.01) {
         const sunX = w * 0.78, sunY = h * 0.18, sunR = 28;
         const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 3);
         sunGrad.addColorStop(0, `rgba(255,230,140,${sunAlpha})`);
@@ -932,7 +1136,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* planets — appear in the space band (skyAlt 0.5 - 1.0) */
       const planetAlpha = clamp((skyAlt - 0.45) * 2.0, 0, 1);
-      if (planetAlpha > 0.05) {
+      if (!isDiveScene && planetAlpha > 0.05) {
         const planets = [
           { x: 0.18, y: 0.12, r: 18, color: "#c87850", ring: false },
           { x: 0.52, y: 0.22, r: 11, color: "#6890c0", ring: false },
@@ -971,7 +1175,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
       /* nebula + galaxies — appear past skyAlt 0.65 */
       const nebulaAlpha = clamp((skyAlt - 0.6) * 2.5, 0, 1);
-      if (nebulaAlpha > 0.05) {
+      if (!isDiveScene && nebulaAlpha > 0.05) {
         const blobs = [
           { x: 0.3, y: 0.3, r: 180, c1: "rgba(180,80,200,0.18)", c2: "rgba(80,40,120,0)" },
           { x: 0.75, y: 0.18, r: 150, c1: "rgba(80,140,220,0.15)", c2: "rgba(40,60,140,0)" },
@@ -1021,7 +1225,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         { x: 1.06, y: 0.2, s: 1.18 },
       ];
       ctx.save();
-      ctx.globalAlpha = cloudAlpha;
+      ctx.globalAlpha = isDiveScene ? 0 : cloudAlpha;
       ctx.imageSmoothingEnabled = false;
       for (let idx = 0; idx < cloudPositions.length; idx++) {
         const c = cloudPositions[idx];
@@ -1254,7 +1458,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.mountainCacheKey = terrainKey;
         }
       }
-      if (a.mountainCache) ctx.drawImage(a.mountainCache, 0, 0);
+      if (a.mountainCache && !isDiveScene) ctx.drawImage(a.mountainCache, 0, 0);
 
       if (DEBUG_TERRAIN) {
         ctx.strokeStyle = "rgba(255,230,80,0.8)";
@@ -1284,7 +1488,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
         /* zone fill */
         ctx.fillStyle = `rgba(255,95,86,${0.04 + crashDanger * 0.12})`;
-        ctx.fillRect(0, ly, w, h - ly);
+        if (a.tradeDirection === "short") ctx.fillRect(0, 0, w, ly);
+        else ctx.fillRect(0, ly, w, h - ly);
 
         /* dashed line with jitter */
         ctx.strokeStyle = `rgba(255,95,86,${0.58 + crashDanger * 0.35 * pulse})`;
@@ -1303,12 +1508,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         ctx.fillStyle = `rgba(255,95,86,${0.55 + crashDanger * 0.35})`;
         ctx.font = '7px "Press Start 2P", monospace';
         ctx.textAlign = "center";
-        ctx.fillText("\u2014 CRASH LINE \u2014", w / 2, ly + 14);
+        ctx.fillText(a.tradeDirection === "short" ? "\u2014 SURFACE LINE \u2014" : "\u2014 CRASH LINE \u2014", w / 2, ly + 14);
         ctx.textAlign = "start";
       }
 
       /* ground fades away as we climb out of the atmosphere */
-      const groundAlpha = clamp(1 - a.skyAlt * 1.6, 0, 1);
+      const groundAlpha = isDiveScene ? 0 : clamp(1 - a.skyAlt * 1.6, 0, 1);
       if (groundAlpha > 0.01) {
         ctx.save();
         ctx.globalAlpha = groundAlpha;
@@ -1540,11 +1745,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
+    const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
     const positionLev = a.positionLev;
     const entry = a.entry;
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
-    const pnlDollarsOptimistic = -positionWager; // liq = full collateral loss
+    const pnlDollarsOptimistic = -positionCollateral; // liq = full collateral loss; house fee was paid on open
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1552,9 +1758,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number | null,
     ) => {
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0, direction: a.tradeDirection });
       setEndOfGame({
         kind: "rekt",
+        direction: a.tradeDirection,
         pnlDollars,
         pnlPct,
         entry: entryPrice,
@@ -1602,15 +1809,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
+    const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
     const positionLev = a.positionLev;
     const entry = a.entry;
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
 
     // Optimistic fallback PnL based on the live chart price.
-    const moveOptimistic = (exitOptimistic - entry) / (entry || 1);
+    const moveOptimistic = tradeMove(exitOptimistic, entry, a.tradeDirection);
     const pnlPctOptimistic = moveOptimistic * positionLev;
-    const pnlDollarsOptimistic = pnlPctOptimistic * positionWager;
+    const pnlDollarsOptimistic = pnlPctOptimistic * positionCollateral;
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1618,8 +1826,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number,
     ) => {
-      setBalance((prev: number) => prev + positionWager + pnlDollars);
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0 });
+      setBalance((prev: number) => prev + positionCollateral + pnlDollars);
+      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0, direction: a.tradeDirection });
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       if (kind === "win") {
@@ -1631,6 +1839,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       setEndOfGame({
         kind,
+        direction: a.tradeDirection,
         pnlDollars,
         pnlPct,
         entry: entryPrice,
@@ -1672,13 +1881,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
-    (lev: number, wag: number, entryPrice: number, liqPrice: number) => {
+    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection) => {
       const a = anim.current;
       sounds.play("lever-pull");
       a.state = "RUNNING";
       setGameState("RUNNING");
       a.positionLev = lev;
       a.positionWager = wag;
+      a.tradeDirection = direction;
       a.pendingEntry = entryPrice;
       a.pendingLiqPrice = liqPrice;
       a.runFrame = 0;
@@ -1786,7 +1996,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       const jumpZoom = a.state === "PREPARE" || a.state === "JUMPING";
       const crashZoom = time < a.crashZoomUntil;
       const liveCueZoom = a.state === "LIVE" ? 1 + a.liveZoomPunch * 0.11 : 1;
-      const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? 2.45 : liveCueZoom;
+      const cinematicTarget = crashZoom ? 2.85 : jumpZoom ? (a.tradeDirection === "short" ? 1.14 : 2.45) : liveCueZoom;
       a.cinematicZoom = lerp(a.cinematicZoom || 1, cinematicTarget, (cinematicTarget > 1 ? 0.22 : 0.1) * dtNorm);
       a.liveShake = Math.max(0, a.liveShake - dt * 0.0032);
       a.liveZoomPunch = Math.max(0, a.liveZoomPunch - dt * 0.0017);
@@ -1809,7 +2019,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       /* sky altitude target — climbs with PnL during LIVE, holds during STOPPED, decays otherwise */
       let skyTarget = 0;
       if (a.state === "LIVE") {
-        const pnlPct = (a.price - a.entry) / a.entry * a.positionLev;
+        const pnlPct = tradeMove(a.price, a.entry, a.tradeDirection) * a.positionLev;
         skyTarget = clamp(pnlPct * 0.5, 0, 1);
       } else if (a.state === "STOPPED") {
         skyTarget = 0; // decay back to ground while parachuting
@@ -1822,17 +2032,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
          Positive PnL must read above ENTRY, negative PnL below ENTRY; the
          physics layer can still ease and bounce inside those bounds. */
       if (a.state === "LIVE" && a.entry > 0) {
-        const move = (a.price - a.entry) / a.entry;
+        const move = tradeMove(a.price, a.entry, a.tradeDirection);
         const pnlPct = move * a.positionLev;
         const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
-        if (pnlPct > 0.002 && a.price > a.entry) {
+        if (a.tradeDirection === "long" && pnlPct > 0.002 && a.price > a.entry) {
           const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
           if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
           if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
-        } else if (pnlPct < -0.002 && a.price < a.entry) {
+        } else if (a.tradeDirection === "long" && pnlPct < -0.002 && a.price < a.entry) {
           const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
           if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
           if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        } else if (a.tradeDirection === "short" && pnlPct > 0.002 && a.price < a.entry) {
+          const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
+          if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
+          if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        } else if (a.tradeDirection === "short" && pnlPct < -0.002 && a.price > a.entry) {
+          const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
+          if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
+          if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
         }
       }
 
@@ -2017,8 +2235,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const prepElapsed = time - (a.prepareStartTime || time);
         const t = clamp(prepElapsed / PREPARE_DURATION, 0, 1);
         a.curBobY = Math.sin(t * Math.PI) * 6.8;
-        setSpriteState(t < 0.62 ? "charge" : "break", time);
-        setFig(figScreenX, a.smoothAlt - t * 5.5, a.smoothRot);
+        if (a.tradeDirection === "short") {
+          setSpriteState(t < 0.62 ? "crouch" : "charge", time);
+          a.smoothRot = lerp(a.smoothRot, 5 * t, ROTATION_LERP * dtNorm);
+          setFig(figScreenX, a.smoothAlt - Math.sin(t * Math.PI) * 4, a.smoothRot);
+        } else {
+          setSpriteState(t < 0.62 ? "charge" : "break", time);
+          setFig(figScreenX, a.smoothAlt - t * 5.5, a.smoothRot);
+        }
         if (prepElapsed >= PREPARE_DURATION) {
           a.state = "JUMPING";
           setGameState("JUMPING");
@@ -2031,6 +2255,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         /* liftoff from chart into air */
         if (a.jumpStartTime === 0) a.jumpStartTime = time;
         const elapsed = time - a.jumpStartTime;
+        const activeJumpDuration = a.tradeDirection === "short" ? DIVE_JUMP_DURATION : JUMP_DURATION;
         const loco = a.loco;
         setSpriteState("jump", time);
         if (loco.grounded) {
@@ -2041,7 +2266,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.figPriceVel = 0.06 + n.y * 0.02;
         }
 
-        if (elapsed > JUMP_DURATION) {
+        if (elapsed > activeJumpDuration) {
           /* enter LIVE — use the on-chain entry/liq from /trade/open if
              present (positive value); otherwise fall back to the current
              price for entry and the 1/lev formula for liq so the game
@@ -2053,7 +2278,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.liquidationPrice =
             a.pendingLiqPrice > 0
               ? a.pendingLiqPrice
-              : a.entry - a.entry / a.positionLev;
+              : a.tradeDirection === "short"
+                ? a.entry + a.entry / a.positionLev
+                : a.entry - a.entry / a.positionLev;
           a.tradeStartTime = time;
           a.figPrice = a.price;
           a.figPriceVel = 0.08;
@@ -2065,15 +2292,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           const fig = figRef.current;
           if (fig) fig.style.transition = "none";
         } else {
-          /* rising arc from chart line */
-          const liftT = elapsed / JUMP_DURATION;
-          const liftArc = Math.sin(liftT * Math.PI * 0.5);
+          const jumpT = clamp(elapsed / activeJumpDuration, 0, 1);
           const chartY = getTerrainY(figWorldX);
           const baseAlt = a.stageH - chartY;
-          a.smoothAlt = baseAlt + 40 * liftArc;
-          a.curBobY = 0;
-          a.smoothRot = lerp(a.smoothRot, -10 * liftArc, ROTATION_LERP * dtNorm);
-          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          if (a.tradeDirection === "short") {
+            const hopT = clamp(jumpT / 0.34, 0, 1);
+            const diveT = clamp((jumpT - 0.22) / 0.78, 0, 1);
+            const diveEase = diveT * diveT * (3 - 2 * diveT);
+            const hopLift = Math.sin(hopT * Math.PI) * 38;
+            const waterY = clamp(chartY + 128, a.stageH * 0.7, a.stageH - 24);
+            const startY = chartY - hopLift;
+            const diveY = lerp(startY, waterY + 26, diveEase);
+            a.smoothAlt = a.stageH - diveY;
+            a.curBobY = 0;
+            const targetDiveRot = jumpT < 0.22 ? -8 : 18 + diveEase * 42;
+            a.smoothRot = lerp(a.smoothRot, targetDiveRot, ROTATION_LERP * dtNorm);
+            setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          } else {
+            /* rising arc from chart line */
+            const liftArc = Math.sin(jumpT * Math.PI * 0.5);
+            a.smoothAlt = baseAlt + 40 * liftArc;
+            a.curBobY = 0;
+            a.smoothRot = lerp(a.smoothRot, -10 * liftArc, ROTATION_LERP * dtNorm);
+            setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          }
           a.figPrice = priceAtFig;
           a.frame++;
         }
@@ -2085,20 +2327,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.curBobY = 0;
 
         /* price delta for physics */
-        const priceDelta = a.price - a.prevPrice;
+        const priceDelta = directionPriceDelta(a.price - a.prevPrice, a.tradeDirection);
         a.smoothDelta = lerp(a.smoothDelta, priceDelta, VELOCITY_LERP * dtNorm);
+        const visualDir = a.tradeDirection === "short" ? -1 : 1;
 
         /* Open trades stay airborne. The character can lose altitude,
            but only liquidation is allowed to hit the ground. */
         const thrust = clamp(a.smoothDelta * THRUST_MULT, -0.08, 0.12);
         if (a.smoothDelta > 0.001) {
-          a.figPriceVel += thrust * 0.6 * dtNorm;
+          a.figPriceVel += thrust * 0.6 * visualDir * dtNorm;
         } else if (Math.abs(a.smoothDelta) <= 0.0015) {
-          a.figPriceVel += (-GRAVITY_P * 0.25) * dtNorm;
+          a.figPriceVel += (-GRAVITY_P * 0.25) * visualDir * dtNorm;
         } else {
-          a.figPriceVel += (thrust * 0.25 - GRAVITY_P * 1.15) * dtNorm;
+          a.figPriceVel += (thrust * 0.25 - GRAVITY_P * 1.15) * visualDir * dtNorm;
         }
-        a.figPriceVel -= GRAVITY_P * dtNorm;
+        a.figPriceVel -= GRAVITY_P * visualDir * dtNorm;
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
@@ -2118,9 +2361,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
         /* PnL */
-        const move = (a.price - a.entry) / a.entry;
+        const move = tradeMove(a.price, a.entry, a.tradeDirection);
         const pnlPct = move * a.positionLev;
-        const pnlDollars = pnlPct * a.positionWager;
+        const positionCollateral = +(a.positionWager * COLLATERAL_RATE).toFixed(4);
+        const pnlDollars = pnlPct * positionCollateral;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
         const liveLift = a.skyAlt * a.stageH * 0.25;
@@ -2135,7 +2379,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.nextFlightCueAt === 0) a.nextFlightCueAt = time + 3600;
         if (time >= a.nextFlightCueAt || milestone > a.lastFlightMilestone) {
           const lineSeed = Math.floor(liveElapsed / 1000) + Math.floor(Math.abs(pnlPct) * 100);
-          const urgentLine = pnlPct < -0.18 ? "PULL UP!" : pnlPct > 0.18 ? "LET IT RIP!" : FLIGHT_CUE_LINES[lineSeed % FLIGHT_CUE_LINES.length];
+          const cueLines = a.tradeDirection === "short" ? DIVE_CUE_LINES : FLIGHT_CUE_LINES;
+          const urgentLine = a.tradeDirection === "short"
+            ? pnlPct < -0.18 ? "SURFACE!" : pnlPct > 0.18 ? "DIVE DEEP!" : cueLines[lineSeed % cueLines.length]
+            : pnlPct < -0.18 ? "PULL UP!" : pnlPct > 0.18 ? "LET IT RIP!" : cueLines[lineSeed % cueLines.length];
           a.flightBubble = { text: urgentLine, start: time, until: time + 2450 };
           a.nextFlightCueAt = time + cueEvery;
           a.lastFlightMilestone = milestone;
@@ -2162,14 +2409,22 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         }
 
         const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
-        if (pnlPct > 0.002 && a.price > a.entry) {
+        if (a.tradeDirection === "long" && pnlPct > 0.002 && a.price > a.entry) {
           const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
           if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
           if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
-        } else if (pnlPct < -0.002 && a.price < a.entry) {
+        } else if (a.tradeDirection === "long" && pnlPct < -0.002 && a.price < a.entry) {
           const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
           if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
           if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        } else if (a.tradeDirection === "short" && pnlPct > 0.002 && a.price < a.entry) {
+          const maxVisualPrice = a.entry - Math.max((a.entry - a.price) * 0.55, priceEpsilon);
+          if (a.figPrice > maxVisualPrice) a.figPrice = maxVisualPrice;
+          if (a.figPriceVel > 0) a.figPriceVel *= 0.2;
+        } else if (a.tradeDirection === "short" && pnlPct < -0.002 && a.price > a.entry) {
+          const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
+          if (a.figPrice < minVisualPrice) a.figPrice = minVisualPrice;
+          if (a.figPriceVel < 0) a.figPriceVel *= 0.2;
         }
 
         /* Smooth cinematic banking. Rotation follows the trade direction,
@@ -2257,7 +2512,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const crossedCrashLine = liqPrice !== null && (
           a.entry >= liqPrice ? a.price <= liqPrice : a.price >= liqPrice
         );
-        if (crossedCrashLine || pnlPct <= -1) {
+        const liquidatedByPnl = LOCAL_MOCK_MODE
+          ? pnlPct <= MOCK_LIQUIDATION_PNL_FLOOR
+          : pnlPct <= -1;
+        if (crossedCrashLine || liquidatedByPnl) {
           splat();
         }
 
@@ -2337,11 +2595,37 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     img.onload = () => {
       spriteImageReadyRef.current = true;
     };
-    img.src = "/spritesheet.png";
+    img.src = SKY_SPRITESHEET_SRC;
     spriteImageRef.current = img;
     return () => {
       spriteImageRef.current = null;
       spriteImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      diveSpriteImageReadyRef.current = true;
+    };
+    img.src = DIVE_SPRITESHEET_SRC;
+    diveSpriteImageRef.current = img;
+    return () => {
+      diveSpriteImageRef.current = null;
+      diveSpriteImageReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      underwaterBgImageReadyRef.current = true;
+    };
+    img.src = UNDERWATER_BG_SRC;
+    underwaterBgImageRef.current = img;
+    return () => {
+      underwaterBgImageRef.current = null;
+      underwaterBgImageReadyRef.current = false;
     };
   }, []);
 
@@ -2439,11 +2723,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
   /* sync external state */
   useEffect(() => {
     anim.current.state = gameState;
-  }, [gameState]);
+    if (gameState === "IDLE") anim.current.tradeDirection = direction;
+  }, [gameState, direction]);
+  useEffect(() => {
+    if (anim.current.state === "IDLE") anim.current.tradeDirection = direction;
+  }, [direction]);
 
   return (
     <div
-      className={`stage${impactFx ? ` impact-${impactFx}` : ""}${jumpCinematic ? " jump-cinematic" : ""}`}
+      className={`stage${anim.current.tradeDirection === "short" ? " dive-mode" : ""}${impactFx ? ` impact-${impactFx}` : ""}${jumpCinematic ? " jump-cinematic" : ""}`}
       ref={stageRef}
     >
       {/* Chart canvas */}

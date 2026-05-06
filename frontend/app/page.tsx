@@ -5,7 +5,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import Topbar from "./components/Topbar";
 import HistoryStrip, { type HistoryEntry } from "./components/HistoryStrip";
-import GameScene, { type GameSceneHandle } from "./components/GameScene";
+import GameScene, { type GameSceneHandle, type TradeDirection } from "./components/GameScene";
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
@@ -19,11 +19,12 @@ export default function Home() {
   const { authenticated, getAccessToken, user } = usePrivy();
   // Always the embedded wallet — see Topbar.tsx for rationale.
   const walletAddress = getEmbeddedEthereumAddress(user);
-  const [balance, setBalance] = useState(100);
+  const [balance, setBalance] = useState(1000);
   const [ethBalance, setEthBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [leverage, setLeverage] = useState(100);
-  const [wager, setWager] = useState(5);
+  const [wager, setWager] = useState(100);
+  const [direction, setDirection] = useState<TradeDirection>("long");
   const [gameState, setGameState] = useState<GameState>("IDLE");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
@@ -200,8 +201,10 @@ export default function Home() {
     });
   }, []);
 
-  const handleAction = useCallback(async () => {
+  const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
+    const activeDirection = actionDirection ?? direction;
     if (gameState === "IDLE" && balance >= wager && !openInFlight) {
+      setDirection(activeDirection);
       setOpenInFlight(true);
       try {
         let entryPrice = 0;
@@ -209,7 +212,7 @@ export default function Home() {
         let tradeOk = true;
         if (!paperMode) {
           try {
-            const trade = await openTrade(leverage, wager, getAccessToken, walletAddress);
+            const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
             entryPrice = trade.entry_price;
             liquidationPrice = trade.liquidation_price;
           } catch (e) {
@@ -254,7 +257,7 @@ export default function Home() {
         }
         if (tradeOk) {
           setBalance((prev) => prev - wager);
-          gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice);
+          gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice, activeDirection);
         }
       } finally {
         setOpenInFlight(false);
@@ -262,7 +265,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -296,6 +299,7 @@ export default function Home() {
         leverage={leverage}
         wager={wager}
         gameState={gameState}
+        direction={direction}
         setGameState={setGameState}
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
@@ -308,6 +312,7 @@ export default function Home() {
         wager={wager}
         balance={balance}
         pnl={pnl}
+        direction={direction}
         busy={openInFlight}
         state={gameState}
         onLeverageChange={handleLeverageChange}

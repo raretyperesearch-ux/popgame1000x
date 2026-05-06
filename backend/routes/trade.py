@@ -299,6 +299,22 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
     collateral = round(body.wager_usdc - house_fee, 4)
     if collateral <= 0:
         raise HTTPException(400, "wager too small after house fee")
+    treasury_address = _valid_treasury_address() if house_fee > 0 else None
+    if house_fee > 0 and not treasury_address:
+        raise HTTPException(
+            503,
+            "House fee treasury is not configured. Set TREASURY_ADDRESS before "
+            "accepting real-money trades.",
+        )
+
+    usdc_balance = float(await client.get_usdc_balance(user.address))
+    if usdc_balance + 1e-9 < body.wager_usdc:
+        raise HTTPException(
+            402,
+            f"Insufficient USDC. Need {body.wager_usdc:.2f} USDC for wager "
+            f"including {house_fee:.4f} USDC house fee; wallet has "
+            f"{usdc_balance:.4f} USDC.",
+        )
 
     allowance = await client.get_usdc_allowance_for_trading(user.address)
     if allowance < collateral:
@@ -333,7 +349,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         open_price=None,
         pair_index=pair_index,
         collateral_in_trade=collateral,
-        is_long=True,
+        is_long=body.is_long,
         leverage=body.leverage,
         index=0,
         tp=0,
@@ -368,30 +384,22 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
     # on failure rather than unwinding the open — easier to reconcile
     # a missed fee from the txhash than to refund a successful trade.
     if house_fee > 0:
-        treasury_address = _valid_treasury_address()
-        if not treasury_address:
+        try:
+            fee_tx = build_usdc_transfer_tx(treasury_address, house_fee)
+            if _is_legacy_user(user):
+                receipt = await client.sign_and_get_receipt(fee_tx)
+                fee_hash = _tx_hash_str(receipt)
+            else:
+                fee_hash = await _send_user_tx(user, fee_tx)
             print(
-                f"⚠️  TREASURY_ADDRESS unset — skipping {house_fee} USDC fee "
-                f"collection for trade {new_trade.trade.trade_index} "
-                f"({user.address}). Set TREASURY_ADDRESS on Railway."
+                f"✓ House fee {house_fee} USDC collected: "
+                f"{user.address} -> {treasury_address} ({fee_hash})"
             )
-        else:
-            try:
-                fee_tx = build_usdc_transfer_tx(treasury_address, house_fee)
-                if _is_legacy_user(user):
-                    receipt = await client.sign_and_get_receipt(fee_tx)
-                    fee_hash = _tx_hash_str(receipt)
-                else:
-                    fee_hash = await _send_user_tx(user, fee_tx)
-                print(
-                    f"✓ House fee {house_fee} USDC collected: "
-                    f"{user.address} -> {treasury_address} ({fee_hash})"
-                )
-            except Exception as e:  # noqa: BLE001
-                print(
-                    f"⚠️  House fee {house_fee} USDC NOT collected from "
-                    f"{user.address} (trade {new_trade.trade.trade_index}): {e}"
-                )
+        except Exception as e:  # noqa: BLE001
+            print(
+                f"⚠️  House fee {house_fee} USDC NOT collected from "
+                f"{user.address} (trade {new_trade.trade.trade_index}): {e}"
+            )
 
     persistence.record_open(
         did=user.did,
@@ -419,6 +427,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         liquidation_price=new_trade.liquidation_price,
         opened_at=opened_at,
         tx_hash=tx_hash,
+        is_long=body.is_long,
     )
 
 
@@ -592,7 +601,8 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
     # rather than a 503.
     latest = price_module.get_latest_price()
     current = float(latest) if latest is not None else entry
-    pnl_usdc, pnl_pct = _compute_pnl(entry, current, leverage, collateral)
+    is_long = bool(getattr(t.trade, "is_long", True))
+    pnl_usdc, pnl_pct = _compute_pnl(entry, current, leverage, collateral, is_long=is_long)
 
     return ActiveTrade(
         trade_index=t.trade.trade_index,
@@ -606,4 +616,5 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
         pnl_pct=pnl_pct,
         liquidation_price=t.liquidation_price,
         opened_at=_opened_at_from_trade(t),
+        is_long=is_long,
     )

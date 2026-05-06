@@ -3,6 +3,7 @@
 export interface HistoryEntry {
   amt: number;
   win: boolean;
+  direction?: "long" | "short";
 }
 
 interface HistoryStripProps {
