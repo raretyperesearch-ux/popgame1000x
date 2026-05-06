@@ -23,6 +23,17 @@
   --cloud-base: #b6c2e1;
   --cloud-shadow: #a5b3d8;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 * {
   margin: 0;
@@ -735,6 +746,13 @@ button.h-tag:focus-visible {
   will-change: transform;
   animation: raceFlagWave 0.44s steps(4) infinite;
 }
+.stage.dive-mode .race-flag {
+  filter:
+    hue-rotate(150deg)
+    saturate(1.25)
+    drop-shadow(0 2px 0 rgba(0,0,0,0.5))
+    drop-shadow(0 0 8px rgba(47,226,212,0.38));
+}
 
 @keyframes raceFlagWave {
   from { background-position: 0 0; }
@@ -1301,6 +1319,59 @@ button.h-tag:focus-visible {
   pointer-events: none;
 }
 /* ---- ACTION BUTTON: arcade launch panel ---- */
+.action-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-height: 48px;
+  border: 2px solid var(--cyan);
+  background: #07111a;
+  overflow: hidden;
+  transform: none;
+  box-shadow:
+    inset 0 -3px 0 rgba(0,0,0,0.55),
+    0 0 0 1px rgba(255,217,102,0.18),
+    0 0 18px rgba(77,208,225,0.38),
+    0 8px 22px rgba(0,0,0,0.28);
+}
+.action.split-half {
+  min-height: 48px;
+  padding: 5px 10px;
+  border: 0;
+  transform: none;
+  box-shadow: none;
+  animation: actionPulse 1.8s ease-in-out infinite;
+  grid-template-columns: 1fr;
+  grid-template-rows: 18px 1fr 18px;
+  row-gap: 0;
+  justify-items: center;
+  align-items: center;
+  overflow: hidden;
+}
+.action.split-half::after {
+  inset: 5px 8px;
+}
+.action.split-half.jump {
+  background:
+    linear-gradient(180deg, rgba(93,211,158,0.3), rgba(93,211,158,0.06) 58%),
+    radial-gradient(ellipse at 80% 0%, rgba(255,217,102,0.2), transparent 60%),
+    #071811;
+  color: #dcfff0;
+  border-right: 2px solid rgba(244,236,216,0.16);
+}
+.action.split-half.dive {
+  background:
+    linear-gradient(180deg, rgba(47,226,212,0.26), rgba(38,91,255,0.1) 58%),
+    radial-gradient(ellipse at 22% 100%, rgba(159,252,255,0.18), transparent 60%),
+    #061521;
+  color: #d9fbff;
+}
+.action.split-half:hover {
+  filter: brightness(1.14) saturate(1.08);
+}
+.action.split-half:active {
+  transform: scale(0.97);
+}
 .action {
   min-height: 32px;
   padding: 4px 14px;
@@ -1706,7 +1777,7 @@ button.h-tag:focus-visible {
     #111823;
   color: rgba(244,236,216,0.82);
   font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
+  font-size: 9px;
   text-shadow: 0 2px 0 rgba(0,0,0,0.72);
   box-shadow:
     inset 0 2px 0 rgba(255,255,255,0.12),
@@ -1727,23 +1798,77 @@ button.h-tag:focus-visible {
   animation: none;
 }
 .wager-panel .action {
-  min-height: 38px;
+  min-height: 42px;
   border-radius: 9px;
-  border: 2px solid #fff06b;
+  border: 2px solid #42f0ff;
   background:
-    linear-gradient(180deg, #fff63b 0%, #ffc51f 58%, #d06d08 100%);
-  color: #3f2400;
-  font-size: 19px;
+    linear-gradient(90deg, rgba(255,255,255,0.12), transparent 18%, transparent 82%, rgba(0,0,0,0.22)),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg, rgba(52,218,255,0.86) 0%, rgba(17,89,190,0.92) 58%, rgba(5,21,74,0.98) 100%),
+    #061a32;
+  color: #f5ffff;
+  font-size: 16px;
   letter-spacing: 1px;
   transform: none;
   text-shadow:
-    0 2px 0 rgba(255,255,255,0.25),
-    0 4px 0 rgba(120,68,0,0.42);
+    0 2px 0 rgba(0,0,0,0.72),
+    0 0 10px rgba(140,248,255,0.38);
   box-shadow:
-    inset 0 2px 0 rgba(255,255,255,0.55),
-    inset 0 -6px 0 rgba(123,57,0,0.52),
-    0 5px 0 rgba(59,31,0,0.8),
-    0 0 22px rgba(255,217,102,0.3);
+    inset 0 2px 0 rgba(255,255,255,0.34),
+    inset 0 -6px 0 rgba(0,0,0,0.58),
+    0 4px 0 rgba(0,0,0,0.62),
+    0 0 18px rgba(37,205,255,0.3);
+}
+.wager-panel .action.split-half {
+  min-height: 64px;
+  border: 0;
+  border-radius: 14px;
+  color: transparent;
+  font-size: 0;
+  letter-spacing: 0;
+  transform: none;
+  display: block;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  text-shadow: none;
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.55),
+    0 0 16px rgba(255,255,255,0.16);
+}
+.wager-panel .action.split-half.jump {
+  background-image: url(/assets/ui/action-jump-button.png);
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.62),
+    0 0 18px rgba(94,255,73,0.38);
+}
+.wager-panel .action.split-half.dive {
+  background-image: url(/assets/ui/action-dive-button.png);
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.62),
+    0 0 18px rgba(45,204,255,0.38);
+}
+.wager-panel .action-split {
+  transform: none;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow:
+    none;
+}
+.wager-panel .action.split-half::before {
+  display: none;
+}
+.wager-panel .action.split-half::after {
+  display: none;
+}
+.wager-panel .action.split-half.jump:hover {
+  filter: brightness(1.12) saturate(1.12);
+}
+.wager-panel .action.split-half.dive:hover {
+  filter: brightness(1.12) saturate(1.18);
 }
 .wager-panel .action::before {
   content: "";
@@ -1763,18 +1888,42 @@ button.h-tag:focus-visible {
 }
 .wager-panel .action.stop {
   min-height: 48px;
-  color: #fff4d4;
-  border-color: transparent;
+  color: #ffffff;
+  border: 2px solid #ffb4aa;
+  border-radius: 10px;
   background:
-    linear-gradient(90deg, rgba(255,95,86,0.08), transparent 20%, transparent 80%, rgba(255,95,86,0.1)),
-    url(/assets/ui/pull-chute-frame.png) center / 100% 100% no-repeat;
+    linear-gradient(90deg, rgba(255,255,255,0.16), transparent 18%, transparent 82%, rgba(0,0,0,0.26)),
+    radial-gradient(circle, rgba(255,255,255,0.12) 0 1px, transparent 1px) 0 0 / 7px 7px,
+    linear-gradient(180deg, rgba(255,95,86,0.96) 0%, rgba(194,34,34,0.94) 54%, rgba(86,5,18,0.98) 100%),
+    #26050b;
   text-shadow:
-    0 0 8px rgba(255,217,102,0.7),
-    0 0 14px rgba(255,95,86,0.45),
+    0 0 10px rgba(255,255,255,0.34),
+    0 0 14px rgba(255,95,86,0.56),
     0 3px 0 rgba(82,0,0,0.72);
+  box-shadow:
+    inset 0 3px 0 rgba(255,255,255,0.34),
+    inset 0 -7px 0 rgba(70,0,8,0.72),
+    0 4px 0 rgba(0,0,0,0.62),
+    0 0 20px rgba(255,95,86,0.32);
 }
 .wager-panel .action.stop::before {
   display: none;
+}
+.wager-panel .action.disabled {
+  color: rgba(232,253,255,0.76);
+  border-color: rgba(90,227,255,0.56);
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.1), transparent 18%, transparent 82%, rgba(0,0,0,0.22)),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg, rgba(49,180,210,0.62) 0%, rgba(20,74,134,0.68) 58%, rgba(7,23,61,0.86) 100%),
+    #061a32;
+  text-shadow:
+    0 2px 0 rgba(0,0,0,0.72),
+    0 0 8px rgba(140,248,255,0.26);
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.2),
+    inset 0 -6px 0 rgba(0,0,0,0.52),
+    0 3px 0 rgba(0,0,0,0.52);
 }
 .wager-panel .action-boss-pack {
   display: none;
@@ -2094,6 +2243,17 @@ button.h-tag:focus-visible {
 .eog-sprite-frame.f15 { background-position: 0 -213px; }
 .eog-sprite-frame.f16 { background-position: -64px -213px; }
 .eog-sprite-frame.f35 { background-position: 0 -497px; }
+.eog-card.dive .eog-sprite-frame {
+  background-image: url(/assets/underwater-spritesheet.png);
+  filter:
+    drop-shadow(0 2px 0 rgba(0,0,0,0.42))
+    drop-shadow(0 0 9px rgba(111,243,255,0.36));
+}
+.eog-card.dive .eog-sprite-frame.f15,
+.eog-card.dive .eog-sprite-frame.f16,
+.eog-card.dive .eog-sprite-frame.f35 {
+  background-position: -128px -213px;
+}
 .eog-pnl-block {
   display: flex;
   flex-direction: column;

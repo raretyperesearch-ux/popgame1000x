@@ -14,6 +14,7 @@ MAX_LEVERAGE = 500
 class OpenTradeRequest(BaseModel):
     leverage: int = Field(ge=MIN_LEVERAGE, le=MAX_LEVERAGE)
     wager_usdc: float = Field(gt=0)
+    is_long: bool = True
 
 
 class OpenTradeResponse(BaseModel):
@@ -27,6 +28,7 @@ class OpenTradeResponse(BaseModel):
     liquidation_price: float
     opened_at: datetime
     tx_hash: str
+    is_long: bool = True
 
 
 class CloseTradeResponse(BaseModel):
@@ -53,6 +55,7 @@ class ActiveTrade(BaseModel):
     pnl_pct: float
     liquidation_price: float
     opened_at: datetime
+    is_long: bool = True
 
 
 class PriceStreamMessage(BaseModel):

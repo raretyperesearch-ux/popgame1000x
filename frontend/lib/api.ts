@@ -1,3 +1,5 @@
+export type TradeDirection = "long" | "short";
+
 export interface OpenTradeResponse {
   trade_index: number;
   avantis_pair_index: number;
@@ -9,6 +11,7 @@ export interface OpenTradeResponse {
   liquidation_price: number;
   opened_at: string;
   tx_hash: string;
+  is_long: boolean;
 }
 
 export interface CloseTradeResponse {
@@ -35,6 +38,7 @@ export interface ActiveTrade {
   pnl_pct: number;
   liquidation_price: number;
   opened_at: string;
+  is_long: boolean;
 }
 
 export interface BalanceResponse {
@@ -44,6 +48,7 @@ export interface BalanceResponse {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const MOCK_LIQUIDATION_BUFFER_MULT = 8;
 
 function isMock(): boolean {
   return !API_URL;
@@ -76,13 +81,17 @@ async function apiFetch<T>(
 export async function openTrade(
   leverage: number,
   wager: number,
+  direction: TradeDirection = "long",
   getAccessToken?: () => Promise<string | null>,
   walletAddress?: string,
 ): Promise<OpenTradeResponse> {
   if (isMock()) {
     const entry_price = 3500;
-    // longs liquidate when a 1/lev drop wipes the collateral.
-    const liquidation_price = entry_price - entry_price / leverage;
+    const is_long = direction === "long";
+    const mockLiqMove = (entry_price / leverage) * MOCK_LIQUIDATION_BUFFER_MULT;
+    const liquidation_price = is_long
+      ? entry_price - mockLiqMove
+      : entry_price + mockLiqMove;
     const opened_at = new Date().toISOString();
     const collateral_usdc = wager * 0.975;
     mockTradeState = {
@@ -97,6 +106,7 @@ export async function openTrade(
       pnl_pct: 0,
       liquidation_price,
       opened_at,
+      is_long,
     };
     return {
       trade_index: 0,
@@ -109,13 +119,14 @@ export async function openTrade(
       liquidation_price,
       opened_at,
       tx_hash: "0xstub",
+      is_long,
     };
   }
   return apiFetch<OpenTradeResponse>(
     "/trade/open",
     {
       method: "POST",
-      body: JSON.stringify({ leverage, wager_usdc: wager }),
+      body: JSON.stringify({ leverage, wager_usdc: wager, is_long: direction === "long" }),
     },
     getAccessToken,
     walletAddress,
@@ -130,11 +141,14 @@ export async function closeTrade(
   if (isMock()) {
     const entry_price = mockTradeState?.entry_price ?? 3500;
     const wager = mockTradeState?.wager_usdc ?? 5;
+    const collateral = mockTradeState?.collateral_usdc ?? wager * 0.975;
     const leverage = mockTradeState?.leverage ?? 100;
     const exit_price = mockExitPrice && mockExitPrice > 0
       ? mockExitPrice
       : mockTradeState?.current_price ?? entry_price;
-    const gross_pnl_usdc = +((((exit_price - entry_price) / entry_price) * leverage * wager).toFixed(4));
+    const isLong = mockTradeState?.is_long ?? true;
+    const move = isLong ? (exit_price - entry_price) / entry_price : (entry_price - exit_price) / entry_price;
+    const gross_pnl_usdc = +((move * leverage * collateral).toFixed(4));
     const avantis_win_fee_usdc = gross_pnl_usdc > 0 ? +(gross_pnl_usdc * 0.025).toFixed(4) : 0;
     const net_pnl_usdc = gross_pnl_usdc > 0
       ? +(gross_pnl_usdc - avantis_win_fee_usdc).toFixed(4)
@@ -168,6 +182,7 @@ export async function forceCloseTrade(
   if (isMock()) {
     const entry_price = mockTradeState?.entry_price ?? 3500;
     const wager = mockTradeState?.wager_usdc ?? 5;
+    const collateral = mockTradeState?.collateral_usdc ?? wager * 0.975;
     const exit_price = mockExitPrice && mockExitPrice > 0
       ? mockExitPrice
       : mockTradeState?.liquidation_price ?? entry_price;
@@ -176,9 +191,9 @@ export async function forceCloseTrade(
       trade_index: 0,
       entry_price,
       exit_price,
-      gross_pnl_usdc: -wager,
+      gross_pnl_usdc: -collateral,
       avantis_win_fee_usdc: 0,
-      net_pnl_usdc: -wager,
+      net_pnl_usdc: -collateral,
       was_liquidated: true,
       closed_at: new Date().toISOString(),
       tx_hash: "0xstub",

@@ -5,6 +5,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 export interface HistoryEntry {
   amt: number;
   win: boolean;
+  direction?: "long" | "short";
   /* Optional rich detail. Present when the entry was loaded from
      /history/me or pushed locally after a closed trade with full
      detail. Absent for legacy callers that only know amt + win. */

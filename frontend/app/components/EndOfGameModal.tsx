@@ -7,6 +7,7 @@ export type EndOfGameKind = "win" | "loss" | "rekt";
 
 export interface EndOfGameData {
   kind: EndOfGameKind;
+  direction?: "long" | "short";
   pnlDollars: number;
   pnlPct: number;       // e.g. 0.159 for +15.9%
   entry: number;
@@ -531,7 +532,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
   return (
     <div className="eog-overlay" ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className={`eog-card ${data.kind}`}>
+      <div className={`eog-card ${data.kind}${data.direction === "short" ? " dive" : ""}`}>
         <Decorations kind={data.kind} />
 
         <div className="eog-header">

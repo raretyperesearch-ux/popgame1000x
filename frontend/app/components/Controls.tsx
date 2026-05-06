@@ -3,17 +3,19 @@
 import type { CSSProperties } from "react";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type TradeDirection = "long" | "short";
 
 interface ControlsProps {
   leverage: number;
   wager: number;
   balance: number;
   pnl: number | null;
+  direction: TradeDirection;
   busy?: boolean;
   state: GameState;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
-  onAction: () => void;
+  onAction: (direction?: TradeDirection) => void;
 }
 
 const CHIPS = [1, 25, 100, 1000];
@@ -23,6 +25,7 @@ export default function Controls({
   wager,
   balance,
   pnl,
+  direction,
   busy = false,
   state,
   onLeverageChange,
@@ -45,11 +48,11 @@ export default function Controls({
       ? null
       : `${estimatedNetPnl >= 0 ? "+" : "\u2212"}$${Math.abs(estimatedNetPnl).toFixed(2)} est net`;
 
-  let actionLabel = "jump";
+  let actionLabel = direction === "short" ? "dive" : "jump";
   let actionClass = "action";
   let actionLocked = false;
   if (state === "LIVE") {
-    actionLabel = "pull chute";
+    actionLabel = direction === "short" ? "surface" : "pull chute";
     actionClass = "action stop";
   } else if (opening) {
     actionLabel = "entering";
@@ -63,11 +66,14 @@ export default function Controls({
     // Wager exceeds balance — keep the button live so the click
     // surfaces page.tsx's "need $X more" toast, but swap the label
     // so the gap is visible without needing to click.
-    actionLabel = `fund $${(wager - balance).toFixed(0)} to jump`;
+    actionLabel = direction === "short"
+      ? `fund $${(wager - balance).toFixed(0)} to dive`
+      : `fund $${(wager - balance).toFixed(0)} to jump`;
   } else if (disabled) {
     actionClass = "action disabled";
     actionLocked = true;
   }
+  const showSplitAction = state === "IDLE" && !opening && balance >= 1 && wager <= balance && !disabled;
 
   return (
     <div className="controls">
@@ -117,26 +123,37 @@ export default function Controls({
             </button>
           ))}
         </div>
-        <button type="button" className={actionClass} disabled={actionLocked} onClick={onAction}>
-          <span className="action-boss-pack left" aria-hidden="true">
-            <span className="boss-sprite v1" />
-            <span className="boss-sprite v2" />
-            <span className="boss-sprite v3" />
-            <span className="boss-sprite v4" />
-          </span>
-          <span className="action-copy">
-            <span className="action-label">{actionLabel}</span>
-            {state === "LIVE" && estimatedNetCopy && (
-              <span className="action-est">{estimatedNetCopy}</span>
-            )}
-          </span>
-          <span className="action-boss-pack right" aria-hidden="true">
-            <span className="boss-sprite v5" />
-            <span className="boss-sprite v6" />
-            <span className="boss-sprite v1" />
-            <span className="boss-sprite v3" />
-          </span>
-        </button>
+        {showSplitAction ? (
+          <div className="action-split" role="group" aria-label="Choose jump or dive">
+            <button type="button" className="action split-half jump" onClick={() => onAction("long")}>
+              <span className="sr-only">jump</span>
+            </button>
+            <button type="button" className="action split-half dive" onClick={() => onAction("short")}>
+              <span className="sr-only">dive</span>
+            </button>
+          </div>
+        ) : (
+          <button type="button" className={actionClass} disabled={actionLocked} onClick={() => onAction()}>
+            <span className="action-boss-pack left" aria-hidden="true">
+              <span className="boss-sprite v1" />
+              <span className="boss-sprite v2" />
+              <span className="boss-sprite v3" />
+              <span className="boss-sprite v4" />
+            </span>
+            <span className="action-copy">
+              <span className="action-label">{actionLabel}</span>
+              {state === "LIVE" && estimatedNetCopy && (
+                <span className="action-est">{estimatedNetCopy}</span>
+              )}
+            </span>
+            <span className="action-boss-pack right" aria-hidden="true">
+              <span className="boss-sprite v5" />
+              <span className="boss-sprite v6" />
+              <span className="boss-sprite v1" />
+              <span className="boss-sprite v3" />
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
