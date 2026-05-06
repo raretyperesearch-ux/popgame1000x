@@ -362,6 +362,98 @@ body::before {
     inset 0 0 12px rgba(255,95,86,0.08),
     0 0 12px rgba(255,95,86,0.14);
 }
+.h-tag.liq {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(255,95,86,0.85);
+}
+/* Reset button-element defaults so .h-tag stays visually identical
+   when rendered as <button> (needed for click-to-pin a detail card). */
+button.h-tag {
+  font: inherit;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+}
+button.h-tag.has-detail {
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.18s ease;
+}
+button.h-tag.has-detail:hover {
+  transform: translateY(-1px);
+}
+button.h-tag.open {
+  background: rgba(244,236,216,0.08);
+}
+button.h-tag:disabled {
+  cursor: default;
+}
+button.h-tag:focus-visible {
+  outline: 2px dashed rgba(244,236,216,0.55);
+  outline-offset: 2px;
+}
+.h-tag-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.h-tag-wrap > .h-tag {
+  width: 100%;
+}
+/* Detail popover: anchored above the chip, dashed border, transparent
+   enough to feel like the rest of the cabinet UI. Click outside or
+   Escape to dismiss (handled in HistoryStrip.tsx). */
+.h-detail {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  /* Above the game stage (max z-index 20: trade-error-banner) but
+     below the topbar dropdowns (30) and help overlay (100). Lets the
+     popover read over the chart while never blocking those overlays. */
+  z-index: 25;
+  min-width: 168px;
+  padding: 8px 10px 9px;
+  background: #08080f;
+  border: 2px dashed rgba(244,236,216,0.65);
+  box-shadow:
+    0 8px 22px rgba(0,0,0,0.55),
+    inset 0 0 12px rgba(0,0,0,0.4);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: rgba(244,236,216,0.85);
+  letter-spacing: 0.5px;
+  pointer-events: auto;
+}
+.h-detail::after {
+  /* downward-pointing notch so the popover reads as anchored to its chip */
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(244,236,216,0.65);
+}
+.h-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(244,236,216,0.12);
+}
+.h-detail-row:last-child { border-bottom: none; }
+.h-detail-label {
+  color: rgba(244,236,216,0.45);
+  text-transform: uppercase;
+}
+.h-detail-value {
+  color: rgba(244,236,216,0.95);
+  text-align: right;
+}
+.h-detail-value.win { color: #76ff69; }
+.h-detail-value.loss { color: #ff5f56; }
 
 /* ============ STAGE ============ */
 .stage {
@@ -2450,6 +2542,186 @@ body::before {
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
 }
+/* ============ LEADERBOARD ============ */
+.leaderboard-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.leaderboard-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border: 1.5px dashed rgba(244, 236, 216, 0.36);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, transform 0.12s, background 0.12s;
+  transform: rotate(-0.4deg);
+}
+.leaderboard-pill:hover {
+  color: #fff;
+  border-color: var(--ink);
+  transform: rotate(-0.4deg) translateY(-1px);
+}
+.leaderboard-pill.open {
+  background: rgba(244, 236, 216, 0.08);
+  border-color: var(--ink);
+  color: #fff;
+}
+.leaderboard-pill:focus-visible {
+  outline: 2px dashed rgba(244, 236, 216, 0.55);
+  outline-offset: 2px;
+}
+.leaderboard-trophy {
+  font-size: 10px;
+  line-height: 1;
+  color: #ffd166;
+  text-shadow: 0 0 8px rgba(255, 209, 102, 0.5);
+}
+.leaderboard-rank {
+  letter-spacing: 0.8px;
+}
+.leaderboard-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Anchored to the right edge of the pill so on narrow screens the
+     menu doesn't blow past the cabinet's right border. The wallet menu
+     uses the same pattern. */
+  right: 0;
+  width: min(280px, calc(100vw - 28px));
+  max-height: min(420px, calc(100dvh - 116px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #0e1018;
+  border: 2px solid rgba(244, 236, 216, 0.18);
+  border-radius: 10px;
+  padding: 8px 8px 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  /* Same z-index tier as the wallet/avatar dropdowns so all three
+     menus stack predictably (above stage at 20, below help overlay
+     at 100). */
+  z-index: 30;
+  font-family: 'Caveat', cursive;
+  animation: leaderboard-menu-pop 0.15s ease-out;
+}
+@keyframes leaderboard-menu-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (max-width: 600px) {
+  /* On mobile the leaderboard pill sits mid-topbar; with right:0 anchored
+     to that pill's right edge, the 280px menu would extend leftward past
+     the viewport (left side gets clipped). Switch to viewport-fixed
+     positioning with safe gutters so the menu always fits regardless of
+     where the pill ends up in the flex row. */
+  .leaderboard-menu {
+    position: fixed;
+    top: 60px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 80px);
+  }
+}
+.leaderboard-header {
+  padding: 4px 6px 8px;
+  border-bottom: 1px dashed rgba(244, 236, 216, 0.12);
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.leaderboard-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: var(--ink);
+}
+.leaderboard-sub {
+  font-family: 'Caveat', cursive;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 6px;
+  border-bottom: 1px dashed rgba(244, 236, 216, 0.08);
+  font-family: 'VT323', monospace;
+}
+.leaderboard-row:last-child { border-bottom: none; }
+.leaderboard-row.me {
+  background: rgba(244, 236, 216, 0.06);
+  border-radius: 4px;
+}
+.leaderboard-row.me .leaderboard-addr {
+  color: #fff;
+  font-weight: 700;
+}
+.leaderboard-pos {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--muted);
+  text-align: right;
+}
+.leaderboard-row:nth-child(1) .leaderboard-pos { color: #ffd166; }
+.leaderboard-row:nth-child(2) .leaderboard-pos { color: #d8d8d8; }
+.leaderboard-row:nth-child(3) .leaderboard-pos { color: #cd7f32; }
+.leaderboard-addr {
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leaderboard-pnl {
+  font-family: 'Caveat', cursive;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.4px;
+}
+.leaderboard-pnl.win { color: #76ff69; text-shadow: 0 0 8px rgba(126,255,91,0.32); }
+.leaderboard-pnl.loss { color: #ff5f56; text-shadow: 0 0 8px rgba(255,95,86,0.32); }
+.leaderboard-state {
+  padding: 18px 6px;
+  text-align: center;
+  font-family: 'Caveat', cursive;
+  font-size: 16px;
+  color: var(--muted);
+}
+.leaderboard-state.error {
+  color: #ffb4a8;
+}
+.leaderboard-footer {
+  padding: 6px 6px 2px;
+  border-top: 1px dashed rgba(244, 236, 216, 0.08);
+  margin-top: 4px;
+  min-height: 0;
+}
+.leaderboard-foot-note {
+  display: block;
+  font-family: 'Caveat', cursive;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
 .user-wrap {
   position: relative;
 }
@@ -2824,3 +3096,299 @@ body::before {
   .hand-slider { height: 16px; }
   .hand-slider::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -8px; }
 }
+
+/* ---------- Docs pages (/how-it-works, /terms, /privacy) ----------
+   Standalone, full-bleed pages outside the cabinet — they are read on
+   their own, not inside the game frame, so they own the viewport. */
+
+.docs-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(0, 218, 255, 0.10), transparent 38%),
+    radial-gradient(circle at 82% 88%, rgba(255, 95, 81, 0.08), transparent 42%),
+    var(--night, #060608);
+  color: var(--ink, #f4ecd8);
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px dashed rgba(244, 236, 216, 0.12);
+  font-family: 'Tiny5', monospace;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.docs-back {
+  color: var(--gold, #ffd55d);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.docs-back:hover { filter: brightness(1.15); }
+.docs-back-arrow { font-size: 16px; }
+
+.docs-nav {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.docs-nav a {
+  color: rgba(244, 236, 216, 0.7);
+  text-decoration: none;
+}
+.docs-nav a:hover { color: var(--cyan, #00daff); }
+
+.docs-page {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 36px 20px 60px;
+}
+
+.docs-card {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  background: linear-gradient(180deg, rgba(12, 14, 26, 0.96), rgba(5, 5, 9, 0.96));
+  border: 2px solid rgba(255, 213, 93, 0.5);
+  padding: 32px 36px 28px;
+  box-shadow:
+    0 0 0 3px rgba(255, 95, 81, 0.18),
+    0 0 32px rgba(0, 218, 255, 0.12);
+}
+.docs-card::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed rgba(244, 236, 216, 0.32);
+  pointer-events: none;
+}
+
+.docs-eyebrow {
+  position: relative;
+  z-index: 1;
+  font-family: 'Tiny5', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(244, 236, 216, 0.5);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.docs-title {
+  position: relative;
+  z-index: 1;
+  font-family: 'Caveat', cursive;
+  font-size: 42px;
+  line-height: 1.05;
+  margin: 0 0 6px;
+  color: var(--gold, #ffd55d);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.5);
+  text-transform: lowercase;
+}
+.docs-subtitle {
+  position: relative;
+  z-index: 1;
+  font-family: 'Tiny5', monospace;
+  font-size: 13px;
+  color: rgba(244, 236, 216, 0.65);
+  margin: 0 0 4px;
+  text-transform: lowercase;
+  letter-spacing: 0.5px;
+}
+.docs-updated {
+  position: relative;
+  z-index: 1;
+  font-family: 'Tiny5', monospace;
+  font-size: 10px;
+  color: rgba(244, 236, 216, 0.4);
+  margin: 0 0 18px;
+  text-transform: lowercase;
+}
+
+.docs-callout {
+  position: relative;
+  z-index: 1;
+  padding: 12px 14px;
+  margin: 0 0 22px;
+  border-left: 3px solid rgba(255, 95, 81, 0.85);
+  background: rgba(255, 95, 81, 0.06);
+  font-family: 'Tiny5', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(244, 236, 216, 0.85);
+}
+.docs-callout b { color: var(--gold, #ffd55d); }
+
+.docs-body {
+  position: relative;
+  z-index: 1;
+  font-family: 'Tiny5', monospace;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: rgba(244, 236, 216, 0.9);
+}
+.docs-body section + section { margin-top: 26px; }
+.docs-body h2 {
+  font-family: 'Caveat', cursive;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--cyan, #00daff);
+  text-transform: lowercase;
+  letter-spacing: 0.4px;
+}
+.docs-body .docs-h3 {
+  font-family: 'Tiny5', monospace;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--gold, #ffd55d);
+  margin: 18px 0 6px;
+}
+.docs-body p { margin: 0 0 10px; }
+.docs-body ul, .docs-body ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.docs-body li { margin-bottom: 6px; }
+.docs-body b {
+  color: var(--gold, #ffd55d);
+  font-weight: 700;
+}
+.docs-body code {
+  font-family: 'Tiny5', monospace;
+  background: rgba(0, 218, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 12.5px;
+}
+.docs-body a {
+  color: var(--cyan, #00daff);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.docs-body a:hover { color: var(--gold, #ffd55d); }
+
+.docs-card-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(244, 236, 216, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Tiny5', monospace;
+  font-size: 11px;
+  text-transform: lowercase;
+  color: rgba(244, 236, 216, 0.55);
+}
+.docs-avantis img { height: 22px; width: auto; }
+
+@media (max-width: 600px) {
+  .docs-card { padding: 22px 18px 20px; }
+  .docs-title { font-size: 32px; }
+  .docs-body { font-size: 12.5px; }
+  .docs-body h2 { font-size: 22px; }
+}
+
+/* ---------- First-login "pick a name" nudge ----------
+   Sits in the topbar between the leaderboard pill and gas pill while
+   the user has no username yet. Soft dashed pill — visible enough to
+   notice, quiet enough not to feel like a modal. Inherits the gold
+   accent so it pairs visually with the leaderboard star. */
+.username-nudge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 1.5px dashed rgba(255, 213, 93, 0.55);
+  border-radius: 999px;
+  background: rgba(255, 213, 93, 0.06);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  transform: rotate(-0.4deg);
+  animation: username-nudge-pulse 2.4s ease-in-out infinite;
+}
+@keyframes username-nudge-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 213, 93, 0); }
+  50%      { box-shadow: 0 0 12px rgba(255, 213, 93, 0.32); }
+}
+.username-nudge-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 4px 4px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--gold, #ffd55d);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.username-nudge-cta:hover { filter: brightness(1.2); }
+.username-nudge-spark {
+  font-size: 9px;
+  text-shadow: 0 0 6px rgba(255, 213, 93, 0.7);
+}
+.username-nudge-dismiss {
+  background: transparent;
+  border: 0;
+  color: rgba(244, 236, 216, 0.42);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 0 8px 0 2px;
+  cursor: pointer;
+  line-height: 1;
+}
+.username-nudge-dismiss:hover { color: var(--ink, #f4ecd8); }
+@media (max-width: 600px) {
+  /* Mobile: shrink the nudge so the topbar still fits the wallet pill +
+     leaderboard + nudge + avatar without wrapping. The "pick a name"
+     phrase compresses to "name?" so the visual weight stays balanced. */
+  .username-nudge-cta { padding: 3px 3px 3px 7px; gap: 4px; }
+  .username-nudge-cta .username-nudge-text::before { content: "name?"; }
+  .username-nudge-cta .username-nudge-text { font-size: 0; }
+  .username-nudge-cta .username-nudge-text::before { font-size: 7px; }
+}
+
+/* ---------- Doc links inside HelpOverlay ----------
+   Sits between the help-list and the "got it" button. Trust surface
+   (full how-it-works / terms / privacy) is one tap away from the
+   already-discoverable ? button without needing a separate footer
+   that fights the cabinet's fixed-aspect layout on mobile. */
+.help-doclinks {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto 12px;
+  font-family: 'Tiny5', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: lowercase;
+  color: rgba(244, 236, 216, 0.32);
+}
+.help-doclinks a {
+  color: var(--cyan, #00daff);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.help-doclinks a:hover { color: var(--gold, #ffd55d); }

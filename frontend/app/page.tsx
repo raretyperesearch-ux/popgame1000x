@@ -9,16 +9,37 @@ import GameScene, { type GameSceneHandle, type TradeDirection } from "./componen
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade, getHistory, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 
+/* Map a persisted backend trade to the strip's entry shape. Discards
+   open trades (no exit / net_pnl yet) — caller is responsible for
+   filtering before mapping. */
+function historyTradeToEntry(t: HistoryTrade): HistoryEntry {
+  const net = t.net_pnl_usdc ?? 0;
+  return {
+    amt: net,
+    win: net >= 0,
+    entry: t.entry_price,
+    exit: t.exit_price,
+    leverage: t.leverage,
+    wager: t.wager_usdc,
+    openedAt: t.opened_at,
+    closedAt: t.closed_at,
+    liquidated: t.was_liquidated === true,
+  };
+}
+
 export default function Home() {
   const { authenticated, getAccessToken, user } = usePrivy();
   // Always the embedded wallet — see Topbar.tsx for rationale.
   const walletAddress = getEmbeddedEthereumAddress(user);
+  // Initial paper-mode / mock-mode balance. Real wallets get overwritten
+  // on mount by readOnchainBalances. $1000 lets the wager slider exercise
+  // its full $1-$1000 range without exhausting the test bankroll.
   const [balance, setBalance] = useState(1000);
   const [ethBalance, setEthBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -28,6 +49,10 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState>("IDLE");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
+  /* Bumped after every trade close so the topbar Leaderboard picks up
+     fresh standings without polling. The component watches the value
+     in its useEffect deps. */
+  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
@@ -157,6 +182,37 @@ export default function Home() {
     };
   }, [gameState, getAccessToken, walletAddress, paperMode]);
 
+  /* Seed the LAST 5 SCALPS strip with persisted history on auth/wallet
+     ready. Without this, the strip is in-memory only and resets on
+     every refresh — players had no way to see prior trades. Skipped in
+     paper mode (no real wallet) and mock mode (no backend / getHistory
+     returns empty). The in-memory `handleHistoryPush` continues to
+     update the strip during play; this just gives it an initial state.
+
+     Order matches handleHistoryPush's append-end convention: oldest at
+     index 0 (visually left), newest at index 4 (visually right). The
+     backend returns newest-first, so we reverse after slicing. */
+  useEffect(() => {
+    if (!authenticated || paperMode || !walletAddress) return;
+    let cancelled = false;
+    getHistory(5, getAccessToken, walletAddress)
+      .then((res) => {
+        if (cancelled) return;
+        const seeded = res.trades
+          .filter((t) => t.closed_at !== null && t.net_pnl_usdc !== null)
+          .slice(0, 5)
+          .reverse()
+          .map(historyTradeToEntry);
+        if (seeded.length > 0) setHistory(seeded);
+      })
+      .catch((e) => {
+        console.warn("[history] seed fetch failed:", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, paperMode, walletAddress, getAccessToken]);
+
   /* first-launch help overlay */
   useEffect(() => {
     try {
@@ -199,12 +255,28 @@ export default function Home() {
       const next = [...prev, entry];
       return next.length > 5 ? next.slice(-5) : next;
     });
+    /* A close just landed — nudge the Leaderboard component to refetch
+       so its standings reflect the new realized PnL. Cheap: just one
+       extra HTTP per closed trade, no polling. */
+    setLeaderboardRefreshKey((k) => k + 1);
   }, []);
 
   const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
     const activeDirection = actionDirection ?? direction;
-    if (gameState === "IDLE" && balance >= wager && !openInFlight) {
+    if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
+      // No client-side balance gate on the wager — let the user pick any
+      // amount they want, then surface a clear "needs more USDC" hint
+      // when they're short rather than silently no-op'ing the JUMP.
+      if (wager > balance) {
+        const need = (wager - balance).toFixed(2);
+        showTradeError(
+          `Not enough USDC for a $${wager} wager — need $${need} more to ${
+            activeDirection === "short" ? "dive" : "jump"
+          }.`,
+        );
+        return;
+      }
       setOpenInFlight(true);
       try {
         let entryPrice = 0;
@@ -278,9 +350,11 @@ export default function Home() {
   const handleWagerChange = useCallback(
     (v: number) => {
       if (gameState !== "IDLE") return;
-      setWager(Math.max(1, Math.min(balance, v)));
+      // No upper cap — the user can pick any wager. Insufficient balance
+      // is surfaced at JUMP time, not by silently clamping their input.
+      setWager(Math.max(1, Math.floor(v)));
     },
-    [gameState, balance],
+    [gameState],
   );
 
   return (
@@ -291,6 +365,8 @@ export default function Home() {
         balanceLoading={balanceLoading}
         onHelpClick={() => setShowHelp(true)}
         onError={showTradeError}
+        leaderboardRefreshKey={leaderboardRefreshKey}
+        paperMode={paperMode}
       />
       <GameScene
         ref={gameRef}

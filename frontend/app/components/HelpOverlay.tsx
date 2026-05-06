@@ -45,6 +45,19 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
           <li>loss eats collateral &rarr; auto-close (liquidation, forfeit)</li>
           <li>fees: 2.5% house on open &middot; Avantis fee on profit only</li>
         </ol>
+        {/* Trust + legal surface lives inside the help overlay — that's
+            where new players already look for "how does this work?".
+            target=_blank so opening a doc doesn't kick them out of the
+            game session they were about to start. */}
+        <div className="help-doclinks" aria-label="More info">
+          <a href="/how-it-works" target="_blank" rel="noreferrer">
+            full docs
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="/terms" target="_blank" rel="noreferrer">terms</a>
+          <span aria-hidden="true">·</span>
+          <a href="/privacy" target="_blank" rel="noreferrer">privacy</a>
+        </div>
         <button className="help-got-it" onClick={onClose}>
           got it
         </button>

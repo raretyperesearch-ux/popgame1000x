@@ -1747,6 +1747,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const positionWager = a.positionWager;
     const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
     const positionLev = a.positionLev;
+    const positionDirection = a.tradeDirection;
     const entry = a.entry;
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
@@ -1758,10 +1759,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number | null,
     ) => {
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0, direction: a.tradeDirection });
+      onHistoryPush({
+        amt: pnlDollars,
+        win: pnlDollars >= 0,
+        direction: positionDirection,
+        entry: entryPrice,
+        exit: exitPrice,
+        leverage: positionLev,
+        wager: positionWager,
+        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+        closedAt: new Date().toISOString(),
+        liquidated: true,
+      });
       setEndOfGame({
         kind: "rekt",
-        direction: a.tradeDirection,
+        direction: positionDirection,
         pnlDollars,
         pnlPct,
         entry: entryPrice,
@@ -1811,6 +1823,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const positionWager = a.positionWager;
     const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
     const positionLev = a.positionLev;
+    const positionDirection = a.tradeDirection;
     const entry = a.entry;
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
@@ -1827,7 +1840,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       exitPrice: number,
     ) => {
       setBalance((prev: number) => prev + positionCollateral + pnlDollars);
-      onHistoryPush({ amt: pnlDollars, win: pnlDollars >= 0, direction: a.tradeDirection });
+      onHistoryPush({
+        amt: pnlDollars,
+        win: pnlDollars >= 0,
+        direction: positionDirection,
+        entry: entryPrice,
+        exit: exitPrice,
+        leverage: positionLev,
+        wager: positionWager,
+        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+        closedAt: new Date().toISOString(),
+        liquidated: false,
+      });
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       if (kind === "win") {
@@ -1839,7 +1863,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       setEndOfGame({
         kind,
-        direction: a.tradeDirection,
+        direction: positionDirection,
         pnlDollars,
         pnlPct,
         entry: entryPrice,

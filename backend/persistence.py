@@ -34,6 +34,7 @@ _client: Any = None
 _enabled: bool = False
 _TABLE = "pg_trades"
 _LEADERBOARD_VIEW = "pg_trade_leaderboard"
+_BM_PLAYERS = "bm_players"
 
 
 def init() -> None:
@@ -104,11 +105,24 @@ def record_open(
 ) -> None:
     """Insert a row when a trade opens. Best-effort — never raises.
 
-    Uses upsert on (wallet_address, trade_index) so if the same trade
-    index ever cycles for the same wallet (Avantis recycles indices on
-    close), a re-open won't 23505 us; the older row's `closed_at` will
-    already be set, so we'll just overwrite it with fresh open data."""
+    Conflict key is open_tx_hash, which is globally unique on-chain. An
+    earlier scheme keyed on (wallet_address, trade_index) but Avantis
+    recycles trade_index per wallet on close, so every reopen of a
+    recycled index silently overwrote the previous trade's row. Keying
+    on the tx hash gives every real trade its own row; idempotent retries
+    of the same record_open just re-update the same row."""
     if not is_enabled():
+        return
+    # Defensive: if the receipt unwrap upstream ever returns "" (web3.py
+    # receipt without a transactionHash attribute), every empty-hash
+    # record_open would collide on the unique index and silently
+    # overwrite the previous one — re-introducing the original bug.
+    # Skip loudly instead.
+    if not open_tx_hash:
+        print(
+            f"[persistence] record_open skipped: empty open_tx_hash for "
+            f"{wallet_address} #{trade_index}"
+        )
         return
     row = {
         "did": did,
@@ -123,20 +137,11 @@ def record_open(
         "liquidation_price": liquidation_price,
         "opened_at": _iso(opened_at),
         "open_tx_hash": open_tx_hash,
-        # Reset close fields so a recycled index doesn't carry over
-        # stale close data from a previous trade with the same index.
-        "closed_at": None,
-        "exit_price": None,
-        "gross_pnl_usdc": None,
-        "avantis_win_fee_usdc": None,
-        "net_pnl_usdc": None,
-        "was_liquidated": None,
-        "close_tx_hash": None,
     }
     try:
         _client.table(_TABLE).upsert(
             row,
-            on_conflict="wallet_address,trade_index",
+            on_conflict="open_tx_hash",
         ).execute()
     except Exception as e:  # noqa: BLE001
         print(f"[persistence] record_open failed for {wallet_address} #{trade_index}: {e}")
@@ -154,11 +159,18 @@ def record_close(
     closed_at: datetime,
     close_tx_hash: str,
 ) -> None:
-    """Patch the close fields on the existing open row.
+    """Patch the close fields on the still-open row.
 
-    If the open row never made it (Supabase was down at open time), we
-    silently skip — leaderboard/history will just be missing this
-    trade. Failing the close response on a logging miss isn't worth it."""
+    The (wallet_address, trade_index) pair alone is ambiguous: Avantis
+    recycles trade_index, so historical rows can share that pair with
+    the current open trade. The `closed_at IS NULL` filter narrows the
+    update to the one row that's actually open right now — guaranteed
+    unique by the partial-unique index added in migration 0002.
+
+    If no row matches (Supabase was down at open, so there's no row to
+    patch), the update is a silent no-op — leaderboard/history will be
+    missing this trade. Not worth failing the close response over a
+    logging miss."""
     if not is_enabled():
         return
     patch = {
@@ -173,7 +185,7 @@ def record_close(
     try:
         _client.table(_TABLE).update(patch).eq(
             "wallet_address", wallet_address.lower()
-        ).eq("trade_index", trade_index).execute()
+        ).eq("trade_index", trade_index).is_("closed_at", "null").execute()
     except Exception as e:  # noqa: BLE001
         print(f"[persistence] record_close failed for {wallet_address} #{trade_index}: {e}")
 
@@ -252,3 +264,198 @@ def _leaderboard_fallback(limit: int) -> list[dict]:
             slot["liquidations"] += 1
     out = sorted(agg.values(), key=lambda x: x["net_pnl_usdc"], reverse=True)
     return out[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Cross-game identity (bm_players) — shared with Swallow Me / Holy Liquid.
+#
+# privy_id is the canonical join key across all Hiscore games. evm_wallet_address
+# is the secondary key used by the pg_trades_sync_bm_players trigger when a
+# trade lands before the user has logged in via this register flow.
+# ---------------------------------------------------------------------------
+
+
+def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]:
+    """Idempotent registration of a Hiscore identity row keyed on privy_id.
+
+    Mirrors the canonical register pattern from the Hiscore main repo's
+    Swallow Me route. Run with the service-role client (we already are —
+    `_client` was created with SUPABASE_SERVICE_ROLE_KEY in init()), so
+    RLS doesn't block the write.
+
+    Why we don't use ON CONFLICT (privy_id):
+      bm_players_privy_id_key is a PARTIAL unique index
+      (`WHERE privy_id IS NOT NULL`). Postgres can't infer a partial
+      unique index from `ON CONFLICT (privy_id)` alone — the matching
+      WHERE predicate must be specified, but PostgREST's `on_conflict`
+      query parameter doesn't accept it. The probe `INSERT ... ON
+      CONFLICT (privy_id) DO UPDATE` returns 42P10 ("there is no unique
+      or exclusion constraint matching the ON CONFLICT specification").
+      So we do try-update-then-insert manually.
+
+    Branch logic:
+      1. UPDATE by privy_id. If a row exists, we're done (also covers
+         re-login: just bumps last_active_at).
+      2. Otherwise INSERT a new row. Two ways that INSERT can 23505:
+         a) lower(evm_wallet_address) conflict — the trigger already
+            backfilled a row for this wallet (the 3 existing SR users).
+            Patch THAT row's privy_id instead.
+         b) privy_id conflict — a concurrent register won the race;
+            our second UPDATE-by-privy_id will succeed.
+    """
+    if not is_enabled():
+        return None
+    if not privy_id or not evm_wallet_address:
+        print(f"[bm_players] register_player: missing privy_id={privy_id!r} or wallet={evm_wallet_address!r}")
+        return None
+    wallet = evm_wallet_address.lower()
+    now = datetime.utcnow().isoformat()
+
+    # Step 1: try UPDATE by privy_id.
+    try:
+        upd = (
+            _client.table(_BM_PLAYERS)
+            .update({"evm_wallet_address": wallet, "last_active_at": now})
+            .eq("privy_id", privy_id)
+            .execute()
+        )
+        if list(upd.data or []):
+            return get_player_by_privy_id(privy_id)
+    except Exception as e:  # noqa: BLE001
+        # An UPDATE can still 23505 if our wallet collides with another
+        # row's evm_wallet_address. That's a real merge conflict (split
+        # rows for one human across games) — log and fall through; the
+        # caller can still surface the SM-side data via /me.
+        msg = str(e).lower()
+        if "lower(evm_wallet_address)" in msg or "evm_wallet_address" in msg:
+            print(f"[bm_players] register_player: wallet collision on UPDATE for {privy_id} / {wallet}: {e}")
+            return get_player_by_privy_id(privy_id)
+        print(f"[bm_players] register_player: UPDATE-by-privy_id failed for {privy_id}: {e}")
+        # Continue to INSERT path — UPDATE might have failed for an
+        # unrelated reason and INSERT may still succeed.
+
+    # Step 2: no row matched privy_id, try INSERT.
+    try:
+        (
+            _client.table(_BM_PLAYERS)
+            .insert(
+                {
+                    "privy_id": privy_id,
+                    "evm_wallet_address": wallet,
+                    "last_active_at": now,
+                }
+            )
+            .execute()
+        )
+        return get_player_by_privy_id(privy_id)
+    except Exception as e:  # noqa: BLE001
+        msg = str(e).lower()
+        # 2a) Trigger-backfilled wallet row: patch its privy_id.
+        if "lower(evm_wallet_address)" in msg or "bm_players_evm_wallet_address" in msg:
+            try:
+                (
+                    _client.table(_BM_PLAYERS)
+                    .update({"privy_id": privy_id, "last_active_at": now})
+                    .eq("evm_wallet_address", wallet)
+                    .execute()
+                )
+                return get_player_by_privy_id(privy_id)
+            except Exception as patch_err:  # noqa: BLE001
+                print(f"[bm_players] wallet-keyed patch failed for {wallet}: {patch_err}")
+                return None
+        # 2b) Privy_id race — another concurrent register beat us to the
+        # insert. Re-run the UPDATE we tried in step 1.
+        if "privy_id" in msg and ("duplicate key" in msg or "23505" in msg):
+            try:
+                (
+                    _client.table(_BM_PLAYERS)
+                    .update({"evm_wallet_address": wallet, "last_active_at": now})
+                    .eq("privy_id", privy_id)
+                    .execute()
+                )
+                return get_player_by_privy_id(privy_id)
+            except Exception as race_err:  # noqa: BLE001
+                print(f"[bm_players] privy_id race retry failed for {privy_id}: {race_err}")
+                return None
+        print(f"[bm_players] register_player INSERT failed for {privy_id} / {wallet}: {e}")
+        return None
+
+
+def get_player_by_privy_id(privy_id: str) -> Optional[dict]:
+    if not is_enabled() or not privy_id:
+        return None
+    try:
+        res = (
+            _client.table(_BM_PLAYERS)
+            .select("privy_id,evm_wallet_address,wallet_address,username,created_at,last_active_at")
+            .eq("privy_id", privy_id)
+            .limit(1)
+            .execute()
+        )
+        rows = list(res.data or [])
+        return rows[0] if rows else None
+    except Exception as e:  # noqa: BLE001
+        print(f"[bm_players] get_player_by_privy_id {privy_id} failed: {e}")
+        return None
+
+
+def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optional[str]]:
+    """Set the player's display name. Returns (row, error_msg).
+
+    Usernames are unique across ALL games via the bm_players_username_unique
+    index on LOWER(username), so "Alice" and "alice" collide. We report
+    a clear "taken" error rather than letting a 23505 surface raw.
+
+    The existing 331 rows in bm_players have username == display_name
+    (Swallow Me / Holy Liquid keep both in sync). We mirror that pattern
+    so SR-set names render identically on hiscore.me regardless of which
+    column the unified leaderboard reads.
+
+    Returns the updated row on success, or (None, "<reason>") on
+    validation/conflict failure.
+    """
+    if not is_enabled():
+        return None, "registry disabled"
+    if not privy_id:
+        return None, "missing privy_id"
+    name = (username or "").strip()
+    # Server-side input policing. Length window matches what the existing
+    # 331 rows fit into for typical traffic; the DB has no CHECK so any
+    # cap here is a UX choice, not a DB safety net.
+    if len(name) < 3 or len(name) > 32:
+        return None, "username must be 3-32 characters"
+    # ASCII-only — Python's isalnum() is Unicode-aware and would let
+    # confusables through ("admin" vs Cyrillic "аdmin"). Cross-game
+    # uniqueness compares raw bytes (LOWER(username)), so we lock the
+    # alphabet here too. Allowed: A-Z a-z 0-9 _ - . All existing 331
+    # usernames pass this regex (verified against prod data).
+    if not all((c.isascii() and c.isalnum()) or c in "_-" for c in name):
+        return None, "username can only contain letters, numbers, _ and -"
+    try:
+        res = (
+            _client.table(_BM_PLAYERS)
+            .update(
+                {
+                    "username": name,
+                    "display_name": name,
+                    "last_active_at": datetime.utcnow().isoformat(),
+                }
+            )
+            .eq("privy_id", privy_id)
+            .execute()
+        )
+        rows = list(res.data or [])
+        if not rows:
+            return None, "player not registered yet"
+        return rows[0], None
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        lo = msg.lower()
+        if (
+            "duplicate key" in lo
+            or "bm_players_username" in lo
+            or ("username" in lo and "unique" in lo)
+        ):
+            return None, "username already taken"
+        print(f"[bm_players] set_username failed for {privy_id}: {e}")
+        return None, "could not set username"

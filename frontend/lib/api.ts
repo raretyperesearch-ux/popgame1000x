@@ -235,6 +235,192 @@ export async function getBalance(
   );
 }
 
+export interface HistoryTrade {
+  id: string;
+  wallet_address: string;
+  trade_index: number;
+  pair_index: number;
+  leverage: number;
+  wager_usdc: number;
+  collateral_usdc: number;
+  entry_price: number;
+  liquidation_price: number;
+  opened_at: string;
+  open_tx_hash: string;
+  exit_price: number | null;
+  gross_pnl_usdc: number | null;
+  avantis_win_fee_usdc: number | null;
+  net_pnl_usdc: number | null;
+  was_liquidated: boolean | null;
+  closed_at: string | null;
+  close_tx_hash: string | null;
+}
+
+export interface HistoryResponse {
+  enabled: boolean;
+  wallet_address: string;
+  trades: HistoryTrade[];
+}
+
+/* Persisted trade history for the calling user. Returns most-recent
+   first. Empty list when persistence is disabled on the backend
+   (SUPABASE_URL/SERVICE_ROLE_KEY unset) or when the wallet has no
+   recorded trades — both cases reach the frontend as an empty array
+   from the /history/me handler, so callers don't have to distinguish. */
+export async function getHistory(
+  limit: number = 5,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<HistoryResponse> {
+  if (isMock()) {
+    return { enabled: false, wallet_address: walletAddress ?? "", trades: [] };
+  }
+  return apiFetch<HistoryResponse>(
+    `/history/me?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
+export interface LeaderboardRow {
+  wallet_address: string;
+  net_pnl_usdc: number;
+  trade_count: number;
+  liquidations: number;
+  last_closed_at: string | null;
+}
+
+export interface LeaderboardResponse {
+  enabled: boolean;
+  rows: LeaderboardRow[];
+}
+
+/* Top traders by realized net PnL across closed trades. Backed by the
+   pg_trade_leaderboard view in 0001_init.sql. Empty list when
+   persistence is disabled (no Supabase env on the backend) or when no
+   one has closed a trade yet. */
+export async function getLeaderboard(
+  limit: number = 20,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<LeaderboardResponse> {
+  if (isMock()) {
+    return { enabled: false, rows: [] };
+  }
+  return apiFetch<LeaderboardResponse>(
+    `/history/leaderboard?limit=${encodeURIComponent(limit)}`,
+    { method: "GET" },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
+export interface BmPlayer {
+  privy_id: string | null;
+  evm_wallet_address: string | null;
+  wallet_address: string | null;
+  username: string | null;
+  created_at?: string | null;
+  last_active_at?: string | null;
+}
+
+/* Cross-game Hiscore identity. Idempotent — safe to call on every
+   login. The backend upserts (privy_id, evm_wallet_address) into the
+   shared bm_players table; subsequent calls just bump last_active_at.
+
+   Never throws on transport failures — registration is a best-effort
+   side-effect of login, not a gate to playing. The backend will return
+   503 if Supabase isn't configured (e.g. local dev), in which case we
+   silently no-op. Real errors are logged for debugging. */
+export async function registerUser(
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<BmPlayer | null> {
+  if (isMock()) return null;
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/register",
+      { method: "POST" },
+      getAccessToken,
+      walletAddress,
+    );
+    return res.player ?? null;
+  } catch (e) {
+    console.warn("[user] register failed:", e);
+    return null;
+  }
+}
+
+export async function getMe(
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<BmPlayer | null> {
+  if (isMock()) return null;
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/me",
+      { method: "GET" },
+      getAccessToken,
+      walletAddress,
+    );
+    return res.player ?? null;
+  } catch (e) {
+    console.warn("[user] /me failed:", e);
+    return null;
+  }
+}
+
+export interface SetUsernameResult {
+  ok: boolean;
+  player: BmPlayer | null;
+  error?: string;
+  status?: number;
+}
+
+/* Set the player's display name. The username unique constraint spans
+   ALL Hiscore games (Swallow Me, Holy Liquid, Scalp Runner), so callers
+   need to surface the "taken" case distinctly from generic failure —
+   that's what the status field is for. 409 = taken, 400 = validation. */
+export async function setUsername(
+  username: string,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<SetUsernameResult> {
+  if (isMock()) {
+    return { ok: true, player: { privy_id: null, evm_wallet_address: null, wallet_address: null, username } };
+  }
+  try {
+    const res = await apiFetch<{ player: BmPlayer | null }>(
+      "/user/set-username",
+      { method: "POST", body: JSON.stringify({ username }) },
+      getAccessToken,
+      walletAddress,
+    );
+    return { ok: true, player: res.player ?? null };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    // Parse "API <status>: <body>" without the /s regex flag — tsconfig
+    // targets ES2017 and dotAll isn't available there. Split manually
+    // so the body can still contain newlines.
+    let status = 0;
+    let detail = raw;
+    const apiMatch = /^API (\d+):/.exec(raw);
+    if (apiMatch) {
+      status = Number(apiMatch[1]);
+      detail = raw.slice(apiMatch[0].length).trimStart();
+    }
+    const jsonMatch = detail.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
+        if (parsed.detail) detail = parsed.detail;
+      } catch { /* fall through */ }
+    }
+    return { ok: false, player: null, error: detail, status };
+  }
+}
+
 export interface WalletStatus {
   address: string;
   delegated: boolean;
