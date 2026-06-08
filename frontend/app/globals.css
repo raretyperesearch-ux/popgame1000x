@@ -91,6 +91,48 @@ body::before {
 @media (min-height: 920px) {
   .cabinet { max-height: 900px; }
 }
+
+
+/* Desktop: keep the trade picker as an in-viewport side panel instead of
+   letting it hang off the game frame where cabinet/stage overflow can clip it. */
+@media (min-width: 900px) and (min-height: 700px) {
+  .cabinet {
+    width: min(1180px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    height: min(900px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+    display: grid;
+    grid-template-columns: clamp(288px, 28vw, 340px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "topbar topbar"
+      "controls stage"
+      "history history";
+    overflow: visible;
+  }
+
+  .cabinet > .topbar { grid-area: topbar; }
+  .cabinet > .stage {
+    grid-area: stage;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px dashed var(--border);
+    border-bottom: none;
+  }
+  .cabinet > .history-row { grid-area: history; }
+  .cabinet > .controls {
+    grid-area: controls;
+    align-self: stretch;
+    min-width: 0;
+    max-width: min(340px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    z-index: 30;
+    justify-content: center;
+    border-bottom: none;
+  }
+}
+
 /* Landscape phones / tight wide viewports: stage on the left, controls
    on the right, topbar + history span the top. Uses CSS grid because
    the underlying DOM is flat. */
