@@ -23,10 +23,10 @@ import asyncio
 import os
 from collections import deque
 from datetime import datetime, timezone
-from time import monotonic
+from time import monotonic, perf_counter
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from avantis_trader_sdk import TraderClient
 from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
@@ -92,6 +92,65 @@ _trader_client: Optional[TraderClient] = None
 _eth_pair_index: Optional[int] = None
 _trader_address: Optional[str] = None  # legacy env wallet (single-wallet fallback only)
 
+
+class _OpenTradeTimer:
+    def __init__(self, wallet_address: str):
+        self.wallet_address = wallet_address
+        self.started = perf_counter()
+        self.previous = self.started
+
+    def mark(self, step: str, **fields) -> None:
+        now = perf_counter()
+        extra = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        suffix = f" {extra}" if extra else ""
+        print(
+            f"[trade/open] {step} wallet={self.wallet_address} "
+            f"+{now - self.previous:.3f}s total={now - self.started:.3f}s{suffix}"
+        )
+        self.previous = now
+
+
+def _house_fee_idempotency_key(
+    user: AuthedUser, trade_index: int, open_tx_hash: str
+) -> str:
+    # open_tx_hash is globally unique and stable for the Avantis open. Include
+    # wallet/trade_index for readable Supabase rows and human reconciliation.
+    return f"house-fee:{user.address.lower()}:{trade_index}:{open_tx_hash.lower()}"
+
+
+async def _collect_queued_house_fee(
+    *,
+    idempotency_key: str,
+    user: AuthedUser,
+    fee_usdc: float,
+    treasury_address: str,
+) -> None:
+    claimed = persistence.claim_house_fee_event(idempotency_key)
+    if not claimed:
+        print(f"[trade/open] async fee skipped idempotency_key={idempotency_key}")
+        return
+
+    try:
+        fee_tx = build_usdc_transfer_tx(treasury_address, fee_usdc)
+        client = _require_trader()
+        if _is_legacy_user(user):
+            receipt = await client.sign_and_get_receipt(fee_tx)
+            fee_hash = _tx_hash_str(receipt)
+        else:
+            fee_hash = await _send_user_tx(user, fee_tx)
+        persistence.mark_house_fee_collected(idempotency_key, fee_hash)
+        print(
+            f"[trade/open] async fee collected idempotency_key={idempotency_key} "
+            f"wallet={user.address} treasury={treasury_address} "
+            f"fee_usdc={fee_usdc} tx_hash={fee_hash}"
+        )
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        persistence.mark_house_fee_failed(idempotency_key, msg)
+        print(
+            f"[trade/open] async fee failed idempotency_key={idempotency_key} "
+            f"wallet={user.address} fee_usdc={fee_usdc} error={msg}"
+        )
 
 def _valid_treasury_address() -> Optional[str]:
     """Return a configured treasury address, ignoring local placeholders."""
@@ -260,8 +319,20 @@ async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
 
 
 @router.post("/open", response_model=OpenTradeResponse)
-async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_user)):
+async def open_trade(
+    body: OpenTradeRequest,
+    background_tasks: BackgroundTasks,
+    user: AuthedUser = Depends(require_user),
+):
+    timer = _OpenTradeTimer(user.address)
+    timer.mark(
+        "start",
+        wager_usdc=body.wager_usdc,
+        leverage=body.leverage,
+        is_long=body.is_long,
+    )
     _check_open_rate_limit(user.address)
+    timer.mark("auth resolved", did=user.did)
     client = _require_trader()
     pair_index = _eth_pair_index
     if pair_index is None:
@@ -308,6 +379,7 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         )
 
     usdc_balance = float(await client.get_usdc_balance(user.address))
+    timer.mark("balances checked", usdc_balance=f"{usdc_balance:.4f}")
     if usdc_balance + 1e-9 < body.wager_usdc:
         raise HTTPException(
             402,
@@ -317,6 +389,11 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         )
 
     allowance = await client.get_usdc_allowance_for_trading(user.address)
+    timer.mark(
+        "allowance checked",
+        allowance=f"{float(allowance):.4f}",
+        collateral=collateral,
+    )
     if allowance < collateral:
         # Approve via the user's wallet — same Privy relay path as the
         # trade itself. One-time per user (or until their allowance is
@@ -343,6 +420,12 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
                     504,
                     "USDC approval tx broadcast but allowance didn't land in 15s",
                 )
+        allowance = await client.get_usdc_allowance_for_trading(user.address)
+        timer.mark(
+            "allowance checked",
+            allowance=f"{float(allowance):.4f}",
+            approved=True,
+        )
 
     trade_input = TradeInput(
         trader=user.address,
@@ -361,12 +444,14 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         TradeInputOrderType.MARKET_ZERO_FEE,
         slippage_percentage=1,
     )
+    timer.mark("Avantis tx built")
 
     if _is_legacy_user(user):
         receipt = await client.sign_and_get_receipt(open_tx)
         tx_hash = _tx_hash_str(receipt)
     else:
         tx_hash = await _send_user_tx(user, open_tx)
+    timer.mark("Avantis tx sent", tx_hash=tx_hash)
 
     trades = await _poll_for_trade(client, user.address, expect_present=True)
     if not trades:
@@ -375,31 +460,8 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
             f"open tx broadcast ({tx_hash}) but trade did not appear after polling",
         )
     new_trade = trades[0]
+    timer.mark("trade visible/confirmed", trade_index=new_trade.trade.trade_index)
     opened_at = datetime.now(timezone.utc)
-
-    # Sweep the house fee from the user's wallet to the treasury. The
-    # collateral that just entered Avantis is already net of fee, so
-    # this transfer covers the difference between the wager debited
-    # client-side and what actually went to TradingStorage. Loud-log
-    # on failure rather than unwinding the open — easier to reconcile
-    # a missed fee from the txhash than to refund a successful trade.
-    if house_fee > 0:
-        try:
-            fee_tx = build_usdc_transfer_tx(treasury_address, house_fee)
-            if _is_legacy_user(user):
-                receipt = await client.sign_and_get_receipt(fee_tx)
-                fee_hash = _tx_hash_str(receipt)
-            else:
-                fee_hash = await _send_user_tx(user, fee_tx)
-            print(
-                f"✓ House fee {house_fee} USDC collected: "
-                f"{user.address} -> {treasury_address} ({fee_hash})"
-            )
-        except Exception as e:  # noqa: BLE001
-            print(
-                f"⚠️  House fee {house_fee} USDC NOT collected from "
-                f"{user.address} (trade {new_trade.trade.trade_index}): {e}"
-            )
 
     persistence.record_open(
         did=user.did,
@@ -415,8 +477,40 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         opened_at=opened_at,
         open_tx_hash=tx_hash,
     )
+    timer.mark("session recorded", trade_index=new_trade.trade.trade_index)
 
-    return OpenTradeResponse(
+    if house_fee > 0 and treasury_address:
+        idempotency_key = _house_fee_idempotency_key(
+            user, new_trade.trade.trade_index, tx_hash
+        )
+        fee_event = persistence.record_house_fee_pending(
+            idempotency_key=idempotency_key,
+            did=user.did,
+            wallet_address=user.address,
+            wallet_id=user.wallet_id,
+            trade_index=new_trade.trade.trade_index,
+            session_id=tx_hash,
+            collateral_usdc=collateral,
+            fee_usdc=house_fee,
+            treasury_address=treasury_address,
+        )
+        timer.mark(
+            "fee queued",
+            idempotency_key=idempotency_key,
+            durable=bool(fee_event),
+        )
+        if fee_event:
+            background_tasks.add_task(
+                _collect_queued_house_fee,
+                idempotency_key=idempotency_key,
+                user=user,
+                fee_usdc=house_fee,
+                treasury_address=treasury_address,
+            )
+    else:
+        timer.mark("fee queued", idempotency_key="none")
+
+    response = OpenTradeResponse(
         trade_index=new_trade.trade.trade_index,
         avantis_pair_index=pair_index,
         leverage=body.leverage,
@@ -429,6 +523,8 @@ async def open_trade(body: OpenTradeRequest, user: AuthedUser = Depends(require_
         tx_hash=tx_hash,
         is_long=body.is_long,
     )
+    timer.mark("response returned", trade_index=response.trade_index)
+    return response
 
 
 def _exit_price_from_pnl(
