@@ -563,7 +563,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
         {isDemo && (
           <div className="eog-demo-note">
-            practice PNL only · no Avantis trade · no house fee · no leaderboard impact
+            PRACTICE PNL ONLY
           </div>
         )}
 
