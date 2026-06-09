@@ -2222,22 +2222,38 @@ button.h-tag:focus-visible {
 }
 .low-fuel-copy {
   grid-area: copy;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-areas:
+    "can title"
+    "can sub";
   align-items: center;
-  gap: 4px;
+  column-gap: 8px;
+  row-gap: 4px;
   padding: 0 22px;
   font-family: 'Press Start 2P', monospace;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
 }
+.low-fuel-canister {
+  grid-area: can;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(0 0 8px rgba(255,176,0,0.54))
+    drop-shadow(0 0 10px rgba(255,59,48,0.34));
+}
 .low-fuel-copy strong {
+  grid-area: title;
   color: #d9ff39;
   font-size: 12px;
   line-height: 1.25;
   text-shadow: 0 3px 0 rgba(0,0,0,0.74), 0 0 14px rgba(217,255,57,0.54);
 }
 .low-fuel-copy span {
+  grid-area: sub;
   color: #ffb04f;
   font-size: 7px;
   line-height: 1.4;
@@ -2246,7 +2262,7 @@ button.h-tag:focus-visible {
 .low-fuel-amounts {
   grid-area: amounts;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 5px;
 }
 .low-fuel-chip {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import Topbar from "./components/Topbar";
@@ -613,14 +614,18 @@ export default function Home() {
             ×
           </button>
           <div className="low-fuel-copy">
+            <Image
+              src="/assets/ui/fuel-canister.png"
+              alt=""
+              className="low-fuel-canister"
+              width={128}
+              height={128}
+            />
             <strong>ADD FUEL</strong>
             <span>Need ${displayedFuelShortfall.toFixed(2)} more</span>
           </div>
           <div className="low-fuel-amounts" aria-label="Fuel top-up amount">
-            {[
-              ...FUEL_TOP_UPS,
-              { label: "NEED", amount: Math.max(5, Math.ceil(displayedFuelShortfall || 5)) },
-            ].map(({ label, amount }) => (
+            {FUEL_TOP_UPS.map(({ label, amount }) => (
               <button
                 key={label}
                 type="button"
