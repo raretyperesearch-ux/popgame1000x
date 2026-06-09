@@ -91,6 +91,48 @@ body::before {
 @media (min-height: 920px) {
   .cabinet { max-height: 900px; }
 }
+
+
+/* Desktop: keep the trade picker as an in-viewport side panel instead of
+   letting it hang off the game frame where cabinet/stage overflow can clip it. */
+@media (min-width: 900px) and (min-height: 700px) {
+  .cabinet {
+    width: min(1180px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    height: min(900px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+    display: grid;
+    grid-template-columns: clamp(288px, 28vw, 340px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "topbar topbar"
+      "controls stage"
+      "history history";
+    overflow: visible;
+  }
+
+  .cabinet > .topbar { grid-area: topbar; }
+  .cabinet > .stage {
+    grid-area: stage;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px dashed var(--border);
+    border-bottom: none;
+  }
+  .cabinet > .history-row { grid-area: history; }
+  .cabinet > .controls {
+    grid-area: controls;
+    align-self: stretch;
+    min-width: 0;
+    max-width: min(340px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    z-index: 30;
+    justify-content: center;
+    border-bottom: none;
+  }
+}
+
 /* Landscape phones / tight wide viewports: stage on the left, controls
    on the right, topbar + history span the top. Uses CSS grid because
    the underlying DOM is flat. */
@@ -836,30 +878,33 @@ button.h-tag:focus-visible {
 }
 
 /* Trade error toast — clickable to dismiss, auto-clears after ~6s.
-   Pinned to the top of the cabinet so it's visible immediately on
-   trade failure (gas missing, allowance, etc). */
+   Fixed to the browser viewport so cabinet/canvas overflow cannot clip
+   long backend validation errors on desktop. */
 .trade-error-banner {
-  position: absolute;
-  top: 76px;
+  position: fixed;
+  top: clamp(72px, 10vh, 120px);
   left: 50%;
   transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  overflow-wrap: break-word;
   background: var(--bg-body);
   border: 2px solid var(--red);
   color: var(--red);
   padding: 10px 14px;
-  max-width: 88%;
   font-family: 'Press Start 2P', monospace;
   font-size: 10px;
   line-height: 1.5;
   text-align: center;
   box-shadow: 0 0 20px rgba(255,95,86,0.35);
-  z-index: 20;
+  z-index: 9999;
   animation: trade-error-in 0.18s ease-out;
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.trade-error-text { flex: 1 1 auto; text-align: left; }
+.trade-error-text { flex: 1 1 auto; min-width: 0; text-align: left; }
 .trade-error-actions { display: flex; gap: 6px; }
 .trade-error-btn {
   font-family: 'Press Start 2P', monospace;
@@ -1954,6 +1999,78 @@ button.h-tag:focus-visible {
   background: var(--cyan);
   pointer-events: none;
   z-index: 6;
+}
+
+
+.controls-action-hint {
+  position: relative;
+  z-index: 1;
+  margin: 1px 0 3px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  line-height: 1.45;
+  letter-spacing: 0.35px;
+  text-align: center;
+  text-transform: uppercase;
+  color: rgba(244,236,216,0.62);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72);
+}
+.action-split.demo-hint {
+  border-color: rgba(255, 241, 116, 0.86);
+  box-shadow:
+    inset 0 -3px 0 rgba(0,0,0,0.55),
+    0 0 0 1px rgba(255,217,102,0.22),
+    0 0 18px rgba(255,217,102,0.22),
+    0 8px 22px rgba(0,0,0,0.28);
+}
+.action-split.funding-hint {
+  border-color: rgba(255, 153, 51, 0.92);
+  box-shadow:
+    inset 0 -3px 0 rgba(0,0,0,0.55),
+    0 0 0 1px rgba(255,153,51,0.22),
+    0 0 18px rgba(255,153,51,0.2),
+    0 8px 22px rgba(0,0,0,0.28);
+}
+
+.demo-mode-pill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 12;
+  pointer-events: none;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 0.5px;
+  color: #fff7b2;
+  text-transform: uppercase;
+  padding: 7px 9px;
+  border: 2px solid rgba(255, 217, 0, 0.78);
+  border-radius: 7px;
+  background:
+    repeating-linear-gradient(135deg, rgba(255,217,0,0.12) 0 5px, transparent 5px 10px),
+    rgba(8, 8, 15, 0.82);
+  box-shadow: 0 0 18px rgba(255, 217, 0, 0.22), inset 0 -3px 0 rgba(0,0,0,0.38);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72);
+}
+
+.eog-demo-note {
+  position: relative;
+  z-index: 2;
+  margin: 0 0 7px;
+  padding: 6px 7px;
+  border: 1.5px dashed rgba(255,217,0,0.5);
+  border-radius: 6px;
+  background: rgba(255,217,0,0.08);
+  color: #fff7b2;
+  font-size: 5px;
+  line-height: 1.5;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.eog-actions.demo {
+  grid-template-columns: 1fr;
 }
 
 /* ============ HELP OVERLAY ============ */
