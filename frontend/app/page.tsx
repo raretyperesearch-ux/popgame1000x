@@ -9,7 +9,7 @@ import GameScene, { type GameSceneHandle, type TradeDirection } from "./componen
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, getActiveTrade, type ActiveTradeResponse, type HistoryTrade } from "@/lib/api";
+import { addTradeMargin, getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, getActiveTrade, type ActiveTradeResponse, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotionalFor } from "@/lib/trade-sizing";
@@ -76,6 +76,7 @@ export default function Home() {
   const [fuelTankAmount, setFuelTankAmount] = useState(5);
   const [customFuelAmount, setCustomFuelAmount] = useState("50");
   const [customFuelSelected, setCustomFuelSelected] = useState(false);
+  const [addFuelInFlight, setAddFuelInFlight] = useState(false);
   const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
   const [fuelPreview, setFuelPreview] = useState(false);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,19 +166,37 @@ export default function Home() {
     setFuelTankOpen(true);
   }, [displayedFuelShortfall]);
 
-  const fundFromFuelTank = useCallback(() => {
+  const fundFromFuelTank = useCallback(async () => {
+    if (addFuelInFlight) return;
     const requestedAmount = Math.max(1, Math.floor(fuelTankAmount));
     const fundingNeeded = Math.max(0, requestedAmount - balance);
+    if ((gameState === "LIVE" || gameState === "STOPPED") && fundingNeeded <= 0) {
+      setAddFuelInFlight(true);
+      try {
+        const result = await addTradeMargin(requestedAmount, getAccessToken, walletAddress);
+        setBalance((prev) => Math.max(0, prev - requestedAmount));
+        const updatedWager = result.collateral_usdc / COLLATERAL_RATE;
+        if (Number.isFinite(updatedWager) && updatedWager > 0) {
+          setWager((prev) => Math.max(prev, Math.round(updatedWager * 100) / 100));
+        }
+        gameRef.current?.applyMarginUpdate(result.collateral_usdc, result.liquidation_price);
+        setFuelTankOpen(false);
+        showTradeError(`Fuel Added — Position collateral now $${result.collateral_usdc.toFixed(2)}.`);
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : String(e);
+        showTradeError(`ADD FUEL FAILED — ${raw.slice(0, 220)}`);
+      } finally {
+        setAddFuelInFlight(false);
+      }
+      return;
+    }
     if (fundingNeeded <= 0) {
       setFuelTankOpen(false);
-      if (gameState === "LIVE" || gameState === "STOPPED") {
-        showTradeError("Fuel is already in your wallet. Pull Chute stays available.");
-      }
       return;
     }
     window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fundingNeeded } }));
     setFuelTankOpen(false);
-  }, [balance, fuelTankAmount, gameState, showTradeError]);
+  }, [addFuelInFlight, balance, fuelTankAmount, gameState, getAccessToken, walletAddress, showTradeError]);
 
   const selectFuelAmount = useCallback((amount: number) => {
     setCustomFuelSelected(false);
@@ -631,6 +650,7 @@ export default function Home() {
         fuelTankAmount={fuelTankAmount}
         customFuelAmount={customFuelAmount}
         customFuelSelected={customFuelSelected}
+        addFuelBusy={addFuelInFlight}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAddFuel={openFuelTank}

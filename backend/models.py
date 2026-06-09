@@ -56,6 +56,20 @@ class CloseTradeResponse(BaseModel):
     tx_hash: str
 
 
+class AddMarginRequest(BaseModel):
+    amount_usdc: float = Field(gt=0)
+
+
+class AddMarginResponse(BaseModel):
+    trade_index: int
+    avantis_pair_index: int
+    amount_usdc: float
+    collateral_usdc: float
+    liquidation_price: Optional[float] = None
+    tx_hash: str
+    updated_at: datetime
+
+
 class ActiveTrade(BaseModel):
     trade_index: int
     avantis_pair_index: int

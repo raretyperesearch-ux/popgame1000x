@@ -337,6 +337,7 @@ export interface GameSceneHandle {
   ) => void;
   stopTrade: () => void;
   confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
+  applyMarginUpdate: (collateralUsd: number, liquidationPrice?: number | null) => void;
   restoreLiveTrade: (
     leverage: number,
     wager: number,
@@ -2055,6 +2056,19 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     }
   }, []);
 
+  const applyMarginUpdate = useCallback((collateralUsd: number, liqPrice?: number | null) => {
+    const a = anim.current;
+    if (a.state !== "LIVE" && a.state !== "STOPPED") return;
+    if (Number.isFinite(collateralUsd) && collateralUsd > 0) {
+      a.positionWager = Math.max(a.positionWager, collateralUsd / COLLATERAL_RATE);
+    }
+    if (liqPrice && Number.isFinite(liqPrice) && liqPrice > 0) {
+      a.liquidationPrice = liqPrice;
+      a.pendingLiqPrice = liqPrice;
+    }
+    a.flightBubble = { text: "FUEL ADDED", start: performance.now(), until: performance.now() + 2200 };
+  }, []);
+
 
   const restoreLiveTrade = useCallback((
     lev: number,
@@ -2104,10 +2118,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     reset();
   }, [reset]);
 
-  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, restoreLiveTrade, cancelLaunch }), [
+  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, applyMarginUpdate, restoreLiveTrade, cancelLaunch }), [
     startJump,
     stopTrade,
     confirmTrade,
+    applyMarginUpdate,
     restoreLiveTrade,
     cancelLaunch,
   ]);

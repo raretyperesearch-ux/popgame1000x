@@ -41,6 +41,16 @@ export interface CloseTradeResponse {
   tx_hash: string;
 }
 
+export interface AddMarginResponse {
+  trade_index: number;
+  avantis_pair_index: number;
+  amount_usdc: number;
+  collateral_usdc: number;
+  liquidation_price: number | null;
+  tx_hash: string;
+  updated_at: string;
+}
+
 export interface ActiveTrade {
   trade_index: number;
   avantis_pair_index: number;
@@ -268,6 +278,40 @@ export async function forceCloseTrade(
   return apiFetch<CloseTradeResponse>(
     "/trade/force-close",
     { method: "POST" },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
+export async function addTradeMargin(
+  amount: number,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<AddMarginResponse> {
+  if (isMock()) {
+    if (!mockTradeState) throw new Error("no open trade");
+    const amount_usdc = Math.max(0, amount);
+    mockTradeState = {
+      ...mockTradeState,
+      wager_usdc: mockTradeState.wager_usdc + amount_usdc,
+      collateral_usdc: mockTradeState.collateral_usdc + amount_usdc,
+    };
+    return {
+      trade_index: mockTradeState.trade_index,
+      avantis_pair_index: mockTradeState.avantis_pair_index,
+      amount_usdc,
+      collateral_usdc: mockTradeState.collateral_usdc,
+      liquidation_price: mockTradeState.liquidation_price,
+      tx_hash: "0xstub-margin",
+      updated_at: new Date().toISOString(),
+    };
+  }
+  return apiFetch<AddMarginResponse>(
+    "/trade/add-margin",
+    {
+      method: "POST",
+      body: JSON.stringify({ amount_usdc: amount }),
+    },
     getAccessToken,
     walletAddress,
   );

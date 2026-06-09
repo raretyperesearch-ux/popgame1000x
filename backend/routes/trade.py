@@ -30,7 +30,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from avantis_trader_sdk import TraderClient
-from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
+from avantis_trader_sdk.types import MarginUpdateType, TradeInput, TradeInputOrderType
 
 import auth
 from auth import AuthedUser, require_user
@@ -47,6 +47,8 @@ from usdc_approval import (
 from models import (
     OpenTradeRequest,
     OpenTradeResponse,
+    AddMarginRequest,
+    AddMarginResponse,
     CloseTradeResponse,
     ActiveTrade,
     ActiveTradeResponse,
@@ -889,7 +891,7 @@ def _collateral_to_close_for_trade(target, feed_price_at_close: Optional[float])
     open_collateral = float(target.trade.open_collateral)
     current_collateral = _float_or_none(getattr(target.trade, "collateral_in_trade", None))
     if current_collateral is not None and current_collateral > 0:
-        return round(min(open_collateral, current_collateral), 6)
+        return round(current_collateral, 6)
 
     if feed_price_at_close is None:
         return round(open_collateral, 6)
@@ -910,10 +912,18 @@ def _collateral_to_close_for_trade(target, feed_price_at_close: Optional[float])
     return round(min(open_collateral, remaining), 6)
 
 
+def _trade_current_collateral(t) -> float:
+    current = _float_or_none(getattr(t.trade, "collateral_in_trade", None))
+    if current is not None and current > 0:
+        return current
+    open_collateral = _float_or_none(getattr(t.trade, "open_collateral", None))
+    return open_collateral or 0.0
+
+
 def _liquidation_close_response(target, user: AuthedUser, feed_price_at_close: Optional[float], timer: _CloseTradeTimer) -> CloseTradeResponse:
     entry_price = float(target.trade.open_price)
     leverage = float(target.trade.leverage)
-    collateral = float(target.trade.open_collateral)
+    collateral = _trade_current_collateral(target)
     gross_pnl = -collateral
     avantis_win_fee = 0.0
     net_pnl = -collateral
@@ -1019,8 +1029,9 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
 
     timer.mark("close confirmed/settled", balance_before=float(balance_before), balance_after=float(balance_after))
 
+    close_collateral = _trade_current_collateral(target)
     received = balance_after - balance_before
-    net_pnl = round(received - target.trade.open_collateral, 4)
+    net_pnl = round(received - close_collateral, 4)
 
     if net_pnl > 0:
         gross_pnl = round(net_pnl / 0.975, 4)
@@ -1035,7 +1046,7 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     # response_model doesn't reject the payload.
     entry_price = float(target.trade.open_price)
     leverage = float(target.trade.leverage)
-    collateral = float(target.trade.open_collateral)
+    collateral = close_collateral
     exit_price = _exit_price_from_pnl(entry_price, leverage, collateral, gross_pnl)
     if exit_price is None and feed_price_at_close is not None:
         exit_price = float(feed_price_at_close)
@@ -1080,6 +1091,131 @@ async def close_trade(user: AuthedUser = Depends(require_user)):
 @router.post("/force-close", response_model=CloseTradeResponse)
 async def force_close_trade(user: AuthedUser = Depends(require_user)):
     return await _close_active_trade(user, was_liquidated=True)
+
+
+@router.post("/add-margin", response_model=AddMarginResponse)
+async def add_trade_margin(
+    body: AddMarginRequest,
+    user: AuthedUser = Depends(require_user),
+):
+    client = _require_trader()
+    opening = _find_opening_session_for_wallet(user.address)
+    if opening:
+        raise HTTPException(409, "Still opening trade — wait for Avantis confirmation before adding fuel.")
+
+    amount = round(float(body.amount_usdc), 6)
+    if amount <= 0:
+        raise HTTPException(400, "amount_usdc must be positive")
+
+    gas_task = None
+    if not _is_legacy_user(user):
+        gas_task = asyncio.create_task(get_eth_balance_wei(user.address))
+    trades_task = asyncio.create_task(client.trade.get_trades(user.address))
+    balance_task = asyncio.create_task(client.get_usdc_balance(user.address))
+    allowance_task = asyncio.create_task(client.get_usdc_allowance_for_trading(user.address))
+
+    trades, _ = await trades_task
+    if not trades:
+        _cancel_preflight_tasks(gas_task, balance_task, allowance_task)
+        raise HTTPException(404, "no open trade")
+    target = trades[0]
+
+    if gas_task is not None:
+        try:
+            eth_wei = await gas_task
+        except Exception as e:  # noqa: BLE001
+            print(f"[trade/add-margin] gas pre-flight RPC failed, allowing through: {e}")
+            eth_wei = MIN_GAS_ETH_WEI
+        if eth_wei < MIN_GAS_ETH_WEI:
+            _cancel_preflight_tasks(balance_task, allowance_task)
+            raise HTTPException(
+                402,
+                "Embedded wallet needs ETH on Base for gas. "
+                "Open Fund -> ETH (gas) and add a small amount before adding fuel.",
+            )
+
+    usdc_balance = float(await balance_task)
+    if usdc_balance + 1e-9 < amount:
+        _cancel_preflight_tasks(allowance_task)
+        raise HTTPException(
+            402,
+            f"Insufficient USDC. Need {amount:.2f} USDC to add fuel; wallet has {usdc_balance:.4f} USDC.",
+        )
+
+    allowance = float(await allowance_task)
+    if allowance + 1e-9 < amount:
+        if _is_legacy_user(user):
+            await client.approve_usdc_for_trading(_USDC_APPROVAL_AMOUNT)
+        else:
+            spender = get_avantis_trading_address(client)
+            approval_tx = build_usdc_approval_tx(spender, _USDC_APPROVAL_AMOUNT)
+            _ = await _send_user_tx(user, approval_tx)
+            for _ in range(15):
+                await asyncio.sleep(1.0)
+                if float(await client.get_usdc_allowance_for_trading(user.address)) + 1e-9 >= amount:
+                    break
+            else:
+                raise HTTPException(
+                    504,
+                    "USDC approval tx broadcast but allowance didn't land in 15s",
+                )
+
+    before_collateral = float(
+        getattr(target.trade, "collateral_in_trade", None)
+        or getattr(target.trade, "open_collateral", 0)
+        or 0
+    )
+    margin_tx = await client.trade.build_trade_margin_update_tx(
+        pair_index=target.trade.pair_index,
+        trade_index=target.trade.trade_index,
+        margin_update_type=MarginUpdateType.DEPOSIT,
+        collateral_change=amount,
+        trader=user.address,
+    )
+
+    if _is_legacy_user(user):
+        receipt = await client.sign_and_get_receipt(margin_tx)
+        tx_hash = _tx_hash_str(receipt)
+    else:
+        tx_hash = await _send_user_tx(user, margin_tx)
+
+    updated = target
+    for attempt in range(12):
+        latest, _ = await client.trade.get_trades(user.address)
+        match = next(
+            (
+                t for t in latest
+                if int(t.trade.trade_index) == int(target.trade.trade_index)
+                and int(t.trade.pair_index) == int(target.trade.pair_index)
+            ),
+            None,
+        )
+        if match is not None:
+            updated = match
+            current_collateral = float(
+                getattr(match.trade, "collateral_in_trade", None)
+                or getattr(match.trade, "open_collateral", 0)
+                or 0
+            )
+            if current_collateral >= before_collateral + amount - 0.0001:
+                break
+        if attempt < 11:
+            await asyncio.sleep(1.0)
+
+    collateral = float(
+        getattr(updated.trade, "collateral_in_trade", None)
+        or getattr(updated.trade, "open_collateral", 0)
+        or 0
+    )
+    return AddMarginResponse(
+        trade_index=int(target.trade.trade_index),
+        avantis_pair_index=int(target.trade.pair_index),
+        amount_usdc=amount,
+        collateral_usdc=round(collateral, 6),
+        liquidation_price=float(getattr(updated, "liquidation_price", 0) or 0),
+        tx_hash=tx_hash,
+        updated_at=datetime.now(timezone.utc),
+    )
 
 
 def _opened_at_from_trade(t) -> datetime:
@@ -1141,7 +1277,7 @@ def _int_or_none(value) -> Optional[int]:
 def _recover_missing_local_open(user: AuthedUser, t) -> Optional[dict]:
     """Best-effort local row recovery when Avantis still has an open trade."""
     entry = float(t.trade.open_price)
-    collateral = float(t.trade.open_collateral)
+    collateral = _trade_current_collateral(t)
     wager = round(collateral / 0.975, 4)
     opened_at = _opened_at_from_trade(t)
     synthetic_tx = (
@@ -1174,7 +1310,7 @@ def _recover_missing_local_open(user: AuthedUser, t) -> Optional[dict]:
 def _active_response_from_trade(user: AuthedUser, t, local_row: Optional[dict]) -> ActiveTradeResponse:
     entry = float(t.trade.open_price)
     leverage = float(t.trade.leverage)
-    collateral = float(t.trade.open_collateral)
+    collateral = _trade_current_collateral(t)
     latest = price_module.get_latest_price()
     current = float(latest) if latest is not None else entry
     is_long = bool(getattr(t.trade, "is_long", True))
@@ -1182,7 +1318,9 @@ def _active_response_from_trade(user: AuthedUser, t, local_row: Optional[dict]) 
     opened_at = _opened_at_from_trade(t)
     open_tx_hash = local_row.get("open_tx_hash") if local_row else None
     session_id = open_tx_hash
-    wager = _float_or_none(local_row.get("wager_usdc")) if local_row else None
+    live_wager = round(collateral / 0.975, 4)
+    local_wager = _float_or_none(local_row.get("wager_usdc")) if local_row else None
+    wager = max(local_wager or 0.0, live_wager)
     house_fee = _float_or_none(local_row.get("house_fee_usdc")) if local_row else None
     return ActiveTradeResponse(
         exists=True,
@@ -1194,7 +1332,7 @@ def _active_response_from_trade(user: AuthedUser, t, local_row: Optional[dict]) 
         trade_index=int(t.trade.trade_index),
         avantis_pair_index=int(t.trade.pair_index),
         leverage=int(leverage),
-        wager_usdc=wager if wager is not None else round(collateral / 0.975, 4),
+        wager_usdc=wager,
         collateral_usdc=collateral,
         house_fee_usdc=house_fee,
         entry_price=entry,

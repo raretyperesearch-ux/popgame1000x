@@ -23,6 +23,7 @@ interface ControlsProps {
   fuelTankAmount?: number;
   customFuelAmount?: string;
   customFuelSelected?: boolean;
+  addFuelBusy?: boolean;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
   onAddFuel?: () => void;
@@ -56,6 +57,7 @@ export default function Controls({
   fuelTankAmount = 5,
   customFuelAmount = "50",
   customFuelSelected = false,
+  addFuelBusy = false,
   onLeverageChange,
   onWagerChange,
   onAddFuel,
@@ -115,9 +117,11 @@ export default function Controls({
     : "Emergency top up";
   const fuelCoveredByBalance = showFuelPanel && balance >= fuelTankAmount;
   const addFuelFundingAmount = Math.max(1, Math.ceil(fuelTankAmount - balance));
-  const addFuelButtonLabel = fuelCoveredByBalance
-    ? `USE $${fuelTankAmount}`
-    : `ADD $${addFuelFundingAmount}`;
+  const addFuelButtonLabel = addFuelBusy
+    ? "ADDING..."
+    : fuelCoveredByBalance
+      ? `ADD $${fuelTankAmount}`
+      : `FUND $${addFuelFundingAmount}`;
 
   const actionButton = (
     <button type="button" className={actionClass} disabled={actionLocked} onClick={() => onAction()}>
@@ -244,7 +248,12 @@ export default function Controls({
                   )}
                 </button>
               </div>
-              <button type="button" className="add-fuel-slot-primary" onClick={onFundFuel ?? onAddFuel}>
+              <button
+                type="button"
+                className="add-fuel-slot-primary"
+                onClick={onFundFuel ?? onAddFuel}
+                disabled={addFuelBusy}
+              >
                 {addFuelButtonLabel}
               </button>
             </div>
