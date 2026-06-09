@@ -42,11 +42,13 @@ def _close(a: float, b: float, tol: float = 1e-3) -> bool:
 
 class FakeTradeInner:
     """Mirrors the avantis-trader-sdk Trade shape we touch."""
-    def __init__(self, *, idx, pair_index, lev, collateral, open_price, ts):
+    def __init__(self, *, idx, pair_index, lev, collateral, open_price, ts, current_collateral=None):
         self.trade_index = idx
         self.pair_index = pair_index
         self.leverage = lev
         self.open_collateral = collateral
+        if current_collateral is not None:
+            self.collateral_in_trade = current_collateral
         self.open_price = open_price
         self.timestamp = ts
 
@@ -223,6 +225,68 @@ def test_compute_pnl_long_losing() -> None:
     if not _close(pnl_usdc, -5.0):
         _fail("compute_pnl.loss.usdc", f"expected -5.0, got {pnl_usdc}")
     _ok("compute_pnl.long losing → -$5.00")
+
+
+def test_compute_pnl_added_margin_keeps_notional_fixed() -> None:
+    from routes.trade import _compute_pnl
+    pnl_usdc, pnl_pct = _compute_pnl(
+        entry_price=3500.0,
+        current_price=3507.0,
+        leverage=500.0,
+        collateral=5.0,
+        notional_usd=500.0,
+    )
+    if not _close(pnl_usdc, 1.0):
+        _fail("compute_pnl.margin.usdc", f"expected +1.0, got {pnl_usdc}")
+    if not _close(pnl_pct, 0.2, tol=1e-4):
+        _fail("compute_pnl.margin.pct", f"expected +0.2 on current collateral, got {pnl_pct}")
+    _ok("compute_pnl.added margin → fixed notional / lower pct risk")
+
+
+async def test_active_added_margin_uses_original_notional() -> None:
+    from routes import trade as trade_mod
+    from routes import price as price_mod
+
+    inner = FakeTradeInner(
+        idx=99,
+        pair_index=0,
+        lev=500,
+        collateral=0.975,
+        current_collateral=5.0,
+        open_price=3500.0,
+        ts=1714400000,
+    )
+    trade_obj = FakeTrade(inner, liq=3460.0)
+
+    fake_client = AsyncMock()
+    fake_client.trade = AsyncMock()
+    fake_client.trade.get_trades = AsyncMock(return_value=([trade_obj], None))
+    local_open = {
+        "trade_index": 99,
+        "wager_usdc": 1.0,
+        "collateral_usdc": 0.975,
+        "house_fee_usdc": 0.025,
+        "opened_at": "2024-04-29T12:00:00+00:00",
+        "open_tx_hash": "0xopen",
+    }
+
+    with (
+        patch.object(trade_mod, "_trader_client", fake_client),
+        patch.object(trade_mod.persistence, "active_open_for_wallet", return_value=local_open),
+    ):
+        price_mod._latest_price = 3507.0
+        from auth import AuthedUser
+        out = await trade_mod.get_active_trade(AuthedUser(did="u", wallet_id="w", address="0xabc"))
+
+    if not _close(out.notional_usd, 487.5):
+        _fail("active.margin.notional", f"expected original notional 487.5, got {out.notional_usd}")
+    if not _close(out.pnl_usdc, 0.975):
+        _fail("active.margin.pnl_usdc", f"expected +0.975, got {out.pnl_usdc}")
+    if not _close(out.pnl_pct, 0.195, tol=1e-4):
+        _fail("active.margin.pnl_pct", f"expected +0.195 on current collateral, got {out.pnl_pct}")
+    if not _close(out.wager_usdc, 5.1282, tol=1e-3):
+        _fail("active.margin.wager", f"expected current collateral as fuel, got {out.wager_usdc}")
+    _ok("active.added margin uses original notional")
 
 
 def test_collateral_to_close_reduces_losing_trade() -> None:
@@ -479,6 +543,8 @@ async def main() -> None:
     await test_active_no_open_trade_returns_none()
     test_compute_pnl_long_winning()
     test_compute_pnl_long_losing()
+    test_compute_pnl_added_margin_keeps_notional_fixed()
+    await test_active_added_margin_uses_original_notional()
     test_collateral_to_close_reduces_losing_trade()
     test_collateral_to_close_prefers_sdk_remaining_collateral()
     test_invalid_close_amount_detection()

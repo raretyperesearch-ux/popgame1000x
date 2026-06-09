@@ -1109,6 +1109,16 @@ def _trade_current_collateral(t) -> float:
     return open_collateral or 0.0
 
 
+def _trade_open_collateral(t, local_row: Optional[dict] = None) -> float:
+    local_collateral = _float_or_none(local_row.get("collateral_usdc")) if local_row else None
+    if local_collateral is not None and local_collateral > 0:
+        return local_collateral
+    open_collateral = _float_or_none(getattr(t.trade, "open_collateral", None))
+    if open_collateral is not None and open_collateral > 0:
+        return open_collateral
+    return _trade_current_collateral(t)
+
+
 def _raise_liquidation_settlement_pending(
     *,
     target,
@@ -1146,6 +1156,9 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     if not trades:
         raise HTTPException(404, "no open trade")
     target = trades[0]
+    local_open = persistence.active_open_for_wallet(user.address)
+    if local_open and _int_or_none(local_open.get("trade_index")) != int(target.trade.trade_index):
+        local_open = None
     timer.mark("current trade/session loaded", trade_index=target.trade.trade_index)
 
     balance_before = float(await client.get_usdc_balance(user.address))
@@ -1229,8 +1242,8 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     # response_model doesn't reject the payload.
     entry_price = float(target.trade.open_price)
     leverage = float(target.trade.leverage)
-    collateral = close_collateral
-    exit_price = _exit_price_from_pnl(entry_price, leverage, collateral, gross_pnl)
+    open_collateral = _trade_open_collateral(target, local_open)
+    exit_price = _exit_price_from_pnl(entry_price, leverage, open_collateral, gross_pnl)
     if exit_price is None and feed_price_at_close is not None:
         exit_price = float(feed_price_at_close)
     if exit_price is None:
@@ -1363,8 +1376,21 @@ async def add_trade_margin(
         tx_hash = await _send_user_tx(user, margin_tx)
 
     updated = target
+    poll_error = None
     for attempt in range(12):
-        latest, _ = await client.trade.get_trades(user.address)
+        try:
+            latest, _ = await client.trade.get_trades(user.address)
+        except Exception as exc:  # noqa: BLE001
+            poll_error = exc
+            print(
+                f"[trade/add-margin] post-tx poll failed "
+                f"wallet={user.address} trade_index={target.trade.trade_index} "
+                f"attempt={attempt + 1}/12 tx_hash={tx_hash}: {str(exc)[:220]}"
+            )
+            if attempt < 11:
+                await asyncio.sleep(1.0)
+                continue
+            break
         match = next(
             (
                 t for t in latest
@@ -1390,6 +1416,13 @@ async def add_trade_margin(
         or getattr(updated.trade, "open_collateral", 0)
         or 0
     )
+    if poll_error is not None and collateral < before_collateral + amount - 0.0001:
+        print(
+            f"[trade/add-margin] returning last-known collateral after poll errors "
+            f"wallet={user.address} trade_index={target.trade.trade_index} "
+            f"tx_hash={tx_hash} before={before_collateral} amount={amount} "
+            f"collateral={collateral}"
+        )
     return AddMarginResponse(
         trade_index=int(target.trade.trade_index),
         avantis_pair_index=int(target.trade.pair_index),
@@ -1424,18 +1457,20 @@ def _compute_pnl(
     leverage: float,
     collateral: float,
     is_long: bool = True,
+    notional_usd: Optional[float] = None,
 ) -> tuple[float, float]:
     """Mark-to-market PnL for an Avantis perp. Returns (pnl_usdc, pnl_pct).
-    pnl_pct is expressed as the fraction of collateral, so -1.0 = full
-    liquidation, +0.5 = +50% on the wager. Slippage and the 2.5% Avantis
-    win fee are not modeled here — this is the unrealized number."""
+    pnl_pct is expressed as the fraction of current collateral, so -1.0 = full
+    liquidation, +0.5 = +50% on the current margin. Slippage and the 2.5%
+    Avantis win fee are not modeled here — this is the unrealized number."""
     if entry_price <= 0 or collateral <= 0:
         return 0.0, 0.0
     move = (current_price - entry_price) / entry_price
     if not is_long:
         move = -move
-    pnl_pct = move * leverage
-    pnl_usdc = pnl_pct * collateral
+    notional = notional_usd if notional_usd is not None and notional_usd > 0 else collateral * leverage
+    pnl_usdc = move * notional
+    pnl_pct = pnl_usdc / collateral
     return round(pnl_usdc, 4), round(pnl_pct, 6)
 
 
@@ -1494,10 +1529,19 @@ def _active_response_from_trade(user: AuthedUser, t, local_row: Optional[dict]) 
     entry = float(t.trade.open_price)
     leverage = float(t.trade.leverage)
     collateral = _trade_current_collateral(t)
+    open_collateral = _trade_open_collateral(t, local_row)
+    notional_usd = round(open_collateral * leverage, 6)
     latest = price_module.get_latest_price()
     current = float(latest) if latest is not None else entry
     is_long = bool(getattr(t.trade, "is_long", True))
-    pnl_usdc, pnl_pct = _compute_pnl(entry, current, leverage, collateral, is_long=is_long)
+    pnl_usdc, pnl_pct = _compute_pnl(
+        entry,
+        current,
+        leverage,
+        collateral,
+        is_long=is_long,
+        notional_usd=notional_usd,
+    )
     opened_at = _opened_at_from_trade(t)
     open_tx_hash = local_row.get("open_tx_hash") if local_row else None
     session_id = open_tx_hash
@@ -1517,6 +1561,8 @@ def _active_response_from_trade(user: AuthedUser, t, local_row: Optional[dict]) 
         leverage=int(leverage),
         wager_usdc=wager,
         collateral_usdc=collateral,
+        open_collateral_usdc=round(open_collateral, 6),
+        notional_usd=notional_usd,
         house_fee_usdc=house_fee,
         entry_price=entry,
         current_price=current,
@@ -1560,6 +1606,11 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
             leverage=opening.get("leverage"),
             wager_usdc=opening.get("wager_usdc"),
             collateral_usdc=opening.get("collateral_usdc"),
+            open_collateral_usdc=opening.get("collateral_usdc"),
+            notional_usd=round(
+                float(opening.get("collateral_usdc") or 0) * float(opening.get("leverage") or 0),
+                6,
+            ),
             house_fee_usdc=opening.get("house_fee_usdc"),
             entry_price=opening.get("entry_price"),
             current_price=_float_or_none(price_module.get_latest_price()),

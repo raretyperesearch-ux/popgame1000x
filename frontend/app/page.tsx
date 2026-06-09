@@ -19,7 +19,9 @@ type PlayMode = "live" | "demo";
 const COLLATERAL_RATE = 0.975;
 const ADD_FUEL_DANGER_PNL_RATIO = 0.6;
 const FUEL_TOP_UPS = [
+  { label: "$1", amount: 1 },
   { label: "+$5", amount: 5 },
+  { label: "+$10", amount: 10 },
   { label: "+$25", amount: 25 },
   { label: "+$100", amount: 100 },
 ];
@@ -74,8 +76,6 @@ export default function Home() {
   const [showPaperModeNotice, setShowPaperModeNotice] = useState(false);
   const [fuelTankOpen, setFuelTankOpen] = useState(false);
   const [fuelTankAmount, setFuelTankAmount] = useState(5);
-  const [customFuelAmount, setCustomFuelAmount] = useState("50");
-  const [customFuelSelected, setCustomFuelSelected] = useState(false);
   const [addFuelInFlight, setAddFuelInFlight] = useState(false);
   const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
   const [fuelPreview, setFuelPreview] = useState(false);
@@ -199,22 +199,7 @@ export default function Home() {
   }, [addFuelInFlight, balance, fuelTankAmount, gameState, getAccessToken, walletAddress, showTradeError]);
 
   const selectFuelAmount = useCallback((amount: number) => {
-    setCustomFuelSelected(false);
     setFuelTankAmount(amount);
-  }, []);
-
-  const selectCustomFuel = useCallback(() => {
-    const amount = Math.max(1, Math.floor(Number(customFuelAmount) || 1));
-    setCustomFuelSelected(true);
-    setFuelTankAmount(amount);
-  }, [customFuelAmount]);
-
-  const changeCustomFuel = useCallback((value: string) => {
-    setCustomFuelAmount(value);
-    const amount = Number(value);
-    if (Number.isFinite(amount) && amount > 0) {
-      setFuelTankAmount(Math.floor(amount));
-    }
   }, []);
 
   const showLowFuelPrompt = useCallback(() => {
@@ -410,6 +395,7 @@ export default function Home() {
       liq,
       restoredDirection,
       active.current_price ?? entry,
+      active.notional_usd,
     );
     setLiveTradeReady(true);
     setOpenInFlight(false);
@@ -646,17 +632,12 @@ export default function Home() {
         settling={settling}
         addFuelPulseKey={addFuelPulseKey}
         showFuelPanel={showFuelPanel}
-        fuelShortfall={displayedFuelShortfall}
         fuelTankAmount={fuelTankAmount}
-        customFuelAmount={customFuelAmount}
-        customFuelSelected={customFuelSelected}
         addFuelBusy={addFuelInFlight}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAddFuel={openFuelTank}
         onSelectFuelAmount={selectFuelAmount}
-        onSelectCustomFuel={selectCustomFuel}
-        onCustomFuelChange={changeCustomFuel}
         onFundFuel={fundFromFuelTank}
         onAction={handleAction}
       />
@@ -675,13 +656,10 @@ export default function Home() {
           <div className="fuel-tank-stats">
             <span>Balance <b>${balance.toFixed(2)}</b></span>
             <span>Selected Fuel <b>${wager.toFixed(2)}</b></span>
-            <span>Need <b>${displayedFuelShortfall.toFixed(2)}</b></span>
+            <span>Top-up Need <b>${Math.max(0, fuelTankAmount - balance).toFixed(2)}</b></span>
           </div>
           <div className="fuel-tank-buttons" aria-label="Funding shortcuts">
-            {[
-              ...FUEL_TOP_UPS,
-              { label: "MAX", amount: Math.max(5, Math.ceil(displayedFuelShortfall || wager)) },
-            ].map(({ label, amount }) => (
+            {FUEL_TOP_UPS.map(({ label, amount }) => (
               <button
                 key={label}
                 type="button"

@@ -57,6 +57,8 @@ export interface ActiveTrade {
   leverage: number;
   wager_usdc: number;
   collateral_usdc: number;
+  open_collateral_usdc?: number | null;
+  notional_usd?: number | null;
   entry_price: number;
   current_price: number;
   pnl_usdc: number;
@@ -78,6 +80,8 @@ export interface ActiveTradeResponse {
   leverage: number | null;
   wager_usdc: number | null;
   collateral_usdc: number | null;
+  open_collateral_usdc: number | null;
+  notional_usd: number | null;
   house_fee_usdc: number | null;
   entry_price: number | null;
   current_price: number | null;
@@ -107,7 +111,7 @@ let mockTradeState: ActiveTrade | null = null;
 
 function mockLiquidationPriceAfterMargin(trade: ActiveTrade, nextCollateral: number): number {
   if (nextCollateral <= 0 || trade.collateral_usdc <= 0) return trade.liquidation_price;
-  const fixedNotional = trade.collateral_usdc * trade.leverage;
+  const fixedNotional = trade.notional_usd ?? (trade.collateral_usdc * trade.leverage);
   const effectiveLeverage = fixedNotional / nextCollateral;
   if (!Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return trade.liquidation_price;
   const move = (trade.entry_price / effectiveLeverage) * MOCK_LIQUIDATION_BUFFER_MULT;
@@ -158,6 +162,8 @@ export async function openTrade(
       leverage,
       wager_usdc: wager,
       collateral_usdc,
+      open_collateral_usdc: collateral_usdc,
+      notional_usd: collateral_usdc * leverage,
       entry_price,
       current_price: entry_price,
       pnl_usdc: 0,
@@ -228,12 +234,13 @@ export async function closeTrade(
     const wager = mockTradeState?.wager_usdc ?? 5;
     const collateral = mockTradeState?.collateral_usdc ?? wager * 0.975;
     const leverage = mockTradeState?.leverage ?? 100;
+    const notional = mockTradeState?.notional_usd ?? (collateral * leverage);
     const exit_price = mockExitPrice && mockExitPrice > 0
       ? mockExitPrice
       : mockTradeState?.current_price ?? entry_price;
     const isLong = mockTradeState?.is_long ?? true;
     const move = isLong ? (exit_price - entry_price) / entry_price : (entry_price - exit_price) / entry_price;
-    const gross_pnl_usdc = +((move * leverage * collateral).toFixed(4));
+    const gross_pnl_usdc = +((move * notional).toFixed(4));
     const avantis_win_fee_usdc = gross_pnl_usdc > 0 ? +(gross_pnl_usdc * 0.025).toFixed(4) : 0;
     const net_pnl_usdc = gross_pnl_usdc > 0
       ? +(gross_pnl_usdc - avantis_win_fee_usdc).toFixed(4)
@@ -341,6 +348,8 @@ const NO_ACTIVE_TRADE: ActiveTradeResponse = {
   leverage: null,
   wager_usdc: null,
   collateral_usdc: null,
+  open_collateral_usdc: null,
+  notional_usd: null,
   house_fee_usdc: null,
   entry_price: null,
   current_price: null,
@@ -371,6 +380,8 @@ export async function getActiveTrade(
       leverage: mockTradeState.leverage,
       wager_usdc: mockTradeState.wager_usdc,
       collateral_usdc: mockTradeState.collateral_usdc,
+      open_collateral_usdc: mockTradeState.open_collateral_usdc ?? mockTradeState.collateral_usdc,
+      notional_usd: mockTradeState.notional_usd ?? (mockTradeState.collateral_usdc * mockTradeState.leverage),
       house_fee_usdc: mockTradeState.wager_usdc * 0.025,
       entry_price: mockTradeState.entry_price,
       current_price: mockTradeState.current_price,

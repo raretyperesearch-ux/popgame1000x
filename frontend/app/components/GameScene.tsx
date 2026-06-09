@@ -325,6 +325,14 @@ function flightFxFrame(kind: FlightFxKind, seed: number): number {
   return [3, 5, 6, 7, 9, 10, 11, 15][Math.floor(featureNoise(seed * 7.41) * 8) % 8];
 }
 
+function collateralFromFuel(fuelUsd: number): number {
+  return +(fuelUsd * COLLATERAL_RATE).toFixed(4);
+}
+
+function notionalFromOpenFuel(fuelUsd: number, leverage: number): number {
+  return collateralFromFuel(fuelUsd) * leverage;
+}
+
 /* ============ COMPONENT INTERFACE ============ */
 export interface GameSceneHandle {
   startJump: (
@@ -345,6 +353,7 @@ export interface GameSceneHandle {
     liquidationPrice: number,
     direction: TradeDirection,
     currentPrice?: number,
+    notionalUsd?: number | null,
   ) => void;
   cancelLaunch: () => void;
 }
@@ -428,6 +437,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     entry: 3500,
     positionLev: 100,
     positionWager: 5,
+    positionNotionalUsd: notionalFromOpenFuel(5, 100),
     tradeDirection: "long" as TradeDirection,
     /* backend-provided values from /trade/open. pendingEntry/pendingLiq are
        captured at startJump and snapped onto a.entry / a.liquidationPrice
@@ -1804,7 +1814,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
-    const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
+    const positionCollateral = collateralFromFuel(positionWager);
     const positionLev = a.positionLev;
     const positionDirection = a.tradeDirection;
     const entry = a.entry;
@@ -1875,7 +1885,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
-        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : result.res.was_liquidated ? -1 : 0;
+        const pnlPct = positionCollateral > 0 ? pnlDollars / positionCollateral : result.res.was_liquidated ? -1 : 0;
         console.info("[trade/close-ui] close response received", { kind: "force-close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
       } else if (paperMode || isDemo) {
@@ -1906,8 +1916,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
-    const positionCollateral = +(positionWager * COLLATERAL_RATE).toFixed(4);
+    const positionCollateral = collateralFromFuel(positionWager);
     const positionLev = a.positionLev;
+    const positionNotionalUsd = a.positionNotionalUsd > 0
+      ? a.positionNotionalUsd
+      : notionalFromOpenFuel(positionWager, positionLev);
     const positionDirection = a.tradeDirection;
     const entry = a.entry;
     const exitOptimistic = a.price;
@@ -1916,8 +1929,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // Estimated PnL based on the live chart price. Demo/paper can resolve
     // locally; real-money final PnL still waits for backend close success.
     const moveOptimistic = tradeMove(exitOptimistic, entry, a.tradeDirection);
-    const pnlPctOptimistic = moveOptimistic * positionLev;
-    const pnlDollarsOptimistic = pnlPctOptimistic * positionCollateral;
+    const pnlDollarsOptimistic = moveOptimistic * positionNotionalUsd;
+    const pnlPctOptimistic = positionCollateral > 0 ? pnlDollarsOptimistic / positionCollateral : 0;
     const isDemo = playMode === "demo";
 
     const settleAndShow = (
@@ -1985,7 +1998,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
-        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : 0;
+        const pnlPct = positionCollateral > 0 ? pnlDollars / positionCollateral : 0;
         console.info("[trade/close-ui] close response received", { kind: "close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
       } else if (paperMode || isDemo) {
@@ -2015,6 +2028,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       setGameState("RUNNING");
       a.positionLev = lev;
       a.positionWager = wag;
+      a.positionNotionalUsd = notionalFromOpenFuel(wag, lev);
       a.tradeDirection = direction;
       a.pendingEntry = entryPrice;
       a.pendingLiqPrice = liqPrice;
@@ -2084,6 +2098,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     liqPrice: number,
     direction: TradeDirection,
     currentPrice?: number,
+    notionalUsd?: number | null,
   ) => {
     const a = anim.current;
     const livePrice = currentPrice && currentPrice > 0 ? currentPrice : entryPrice;
@@ -2092,6 +2107,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setEndOfGame(null);
     a.positionLev = lev;
     a.positionWager = wag;
+    a.positionNotionalUsd =
+      notionalUsd && Number.isFinite(notionalUsd) && notionalUsd > 0
+        ? notionalUsd
+        : notionalFromOpenFuel(wag, lev);
     a.tradeDirection = direction;
     a.entry = entryPrice;
     a.pendingEntry = entryPrice;
@@ -2227,7 +2246,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       /* sky altitude target — climbs with PnL during LIVE, holds during STOPPED, decays otherwise */
       let skyTarget = 0;
       if (a.state === "LIVE") {
-        const pnlPct = tradeMove(a.price, a.entry, a.tradeDirection) * a.positionLev;
+        const positionCollateral = collateralFromFuel(a.positionWager);
+        const positionNotionalUsd = a.positionNotionalUsd > 0
+          ? a.positionNotionalUsd
+          : notionalFromOpenFuel(a.positionWager, a.positionLev);
+        const pnlDollars = tradeMove(a.price, a.entry, a.tradeDirection) * positionNotionalUsd;
+        const pnlPct = positionCollateral > 0 ? pnlDollars / positionCollateral : 0;
         skyTarget = clamp(pnlPct * 0.5, 0, 1);
       } else if (a.state === "STOPPED") {
         skyTarget = 0; // decay back to ground while parachuting
@@ -2241,7 +2265,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
          physics layer can still ease and bounce inside those bounds. */
       if (a.state === "LIVE" && a.entry > 0) {
         const move = tradeMove(a.price, a.entry, a.tradeDirection);
-        const pnlPct = move * a.positionLev;
+        const positionCollateral = collateralFromFuel(a.positionWager);
+        const positionNotionalUsd = a.positionNotionalUsd > 0
+          ? a.positionNotionalUsd
+          : notionalFromOpenFuel(a.positionWager, a.positionLev);
+        const pnlDollars = move * positionNotionalUsd;
+        const pnlPct = positionCollateral > 0 ? pnlDollars / positionCollateral : 0;
         const priceEpsilon = Math.max(a.entry * 0.00002, 0.05);
         if (a.tradeDirection === "long" && pnlPct > 0.002 && a.price > a.entry) {
           const minVisualPrice = a.entry + Math.max((a.price - a.entry) * 0.55, priceEpsilon);
@@ -2579,9 +2608,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
         /* PnL */
         const move = tradeMove(a.price, a.entry, a.tradeDirection);
-        const pnlPct = move * a.positionLev;
-        const positionCollateral = +(a.positionWager * COLLATERAL_RATE).toFixed(4);
-        const pnlDollars = pnlPct * positionCollateral;
+        const positionCollateral = collateralFromFuel(a.positionWager);
+        const positionNotionalUsd = a.positionNotionalUsd > 0
+          ? a.positionNotionalUsd
+          : notionalFromOpenFuel(a.positionWager, a.positionLev);
+        const pnlDollars = move * positionNotionalUsd;
+        const pnlPct = positionCollateral > 0 ? pnlDollars / positionCollateral : 0;
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
         const liveLift = a.skyAlt * a.stageH * 0.25;

@@ -19,25 +19,23 @@ interface ControlsProps {
   settling?: boolean;
   addFuelPulseKey?: number;
   showFuelPanel?: boolean;
-  fuelShortfall?: number;
   fuelTankAmount?: number;
-  customFuelAmount?: string;
-  customFuelSelected?: boolean;
   addFuelBusy?: boolean;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
   onAddFuel?: () => void;
   onSelectFuelAmount?: (amount: number) => void;
-  onSelectCustomFuel?: () => void;
-  onCustomFuelChange?: (value: string) => void;
   onFundFuel?: () => void;
   onAction: (direction?: TradeDirection) => void;
 }
 
 const CHIPS = [1, 25, 100, 1000];
-const LOW_FUEL_TOP_UPS = [
+const ADD_FUEL_TOP_UPS = [
+  { label: "$1", amount: 1 },
   { label: "+$5", amount: 5 },
+  { label: "+$10", amount: 10 },
   { label: "+$25", amount: 25 },
+  { label: "+$100", amount: 100 },
 ];
 
 export default function Controls({
@@ -53,17 +51,12 @@ export default function Controls({
   settling = false,
   addFuelPulseKey = 0,
   showFuelPanel = false,
-  fuelShortfall = 0,
   fuelTankAmount = 5,
-  customFuelAmount = "50",
-  customFuelSelected = false,
   addFuelBusy = false,
   onLeverageChange,
   onWagerChange,
   onAddFuel,
   onSelectFuelAmount,
-  onSelectCustomFuel,
-  onCustomFuelChange,
   onFundFuel,
   onAction,
 }: ControlsProps) {
@@ -112,10 +105,11 @@ export default function Controls({
   const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
   const fundingShortfall = Math.max(0, wager - balance);
   const wagerLabel = Number.isInteger(wager) ? wager.toFixed(0) : wager.toFixed(2);
-  const displayShortfall = showFuelPanel ? fuelShortfall : fundingShortfall;
+  const fuelTopUpShortfall = Math.max(0, fuelTankAmount - balance);
+  const displayShortfall = showFuelPanel ? fuelTopUpShortfall : fundingShortfall;
   const addFuelPanelDetail = displayShortfall > 0
     ? `Need $${displayShortfall.toFixed(2)} more`
-    : "Emergency top up";
+    : `Ready to add $${fuelTankAmount}`;
   const fuelCoveredByBalance = showFuelPanel && balance >= fuelTankAmount;
   const addFuelFundingAmount = Math.max(1, Math.ceil(fuelTankAmount - balance));
   const addFuelButtonLabel = addFuelBusy
@@ -217,37 +211,16 @@ export default function Controls({
                 <span>{addFuelPanelDetail}</span>
               </div>
               <div className="add-fuel-slot-amounts" aria-label="Fuel top-up amount">
-                {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
+                {ADD_FUEL_TOP_UPS.map(({ label, amount }) => (
                   <button
                     key={label}
                     type="button"
-                    className={`add-fuel-slot-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
+                    className={`add-fuel-slot-chip${fuelTankAmount === amount ? " active" : ""}`}
                     onClick={() => onSelectFuelAmount?.(amount)}
                   >
                     {label}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  className={`add-fuel-slot-chip${customFuelSelected ? " active" : ""}`}
-                  onClick={onSelectCustomFuel}
-                >
-                  {customFuelSelected ? (
-                    <span className="add-fuel-slot-custom" onClick={(e) => e.stopPropagation()}>
-                      <span>$</span>
-                      <input
-                        value={customFuelAmount}
-                        onChange={(e) => onCustomFuelChange?.(e.target.value)}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        aria-label="Custom fuel amount"
-                        autoFocus
-                      />
-                    </span>
-                  ) : (
-                    "CUSTOM"
-                  )}
-                </button>
               </div>
               <button
                 type="button"

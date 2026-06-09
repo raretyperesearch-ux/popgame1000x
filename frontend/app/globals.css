@@ -2212,7 +2212,7 @@ button.h-tag:focus-visible {
 }
 .add-fuel-slot-amounts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 5px;
 }
 .add-fuel-slot-chip {
@@ -2652,7 +2652,7 @@ button.h-tag:focus-visible {
 }
 .fuel-tank-buttons {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 7px;
   margin-top: 12px;
 }

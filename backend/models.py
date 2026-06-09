@@ -76,6 +76,8 @@ class ActiveTrade(BaseModel):
     leverage: int
     wager_usdc: float
     collateral_usdc: float
+    open_collateral_usdc: Optional[float] = None
+    notional_usd: Optional[float] = None
     entry_price: float
     current_price: float
     pnl_usdc: float
@@ -96,6 +98,8 @@ class ActiveTradeResponse(BaseModel):
     leverage: Optional[int] = None
     wager_usdc: Optional[float] = None
     collateral_usdc: Optional[float] = None
+    open_collateral_usdc: Optional[float] = None
+    notional_usd: Optional[float] = None
     house_fee_usdc: Optional[float] = None
     entry_price: Optional[float] = None
     liq_price: Optional[float] = None
