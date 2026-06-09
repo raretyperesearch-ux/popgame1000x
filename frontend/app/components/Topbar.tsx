@@ -433,7 +433,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setProfileMenuOpen(false);
   };
 
-  const onFundUSDC = () => {
+  const onFundUSDC = useCallback(() => {
     if (!walletAddress) return;
     setWalletMenuOpen(false);
     fundWallet({
@@ -445,7 +445,13 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         card: { preferredProvider: "coinbase" },
       },
     }).catch((e) => console.warn("[fund] USDC fund flow declined:", e));
-  };
+  }, [fundWallet, walletAddress]);
+
+  useEffect(() => {
+    const onFundRequest = () => onFundUSDC();
+    window.addEventListener("popgame:fund-usdc", onFundRequest);
+    return () => window.removeEventListener("popgame:fund-usdc", onFundRequest);
+  }, [onFundUSDC]);
 
   const onFundETH = () => {
     if (!walletAddress) return;
