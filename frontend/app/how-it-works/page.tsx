@@ -220,7 +220,7 @@ export default function HowItWorksPage() {
           Read the <a href="/terms">Terms of Service</a> and{" "}
           <a href="/privacy">Privacy Policy</a>. Questions?{" "}
           <a
-            href="https://discord.gg/DjGgNUKhZ"
+            href="https://discord.gg/5aM9AVnBNH"
             target="_blank"
             rel="noreferrer"
           >

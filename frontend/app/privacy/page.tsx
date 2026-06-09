@@ -118,7 +118,7 @@ export default function PrivacyPage() {
           <li>
             <b>Data deletion:</b> ask in the{" "}
             <a
-              href="https://discord.gg/DjGgNUKhZ"
+              href="https://discord.gg/5aM9AVnBNH"
               target="_blank"
               rel="noreferrer"
             >
@@ -166,7 +166,7 @@ export default function PrivacyPage() {
         <h2>contact</h2>
         <p>
           <a
-            href="https://discord.gg/DjGgNUKhZ"
+            href="https://discord.gg/5aM9AVnBNH"
             target="_blank"
             rel="noreferrer"
           >

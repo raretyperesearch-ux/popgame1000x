@@ -202,7 +202,7 @@ export default function TermsPage() {
         <p>
           Reach the operator on the{" "}
           <a
-            href="https://discord.gg/DjGgNUKhZ"
+            href="https://discord.gg/5aM9AVnBNH"
             target="_blank"
             rel="noreferrer"
           >

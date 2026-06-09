@@ -521,7 +521,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         </button>
         <a
           className="discord-tab"
-          href="https://discord.gg/DjGgNUKhZ"
+          href="https://discord.gg/5aM9AVnBNH"
           target="_blank"
           rel="noreferrer"
           title="Join Discord"
