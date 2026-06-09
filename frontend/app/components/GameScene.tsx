@@ -326,6 +326,7 @@ export interface GameSceneHandle {
     entryPrice: number,
     liquidationPrice: number,
     direction: TradeDirection,
+    demoRun?: boolean,
   ) => void;
   stopTrade: () => void;
   confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
@@ -1962,7 +1963,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
-    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection) => {
+    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection, demoRun = false) => {
       const a = anim.current;
       sounds.play("lever-pull");
       a.state = "RUNNING";
@@ -1988,7 +1989,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteParachuteStart = 0;
       a.dustParticles.length = 0;
       a.flightFx.length = 0;
-      a.flightBubble = { text: "", start: 0, until: 0 };
+      a.flightBubble = { text: "LAUNCHING...", start: performance.now(), until: performance.now() + 1800 };
       a.nextFlightCueAt = 0;
       a.lastFlightMilestone = 0;
       a.liveShake = 0;
@@ -2000,7 +2001,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.loco.rightFoot = { x: a.loco.bodyX + 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: false };
       a.loco.squash = 0;
     },
-    [setGameState],
+    [setGameState, playMode],
   );
 
 
