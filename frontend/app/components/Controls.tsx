@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import { isBelowMinPosition, minPositionHint } from "@/lib/trade-sizing";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type TradeDirection = "long" | "short";
@@ -13,6 +14,9 @@ interface ControlsProps {
   direction: TradeDirection;
   busy?: boolean;
   state: GameState;
+  isConnected?: boolean;
+  liveTradeReady?: boolean;
+  settling?: boolean;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
   onAction: (direction?: TradeDirection) => void;
@@ -28,6 +32,9 @@ export default function Controls({
   direction,
   busy = false,
   state,
+  isConnected = false,
+  liveTradeReady = true,
+  settling = false,
   onLeverageChange,
   onWagerChange,
   onAction,
@@ -51,29 +58,32 @@ export default function Controls({
   let actionLabel = direction === "short" ? "dive" : "jump";
   let actionClass = "action";
   let actionLocked = false;
-  if (state === "LIVE") {
+  if ((state === "STOPPED" || state === "DEAD") && settling) {
+    actionLabel = state === "DEAD" ? "finalizing pnl" : "settling";
+    actionClass = "action disabled";
+    actionLocked = true;
+  } else if (state === "STOPPED" && !settling) {
+    actionLabel = "retry close";
+    actionClass = "action stop";
+  } else if (!liveTradeReady && state !== "IDLE") {
+    actionLabel = "...";
+    actionClass = "action disabled";
+    actionLocked = true;
+  } else if (state === "LIVE") {
     actionLabel = direction === "short" ? "surface" : "pull chute";
     actionClass = "action stop";
   } else if (opening) {
-    actionLabel = "entering";
+    actionLabel = "...";
     actionClass = "action disabled";
     actionLocked = true;
-  } else if (balance < 1 && state === "IDLE") {
-    actionLabel = "out";
-    actionClass = "action disabled";
-    actionLocked = true;
-  } else if (state === "IDLE" && wager > balance) {
-    // Wager exceeds balance — keep the button live so the click
-    // surfaces page.tsx's "need $X more" toast, but swap the label
-    // so the gap is visible without needing to click.
-    actionLabel = direction === "short"
-      ? `fund $${(wager - balance).toFixed(0)} to dive`
-      : `fund $${(wager - balance).toFixed(0)} to jump`;
   } else if (disabled) {
     actionClass = "action disabled";
     actionLocked = true;
   }
-  const showSplitAction = state === "IDLE" && !opening && balance >= 1 && wager <= balance && !disabled;
+  const showSplitAction = state === "IDLE" && !opening;
+  const needsFunding = isConnected && wager > balance;
+  const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
+  const fundingShortfall = Math.max(0, wager - balance);
 
   return (
     <div className="controls">
@@ -124,14 +134,29 @@ export default function Controls({
           ))}
         </div>
         {showSplitAction ? (
-          <div className="action-split" role="group" aria-label="Choose jump or dive">
-            <button type="button" className="action split-half jump" onClick={() => onAction("long")}>
-              <span className="sr-only">jump</span>
-            </button>
-            <button type="button" className="action split-half dive" onClick={() => onAction("short")}>
-              <span className="sr-only">dive</span>
-            </button>
-          </div>
+          <>
+            <div className="controls-action-hint">
+              {!isConnected
+                ? "try the game free · no login needed"
+                : needsFunding
+                  ? `need $${fundingShortfall.toFixed(0)} · lower wager or deposit`
+                  : belowMinPosition
+                    ? minPositionHint(wager, leverage)
+                    : "choose your move"}
+            </div>
+            <div
+              className={`action-split${!isConnected ? " demo-hint" : ""}${needsFunding ? " funding-hint" : ""}${belowMinPosition ? " funding-hint" : ""}`}
+              role="group"
+              aria-label="Choose jump or dive"
+            >
+              <button type="button" className="action split-half jump" onClick={() => onAction("long")}>
+                <span className="sr-only">jump</span>
+              </button>
+              <button type="button" className="action split-half dive" onClick={() => onAction("short")}>
+                <span className="sr-only">dive</span>
+              </button>
+            </div>
+          </>
         ) : (
           <button type="button" className={actionClass} disabled={actionLocked} onClick={() => onAction()}>
             <span className="action-boss-pack left" aria-hidden="true">
