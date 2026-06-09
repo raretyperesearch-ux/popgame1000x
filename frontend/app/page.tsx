@@ -17,8 +17,6 @@ import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotion
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
 
-const DEMO_WAGER_USDC = 100;
-
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
    filtering before mapping. */
@@ -386,9 +384,12 @@ export default function Home() {
       setDirection(activeDirection);
       if (!isConnected) {
         setPlayMode("demo");
+        // Practice mode uses the selected wager/boost for position sizing.
+        // The fake balance only makes the controls feel funded; it is not
+        // forced in as collateral and demo never opens a backend trade.
         gameRef.current?.startJump(
           leverage,
-          DEMO_WAGER_USDC,
+          wager,
           0,
           0,
           activeDirection,
