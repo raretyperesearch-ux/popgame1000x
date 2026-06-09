@@ -570,7 +570,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         vx: p.vx * sx,
         vy: p.vy * sy,
       }));
-      a.flightFx = [];
+      const particleScale = clamp((sx + sy) / 2, 0.75, 1.25);
+      a.flightFx = a.flightFx.map((fx) => ({
+        ...fx,
+        x: fx.x * sx,
+        y: fx.y * sy,
+        vx: fx.vx * sx,
+        vy: fx.vy * sy,
+        size: fx.size * particleScale,
+      }));
       a.loco.bodyX *= sx;
       a.loco.bodyY *= sy;
       a.loco.velocityX *= sx;
