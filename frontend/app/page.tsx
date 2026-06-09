@@ -61,6 +61,7 @@ export default function Home() {
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
   const [liveTradeReady, setLiveTradeReady] = useState(true);
+  const [settling, setSettling] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -272,6 +273,7 @@ export default function Home() {
     for (let i = 0; i < 24; i += 1) {
       const status = await getTradeStatus(sessionId, getAccessToken, walletAddress);
       if (status.status === "live" && status.entry_price && (status.liquidation_price || status.liq_price)) {
+        console.info("[trade/open-ui] session live/confirmed", { sessionId, poll: i + 1 });
         return status;
       }
       if (status.status === "failed_open") {
@@ -284,6 +286,8 @@ export default function Home() {
 
   const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
     const activeDirection = actionDirection ?? direction;
+    const clickedAt = performance.now();
+    console.info("[trade/open-ui] click received", { state: gameState, direction: activeDirection });
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
       if (!isConnected) {
@@ -294,6 +298,7 @@ export default function Home() {
           0,
           0,
           activeDirection,
+          true,
         );
         return;
       }
@@ -320,11 +325,15 @@ export default function Home() {
       setOpenInFlight(true);
       setLiveTradeReady(false);
       gameRef.current?.startJump(leverage, wager, 0, 0, activeDirection);
+      console.info("[trade/open-ui] launch state set", { elapsedMs: Math.round(performance.now() - clickedAt) });
       try {
+        console.info("[trade/open-ui] /trade/open request sent", { elapsedMs: Math.round(performance.now() - clickedAt) });
         const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
+        console.info("[trade/open-ui] /trade/open response received", { elapsedMs: Math.round(performance.now() - clickedAt), status: trade.status ?? "live" });
         let entryPrice = trade.entry_price;
         let liquidationPrice = trade.liquidation_price;
         if ((trade.status ?? "live") === "opening") {
+          console.info("[trade/open-ui] opening accepted", { elapsedMs: Math.round(performance.now() - clickedAt) });
           const live = await waitForLiveTrade(trade.session_id || trade.tx_hash);
           entryPrice = live.entry_price;
           liquidationPrice = live.liquidation_price ?? live.liq_price;
@@ -376,8 +385,10 @@ export default function Home() {
         return;
       }
       gameRef.current?.stopTrade();
+    } else if (gameState === "STOPPED" && !settling) {
+      gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, liveTradeReady, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -422,6 +433,8 @@ export default function Home() {
         paperMode={paperMode}
         playMode={playMode}
         onDemoEnd={() => setPlayMode("live")}
+        onError={showTradeError}
+        onSettlingChange={setSettling}
         pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
@@ -435,6 +448,7 @@ export default function Home() {
         state={gameState}
         isConnected={isConnected}
         liveTradeReady={liveTradeReady}
+        settling={settling}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAction={handleAction}

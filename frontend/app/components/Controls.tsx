@@ -16,6 +16,7 @@ interface ControlsProps {
   state: GameState;
   isConnected?: boolean;
   liveTradeReady?: boolean;
+  settling?: boolean;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
   onAction: (direction?: TradeDirection) => void;
@@ -33,6 +34,7 @@ export default function Controls({
   state,
   isConnected = false,
   liveTradeReady = true,
+  settling = false,
   onLeverageChange,
   onWagerChange,
   onAction,
@@ -56,7 +58,14 @@ export default function Controls({
   let actionLabel = direction === "short" ? "dive" : "jump";
   let actionClass = "action";
   let actionLocked = false;
-  if (!liveTradeReady && state !== "IDLE") {
+  if ((state === "STOPPED" || state === "DEAD") && settling) {
+    actionLabel = state === "DEAD" ? "finalizing pnl" : "settling";
+    actionClass = "action disabled";
+    actionLocked = true;
+  } else if (state === "STOPPED" && !settling) {
+    actionLabel = "retry close";
+    actionClass = "action stop";
+  } else if (!liveTradeReady && state !== "IDLE") {
     actionLabel = "confirming";
     actionClass = "action disabled";
     actionLocked = true;

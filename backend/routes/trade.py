@@ -361,18 +361,6 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         session["error"] = str(e)
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
-async def _collect_queued_house_fee(
-    *,
-    idempotency_key: str,
-    user: AuthedUser,
-    fee_usdc: float,
-    treasury_address: str,
-) -> None:
-    claimed = persistence.claim_house_fee_event(idempotency_key)
-    if not claimed:
-        print(f"[trade/open] async fee skipped idempotency_key={idempotency_key}")
-        return
-
     try:
         fee_tx = build_usdc_transfer_tx(treasury_address, fee_usdc)
         client = _require_trader()
