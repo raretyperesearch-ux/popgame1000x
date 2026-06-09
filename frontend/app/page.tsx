@@ -118,6 +118,7 @@ export default function Home() {
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
+  const isConnected = authenticated && Boolean(walletAddress);
 
   useEffect(() => {
     if (!paperMode) {
@@ -269,7 +270,7 @@ export default function Home() {
     const activeDirection = actionDirection ?? direction;
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
-      if (balance < 1) {
+      if (!isConnected) {
         setPlayMode("demo");
         gameRef.current?.startJump(
           leverage,
@@ -281,15 +282,15 @@ export default function Home() {
         return;
       }
       setPlayMode("live");
-      // No client-side balance gate on the wager — let the user pick any
-      // amount they want, then surface a clear "needs more USDC" hint
-      // when they're short rather than silently no-op'ing the JUMP.
+      // No client-side live open when the selected wager is underfunded:
+      // keep JUMP/DIVE visible, but route the connected user to funding
+      // instead of silently starting a demo or hitting /trade/open.
       if (wager > balance) {
         const need = (wager - balance).toFixed(2);
+        sounds.play("ui-click");
+        window.dispatchEvent(new Event("popgame:fund-usdc"));
         showTradeError(
-          `Not enough USDC for a $${wager} wager — need $${need} more to ${
-            activeDirection === "short" ? "dive" : "jump"
-          }.`,
+          `Deposit To Play Live — need $${need} for this wager. Lower wager or deposit.`,
         );
         return;
       }
@@ -353,7 +354,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -409,6 +410,7 @@ export default function Home() {
         direction={direction}
         busy={openInFlight}
         state={gameState}
+        isConnected={isConnected}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAction={handleAction}

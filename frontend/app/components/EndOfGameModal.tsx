@@ -592,7 +592,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
           {!isDemo && <button className="eog-btn" onClick={handleShare}>SHARE</button>}
           {!isDemo && <button className="eog-btn" onClick={handleDownload}>DOWNLOAD</button>}
           <button className="eog-btn primary" onClick={() => { sounds.play("ui-click"); onClose(); }}>
-            {isDemo ? "FUND WALLET TO PLAY LIVE" : "CONTINUE"}
+            {isDemo ? "CONNECT / FUND WALLET TO PLAY LIVE" : "CONTINUE"}
           </button>
         </div>
       </div>
