@@ -166,9 +166,18 @@ export default function Home() {
   }, [displayedFuelShortfall]);
 
   const fundFromFuelTank = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fuelTankAmount } }));
+    const requestedAmount = Math.max(1, Math.floor(fuelTankAmount));
+    const fundingNeeded = Math.max(0, requestedAmount - balance);
+    if (fundingNeeded <= 0) {
+      setFuelTankOpen(false);
+      if (gameState === "LIVE" || gameState === "STOPPED") {
+        showTradeError("Fuel is already in your wallet. Pull Chute stays available.");
+      }
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fundingNeeded } }));
     setFuelTankOpen(false);
-  }, [fuelTankAmount]);
+  }, [balance, fuelTankAmount, gameState, showTradeError]);
 
   const selectFuelAmount = useCallback((amount: number) => {
     setCustomFuelSelected(false);

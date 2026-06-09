@@ -113,6 +113,34 @@ export default function Controls({
   const addFuelPanelDetail = displayShortfall > 0
     ? `Need $${displayShortfall.toFixed(2)} more`
     : "Emergency top up";
+  const fuelCoveredByBalance = showFuelPanel && balance >= fuelTankAmount;
+  const addFuelFundingAmount = Math.max(1, Math.ceil(fuelTankAmount - balance));
+  const addFuelButtonLabel = fuelCoveredByBalance
+    ? `USE $${fuelTankAmount}`
+    : `ADD $${addFuelFundingAmount}`;
+
+  const actionButton = (
+    <button type="button" className={actionClass} disabled={actionLocked} onClick={() => onAction()}>
+      <span className="action-boss-pack left" aria-hidden="true">
+        <span className="boss-sprite v1" />
+        <span className="boss-sprite v2" />
+        <span className="boss-sprite v3" />
+        <span className="boss-sprite v4" />
+      </span>
+      <span className="action-copy">
+        <span className="action-label">{actionLabel}</span>
+        {state === "LIVE" && estimatedNetCopy && (
+          <span className="action-est">{estimatedNetCopy}</span>
+        )}
+      </span>
+      <span className="action-boss-pack right" aria-hidden="true">
+        <span className="boss-sprite v5" />
+        <span className="boss-sprite v6" />
+        <span className="boss-sprite v1" />
+        <span className="boss-sprite v3" />
+      </span>
+    </button>
+  );
 
   return (
     <div className="controls">
@@ -176,49 +204,52 @@ export default function Controls({
           </div>
         )}
         {showFuelPanel ? (
-          <div key={addFuelPulseKey} className="add-fuel-slot" role="dialog" aria-label="Add fuel">
-            <div className="add-fuel-slot-copy">
-              <span className="add-fuel-slot-siren" aria-hidden="true" />
-              <strong>ADD FUEL</strong>
-              <span>{addFuelPanelDetail}</span>
-            </div>
-            <div className="add-fuel-slot-amounts" aria-label="Fuel top-up amount">
-              {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
+          <>
+            <div key={addFuelPulseKey} className="add-fuel-slot" role="dialog" aria-label="Add fuel">
+              <div className="add-fuel-slot-copy">
+                <span className="add-fuel-slot-siren" aria-hidden="true" />
+                <strong>ADD FUEL</strong>
+                <span>{addFuelPanelDetail}</span>
+              </div>
+              <div className="add-fuel-slot-amounts" aria-label="Fuel top-up amount">
+                {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`add-fuel-slot-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
+                    onClick={() => onSelectFuelAmount?.(amount)}
+                  >
+                    {label}
+                  </button>
+                ))}
                 <button
-                  key={label}
                   type="button"
-                  className={`add-fuel-slot-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
-                  onClick={() => onSelectFuelAmount?.(amount)}
+                  className={`add-fuel-slot-chip${customFuelSelected ? " active" : ""}`}
+                  onClick={onSelectCustomFuel}
                 >
-                  {label}
+                  {customFuelSelected ? (
+                    <span className="add-fuel-slot-custom" onClick={(e) => e.stopPropagation()}>
+                      <span>$</span>
+                      <input
+                        value={customFuelAmount}
+                        onChange={(e) => onCustomFuelChange?.(e.target.value)}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        aria-label="Custom fuel amount"
+                        autoFocus
+                      />
+                    </span>
+                  ) : (
+                    "CUSTOM"
+                  )}
                 </button>
-              ))}
-              <button
-                type="button"
-                className={`add-fuel-slot-chip${customFuelSelected ? " active" : ""}`}
-                onClick={onSelectCustomFuel}
-              >
-                {customFuelSelected ? (
-                  <span className="add-fuel-slot-custom" onClick={(e) => e.stopPropagation()}>
-                    <span>$</span>
-                    <input
-                      value={customFuelAmount}
-                      onChange={(e) => onCustomFuelChange?.(e.target.value)}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      aria-label="Custom fuel amount"
-                      autoFocus
-                    />
-                  </span>
-                ) : (
-                  "CUSTOM"
-                )}
+              </div>
+              <button type="button" className="add-fuel-slot-primary" onClick={onFundFuel ?? onAddFuel}>
+                {addFuelButtonLabel}
               </button>
             </div>
-            <button type="button" className="add-fuel-slot-primary" onClick={onFundFuel ?? onAddFuel}>
-              ADD ${fuelTankAmount}
-            </button>
-          </div>
+            {state !== "IDLE" && actionButton}
+          </>
         ) : showSplitAction ? (
           <>
             <div className="controls-action-hint">
@@ -244,26 +275,7 @@ export default function Controls({
             </div>
           </>
         ) : (
-          <button type="button" className={actionClass} disabled={actionLocked} onClick={() => onAction()}>
-            <span className="action-boss-pack left" aria-hidden="true">
-              <span className="boss-sprite v1" />
-              <span className="boss-sprite v2" />
-              <span className="boss-sprite v3" />
-              <span className="boss-sprite v4" />
-            </span>
-            <span className="action-copy">
-              <span className="action-label">{actionLabel}</span>
-              {state === "LIVE" && estimatedNetCopy && (
-                <span className="action-est">{estimatedNetCopy}</span>
-              )}
-            </span>
-            <span className="action-boss-pack right" aria-hidden="true">
-              <span className="boss-sprite v5" />
-              <span className="boss-sprite v6" />
-              <span className="boss-sprite v1" />
-              <span className="boss-sprite v3" />
-            </span>
-          </button>
+          actionButton
         )}
       </div>
     </div>
