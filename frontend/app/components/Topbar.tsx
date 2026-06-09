@@ -588,7 +588,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         )}
         {!authenticated ? (
           <button className="deposit-btn" onClick={() => { sounds.play("ui-click"); login(); }}>
-            <span>connect to fuel up</span>
+            <span>deposit to play</span>
             <span className="deposit-arrow" aria-hidden="true">›</span>
           </button>
         ) : (
