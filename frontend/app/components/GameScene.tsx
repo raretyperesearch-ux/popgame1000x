@@ -2485,10 +2485,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
         const liveLift = a.skyAlt * a.stageH * 0.25;
-        const liveSpriteScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+        // Flight FX are painted on the canvas, which already receives the cinematic
+        // zoom transform. Anchor particles in unzoomed canvas space so mobile
+        // practice trails stay attached to the sprite instead of drifting high.
+        const fxSpriteScale = lerp(1, 0.4, a.skyAlt);
         const flightFootY = a.stageH - a.smoothAlt - liveLift;
-        const jetpackX = figScreenX - SPRITE_DISPLAY_W * liveSpriteScale * 0.28;
-        const jetpackY = flightFootY - SPRITE_DISPLAY_H * liveSpriteScale * 0.48;
+        const jetpackX = figScreenX - SPRITE_DISPLAY_W * fxSpriteScale * 0.28;
+        const jetpackY = flightFootY - SPRITE_DISPLAY_H * fxSpriteScale * 0.48;
 
         const liveElapsed = time - (a.tradeStartTime || time);
         const cueEvery = 7800 + (featureNoise(Math.floor(liveElapsed / 7800) * 9.17) * 5200);
