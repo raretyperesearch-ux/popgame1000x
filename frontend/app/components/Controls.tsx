@@ -136,9 +136,9 @@ export default function Controls({
             </button>
           ))}
         </div>
-        <div className="fuel-helper-row">
-          <span>fuel = collateral</span>
-          {needsFunding && (
+        {needsFunding && (
+          <div className="fuel-helper-row">
+            <span />
             <button
               key={addFuelPulseKey}
               type="button"
@@ -147,8 +147,8 @@ export default function Controls({
             >
               add fuel
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {showSplitAction ? (
           <>
             <div className="controls-action-hint">
