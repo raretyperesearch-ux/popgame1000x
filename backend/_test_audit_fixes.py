@@ -16,6 +16,7 @@ Run from backend/ with:
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 # Match the env the route module reads at import time.
@@ -222,6 +223,47 @@ def test_compute_pnl_long_losing() -> None:
     if not _close(pnl_usdc, -5.0):
         _fail("compute_pnl.loss.usdc", f"expected -5.0, got {pnl_usdc}")
     _ok("compute_pnl.long losing → -$5.00")
+
+
+def test_collateral_to_close_reduces_losing_trade() -> None:
+    from routes.trade import _collateral_to_close_for_trade
+    target = SimpleNamespace(
+        trade=SimpleNamespace(
+            open_collateral=2.0,
+            open_price=1600.0,
+            leverage=500.0,
+            is_long=True,
+        )
+    )
+    close_amount = _collateral_to_close_for_trade(target, 1599.0)
+    expected = 1.375
+    if not _close(close_amount, expected):
+        _fail("close_collateral.loss", f"expected {expected}, got {close_amount}")
+    _ok("close_collateral.losing trade → remaining collateral")
+
+
+def test_collateral_to_close_prefers_sdk_remaining_collateral() -> None:
+    from routes.trade import _collateral_to_close_for_trade
+    target = SimpleNamespace(
+        trade=SimpleNamespace(
+            open_collateral=2.0,
+            collateral_in_trade=0.42,
+            open_price=1600.0,
+            leverage=500.0,
+            is_long=True,
+        )
+    )
+    close_amount = _collateral_to_close_for_trade(target, 1599.0)
+    if not _close(close_amount, 0.42):
+        _fail("close_collateral.sdk", f"expected 0.42, got {close_amount}")
+    _ok("close_collateral.sdk remaining collateral wins")
+
+
+def test_invalid_close_amount_detection() -> None:
+    from routes.trade import _is_invalid_close_amount_error
+    if not _is_invalid_close_amount_error(Exception("execution reverted: INV_AMOUNT")):
+        _fail("close_collateral.inv_amount", "expected INV_AMOUNT to be detected")
+    _ok("close_collateral.INV_AMOUNT detection")
 
 
 
@@ -437,6 +479,9 @@ async def main() -> None:
     await test_active_no_open_trade_returns_none()
     test_compute_pnl_long_winning()
     test_compute_pnl_long_losing()
+    test_collateral_to_close_reduces_losing_trade()
+    test_collateral_to_close_prefers_sdk_remaining_collateral()
+    test_invalid_close_amount_detection()
     print()
     print("[#5 /trade/close exit_price]")
     test_exit_price_back_compute_winning_trade()

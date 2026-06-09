@@ -137,7 +137,7 @@ export default function Home() {
   const needsFuel = isConnected && fuelShortfall > 0;
   const displayedFuelShortfall = fuelPreview && !needsFuel ? 96.95 : fuelShortfall;
   const showLowFuelPreview = fuelPreview && gameState === "IDLE";
-  const showFuelPanel = (lowFuelPrompt && needsFuel) || showLowFuelPreview;
+  const showFuelPanel = (needsFuel && (lowFuelPrompt || gameState === "IDLE")) || showLowFuelPreview;
 
   const flashAddFuelButton = useCallback(() => {
     setAddFuelPulseKey((k) => k + 1);

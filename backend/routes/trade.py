@@ -876,6 +876,87 @@ def _exit_price_from_pnl(
     return round(entry_price * (1.0 + move), 4)
 
 
+def _is_invalid_close_amount_error(exc: Exception) -> bool:
+    return "INV_AMOUNT" in str(exc)
+
+
+def _collateral_to_close_for_trade(target, feed_price_at_close: Optional[float]) -> float:
+    """Avantis rejects close amounts above the remaining collateral in
+    badly losing trades. Prefer the SDK's remaining-collateral field when
+    it is present; otherwise estimate the remaining collateral from the
+    live mark so force-close near liquidation does not revert with
+    INV_AMOUNT."""
+    open_collateral = float(target.trade.open_collateral)
+    current_collateral = _float_or_none(getattr(target.trade, "collateral_in_trade", None))
+    if current_collateral is not None and current_collateral > 0:
+        return round(min(open_collateral, current_collateral), 6)
+
+    if feed_price_at_close is None:
+        return round(open_collateral, 6)
+
+    entry_price = float(target.trade.open_price)
+    leverage = float(target.trade.leverage)
+    is_long = bool(getattr(target.trade, "is_long", True))
+    pnl_usdc, _ = _compute_pnl(
+        entry_price=entry_price,
+        current_price=float(feed_price_at_close),
+        leverage=leverage,
+        collateral=open_collateral,
+        is_long=is_long,
+    )
+    if pnl_usdc >= 0:
+        return round(open_collateral, 6)
+    remaining = max(0.000001, open_collateral + pnl_usdc)
+    return round(min(open_collateral, remaining), 6)
+
+
+def _liquidation_close_response(target, user: AuthedUser, feed_price_at_close: Optional[float], timer: _CloseTradeTimer) -> CloseTradeResponse:
+    entry_price = float(target.trade.open_price)
+    leverage = float(target.trade.leverage)
+    collateral = float(target.trade.open_collateral)
+    gross_pnl = -collateral
+    avantis_win_fee = 0.0
+    net_pnl = -collateral
+
+    exit_price = _float_or_none(getattr(target, "liquidation_price", None))
+    if exit_price is None or exit_price <= 0:
+        exit_price = _exit_price_from_pnl(entry_price, leverage, collateral, gross_pnl)
+    if exit_price is None and feed_price_at_close is not None:
+        exit_price = float(feed_price_at_close)
+    if exit_price is None:
+        exit_price = 0.0
+
+    closed_at = datetime.now(timezone.utc)
+    tx_hash = "liquidation"
+
+    persistence.record_close(
+        wallet_address=user.address,
+        trade_index=target.trade.trade_index,
+        exit_price=float(exit_price),
+        gross_pnl_usdc=float(gross_pnl),
+        avantis_win_fee_usdc=float(avantis_win_fee),
+        net_pnl_usdc=float(net_pnl),
+        was_liquidated=True,
+        closed_at=closed_at,
+        close_tx_hash=tx_hash,
+    )
+    timer.mark("liquidation recorded without close tx", trade_index=target.trade.trade_index)
+
+    response = CloseTradeResponse(
+        trade_index=target.trade.trade_index,
+        entry_price=entry_price,
+        exit_price=exit_price,
+        gross_pnl_usdc=gross_pnl,
+        avantis_win_fee_usdc=avantis_win_fee,
+        net_pnl_usdc=net_pnl,
+        was_liquidated=True,
+        closed_at=closed_at,
+        tx_hash=tx_hash,
+    )
+    timer.mark("response returned", trade_index=response.trade_index)
+    return response
+
+
 async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTradeResponse:
     timer = _CloseTradeTimer(user.address, was_liquidated)
     timer.mark("close start")
@@ -899,12 +980,19 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     # back-computed price below.
     feed_price_at_close = price_module.get_latest_price()
 
-    close_tx = await client.trade.build_trade_close_tx(
-        pair_index=target.trade.pair_index,
-        trade_index=target.trade.trade_index,
-        collateral_to_close=target.trade.open_collateral,
-        trader=user.address,
-    )
+    collateral_to_close = _collateral_to_close_for_trade(target, feed_price_at_close)
+    try:
+        close_tx = await client.trade.build_trade_close_tx(
+            pair_index=target.trade.pair_index,
+            trade_index=target.trade.trade_index,
+            collateral_to_close=collateral_to_close,
+            trader=user.address,
+        )
+    except Exception as exc:
+        if was_liquidated and _is_invalid_close_amount_error(exc):
+            timer.mark("Avantis close tx skipped", reason="INV_AMOUNT")
+            return _liquidation_close_response(target, user, feed_price_at_close, timer)
+        raise
     timer.mark("Avantis close tx built", trade_index=target.trade.trade_index)
 
     if _is_legacy_user(user):
