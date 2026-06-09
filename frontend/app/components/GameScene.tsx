@@ -100,6 +100,8 @@ const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
+const LIQUIDATION_LINE_SAFE_GAP_PX = 56;
+const LIQUIDATION_DANGER_THRESHOLD = 0.8;
 // Avantis opens with a tight spread, so the runner starts close to ENTRY
 // and then separates from that neutral line as real mark-price/PnL moves.
 const ENTRY_LINE_SPAWN_OFFSET_PX = 8;
