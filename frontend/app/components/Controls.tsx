@@ -59,9 +59,8 @@ export default function Controls({
     actionClass = "action disabled";
     actionLocked = true;
   } else if (balance < 1 && state === "IDLE") {
-    actionLabel = "out";
-    actionClass = "action disabled";
-    actionLocked = true;
+    actionLabel = "try demo";
+    actionClass = "action demo";
   } else if (state === "IDLE" && wager > balance) {
     // Wager exceeds balance — keep the button live so the click
     // surfaces page.tsx's "need $X more" toast, but swap the label
