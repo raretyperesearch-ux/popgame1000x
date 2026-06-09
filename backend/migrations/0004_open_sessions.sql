@@ -39,6 +39,9 @@ create trigger pg_open_sessions_set_updated_at
 
 alter table public.pg_open_sessions enable row level security;
 
+grant select on table public.pg_open_sessions to anon, authenticated;
+grant all on table public.pg_open_sessions to service_role;
+
 drop policy if exists "pg_open_sessions read public" on public.pg_open_sessions;
 create policy "pg_open_sessions read public"
     on public.pg_open_sessions for select
