@@ -163,6 +163,7 @@ def _is_below_min_position_error(exc: Exception) -> bool:
     msg = str(exc).upper()
     return "BELOW_MIN_POS" in msg or "BELOW_MIN_POSITION" in msg
 
+
 def _house_fee_idempotency_key(
     user: AuthedUser, trade_index: int, open_tx_hash: str
 ) -> str:
@@ -247,7 +248,8 @@ def _record_open_and_queue_fee(
     opened_at: datetime,
     tx_hash: str,
     background_tasks: Optional[BackgroundTasks] = None,
-) -> bool:
+    idempotency_key: Optional[str] = None,
+) -> tuple[bool, Optional[str]]:
     recorded = persistence.record_open(
         did=user.did,
         wallet_address=user.address,
@@ -268,12 +270,13 @@ def _record_open_and_queue_fee(
             f"trade_index={trade.trade.trade_index} tx_hash={tx_hash}"
         )
 
+    fee_idempotency_key: Optional[str] = None
     if house_fee > 0 and treasury_address:
-        idempotency_key = _house_fee_idempotency_key(
+        fee_idempotency_key = idempotency_key or _house_fee_idempotency_key(
             user, trade.trade.trade_index, tx_hash
         )
         fee_event = persistence.record_house_fee_pending(
-            idempotency_key=idempotency_key,
+            idempotency_key=fee_idempotency_key,
             did=user.did,
             wallet_address=user.address,
             wallet_id=user.wallet_id,
@@ -285,12 +288,12 @@ def _record_open_and_queue_fee(
         )
         print(
             f"[trade/open] fee queued wallet={user.address} "
-            f"idempotency_key={idempotency_key} durable={bool(fee_event)}"
+            f"idempotency_key={fee_idempotency_key} durable={bool(fee_event)}"
         )
         if fee_event and background_tasks:
             background_tasks.add_task(
                 _collect_queued_house_fee,
-                idempotency_key=idempotency_key,
+                idempotency_key=fee_idempotency_key,
                 user=user,
                 fee_usdc=house_fee,
                 treasury_address=treasury_address,
@@ -298,22 +301,27 @@ def _record_open_and_queue_fee(
         elif fee_event:
             asyncio.create_task(
                 _collect_queued_house_fee(
-                    idempotency_key=idempotency_key,
+                    idempotency_key=fee_idempotency_key,
                     user=user,
                     fee_usdc=house_fee,
                     treasury_address=treasury_address,
                 )
             )
-    return recorded
+    return recorded, fee_idempotency_key
 
 
 async def _finalize_optimistic_open(session_id: str) -> None:
     session = _open_sessions.get(session_id)
     if not session:
         return
+    fee_idempotency_key: Optional[str] = session.get("house_fee_idempotency_key")
     try:
         client = _require_trader()
         user = session["user"]
+        treasury_address = session.get("treasury_address")
+        if session.get("house_fee_usdc", 0) > 0 and not treasury_address:
+            treasury_address = _valid_treasury_address()
+            session["treasury_address"] = treasury_address
         trades = await _poll_for_trade(client, user.address, expect_present=True)
         if not trades:
             session["status"] = "failed_open"
@@ -325,19 +333,22 @@ async def _finalize_optimistic_open(session_id: str) -> None:
             return
         trade = trades[0]
         opened_at = datetime.now(timezone.utc)
-        _record_open_and_queue_fee(
+        _, fee_idempotency_key = _record_open_and_queue_fee(
             user=user,
             leverage=session["leverage"],
             wager_usdc=session["wager_usdc"],
             house_fee=session["house_fee_usdc"],
             collateral=session["collateral_usdc"],
-            treasury_address=session.get("treasury_address"),
+            treasury_address=treasury_address,
             pair_index=session["avantis_pair_index"],
             trade=trade,
             opened_at=opened_at,
             tx_hash=session["tx_hash"],
             background_tasks=None,
+            idempotency_key=fee_idempotency_key,
         )
+        if fee_idempotency_key:
+            session["house_fee_idempotency_key"] = fee_idempotency_key
         session.update(
             {
                 "status": "live",
@@ -356,9 +367,22 @@ async def _finalize_optimistic_open(session_id: str) -> None:
             f"[trade/open] optimistic live wallet={user.address} "
             f"session_id={session_id} trade_index={trade.trade.trade_index}"
         )
+        print(
+            f"[trade/open] finalize optimistic live session_id={session_id} "
+            f"fee_idempotency_key={fee_idempotency_key or '(none)'}"
+        )
     except Exception as e:  # noqa: BLE001
         session["status"] = "failed_open"
         session["error"] = str(e)
+        msg = str(e)
+        if fee_idempotency_key:
+            try:
+                persistence.mark_house_fee_failed(fee_idempotency_key, msg)
+            except Exception as mark_err:  # noqa: BLE001
+                print(
+                    f"[trade/open] async fee failed mark skipped "
+                    f"idempotency_key={fee_idempotency_key} error={mark_err}"
+                )
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
     try:
@@ -755,7 +779,7 @@ async def open_trade(
     timer.mark("trade visible/confirmed", trade_index=new_trade.trade.trade_index)
     opened_at = datetime.now(timezone.utc)
 
-    recorded = _record_open_and_queue_fee(
+    recorded, _ = _record_open_and_queue_fee(
         user=user,
         leverage=body.leverage,
         wager_usdc=body.wager_usdc,
