@@ -418,7 +418,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
        at the LIVE-state transition. */
     pendingEntry: 0 as number,
     pendingLiqPrice: 0 as number,
-    awaitingOpenConfirm: false,
     settleInFlight: false,
     liquidationPrice: 0 as number,
     figPrice: 3500, // figure's virtual price-level during LIVE
@@ -1729,7 +1728,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.dustParticles.length = 0;
     a.flightFx.length = 0;
     a.flightBubble = { text: "", start: 0, until: 0 };
-    a.awaitingOpenConfirm = false;
     a.settleInFlight = false;
     onSettlingChange?.(false);
     a.nextFlightCueAt = 0;
@@ -1975,7 +1973,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.tradeDirection = direction;
       a.pendingEntry = entryPrice;
       a.pendingLiqPrice = liqPrice;
-      a.awaitingOpenConfirm = !demoRun && playMode !== "demo" && (entryPrice <= 0 || liqPrice <= 0);
       a.settleInFlight = false;
       a.runFrame = 0;
       a.stepPhase = 0;
@@ -2012,8 +2009,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const a = anim.current;
     a.pendingEntry = entryPrice;
     a.pendingLiqPrice = liqPrice;
-    a.awaitingOpenConfirm = false;
-    a.flightBubble = { text: "TRADE CONFIRMED", start: performance.now(), until: performance.now() + 1400 };
+    a.flightBubble = { text: "", start: 0, until: 0 };
     if (a.state === "LIVE" || a.state === "STOPPED") {
       a.entry = entryPrice;
       a.liquidationPrice = liqPrice;
@@ -2375,19 +2371,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
         const chartY = getTerrainY(figWorldX);
         const baseAlt = a.stageH - chartY;
-        if (elapsed > activeJumpDuration && a.awaitingOpenConfirm) {
-          const holdT = clamp((elapsed - activeJumpDuration) / 900, 0, 1);
-          a.flightBubble = a.flightBubble.until > time && a.flightBubble.text
-            ? a.flightBubble
-            : { text: "OPENING ON AVANTIS...", start: time, until: time + 1600 };
-          setSpriteState(a.tradeDirection === "short" ? "fall" : "boost", time);
-          a.curBobY = Math.sin(time * 0.012) * 5;
-          a.smoothAlt = Math.max(a.smoothAlt, baseAlt + 38 + Math.sin(holdT * Math.PI) * 8);
-          a.smoothRot = lerp(a.smoothRot, a.tradeDirection === "short" ? 24 : -12, ROTATION_LERP * dtNorm);
-          setFig(figScreenX, a.smoothAlt, a.smoothRot);
-          a.figPrice = priceAtFig;
-          a.frame++;
-        } else if (elapsed > activeJumpDuration) {
+        if (elapsed > activeJumpDuration) {
           /* enter LIVE — use the on-chain entry/liq from /trade/open if
              present (positive value); otherwise fall back to the current
              price for entry and the 1/lev formula for liq so the game

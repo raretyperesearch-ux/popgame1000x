@@ -298,7 +298,6 @@ export default function Home() {
           0,
           0,
           activeDirection,
-          true,
         );
         return;
       }
@@ -381,7 +380,7 @@ export default function Home() {
       }
     } else if (gameState === "LIVE") {
       if (!liveTradeReady) {
-        showTradeError("Still opening trade — confirming on Avantis before close is enabled.");
+        showTradeError("Still readying — live trade is not ready to close yet.");
         return;
       }
       gameRef.current?.stopTrade();

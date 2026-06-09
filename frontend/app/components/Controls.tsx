@@ -66,14 +66,14 @@ export default function Controls({
     actionLabel = "retry close";
     actionClass = "action stop";
   } else if (!liveTradeReady && state !== "IDLE") {
-    actionLabel = "confirming";
+    actionLabel = "...";
     actionClass = "action disabled";
     actionLocked = true;
   } else if (state === "LIVE") {
     actionLabel = direction === "short" ? "surface" : "pull chute";
     actionClass = "action stop";
   } else if (opening) {
-    actionLabel = "opening trade";
+    actionLabel = "...";
     actionClass = "action disabled";
     actionLocked = true;
   } else if (disabled) {
