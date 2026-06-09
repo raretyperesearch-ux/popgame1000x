@@ -22,6 +22,7 @@ const FUEL_TOP_UPS = [
   { label: "+$25", amount: 25 },
   { label: "+$100", amount: 100 },
 ];
+const LOW_FUEL_TOP_UPS = FUEL_TOP_UPS.slice(0, 2);
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -74,6 +75,8 @@ export default function Home() {
   const [lowFuelPrompt, setLowFuelPrompt] = useState(false);
   const [fuelTankOpen, setFuelTankOpen] = useState(false);
   const [fuelTankAmount, setFuelTankAmount] = useState(5);
+  const [customFuelAmount, setCustomFuelAmount] = useState("50");
+  const [customFuelSelected, setCustomFuelSelected] = useState(false);
   const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
   const [lowFuelBumpKey, setLowFuelBumpKey] = useState(0);
   const [fuelPreview, setFuelPreview] = useState(false);
@@ -167,6 +170,25 @@ export default function Home() {
     setLowFuelPrompt(false);
     setFuelTankOpen(false);
   }, [fuelTankAmount]);
+
+  const selectFuelAmount = useCallback((amount: number) => {
+    setCustomFuelSelected(false);
+    setFuelTankAmount(amount);
+  }, []);
+
+  const selectCustomFuel = useCallback(() => {
+    const amount = Math.max(1, Math.floor(Number(customFuelAmount) || 1));
+    setCustomFuelSelected(true);
+    setFuelTankAmount(amount);
+  }, [customFuelAmount]);
+
+  const changeCustomFuel = useCallback((value: string) => {
+    setCustomFuelAmount(value);
+    const amount = Number(value);
+    if (Number.isFinite(amount) && amount > 0) {
+      setFuelTankAmount(Math.floor(amount));
+    }
+  }, []);
 
   const showLowFuelPrompt = useCallback(() => {
     sounds.play("ui-click");
@@ -625,17 +647,36 @@ export default function Home() {
             <span>Need ${displayedFuelShortfall.toFixed(2)} more</span>
           </div>
           <div className="low-fuel-amounts" aria-label="Fuel top-up amount">
-            {FUEL_TOP_UPS.map(({ label, amount }) => (
+            {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
               <button
                 key={label}
                 type="button"
-                className={`low-fuel-chip${fuelTankAmount === amount ? " active" : ""}`}
-                onClick={() => setFuelTankAmount(amount)}
+                className={`low-fuel-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
+                onClick={() => selectFuelAmount(amount)}
               >
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              className={`low-fuel-chip${customFuelSelected ? " active" : ""}`}
+              onClick={selectCustomFuel}
+            >
+              CUSTOM
+            </button>
           </div>
+          {customFuelSelected && (
+            <label className="low-fuel-custom">
+              <span>$</span>
+              <input
+                value={customFuelAmount}
+                onChange={(e) => changeCustomFuel(e.target.value)}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                aria-label="Custom fuel amount"
+              />
+            </label>
+          )}
           <div className="low-fuel-actions">
             <button type="button" className="low-fuel-action primary" onClick={fundFromFuelTank}>
               ADD ${fuelTankAmount}

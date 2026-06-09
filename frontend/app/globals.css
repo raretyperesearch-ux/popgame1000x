@@ -2131,6 +2131,7 @@ button.h-tag:focus-visible {
   grid-template-areas:
     "copy"
     "amounts"
+    "custom"
     "actions";
   align-items: center;
   gap: 8px;
@@ -2291,6 +2292,40 @@ button.h-tag:focus-visible {
     inset 0 2px 0 rgba(255,255,255,0.16),
     inset 0 -3px 0 rgba(0,0,0,0.48),
     0 0 12px rgba(255,217,102,0.34);
+}
+.low-fuel-custom {
+  grid-area: custom;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 2px solid rgba(255,241,116,0.62);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255,176,0,0.16), rgba(37,25,0,0.74)),
+    #111823;
+  color: #fff174;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.12),
+    inset 0 -3px 0 rgba(0,0,0,0.44),
+    0 0 12px rgba(255,217,102,0.18);
+}
+.low-fuel-custom input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff7b2;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  line-height: 1;
+  text-align: left;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72);
 }
 .low-fuel-actions {
   grid-area: actions;
