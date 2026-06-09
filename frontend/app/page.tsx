@@ -9,7 +9,7 @@ import GameScene, { type GameSceneHandle, type TradeDirection } from "./componen
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, type HistoryTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, getActiveTrade, type ActiveTradeResponse, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotionalFor } from "@/lib/trade-sizing";
@@ -60,6 +60,7 @@ export default function Home() {
   const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
+  const [activeRecovery, setActiveRecovery] = useState(false);
   const [liveTradeReady, setLiveTradeReady] = useState(true);
   const [settling, setSettling] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
@@ -284,10 +285,103 @@ export default function Home() {
     throw new Error("Trade is still opening on Avantis. Try again in a moment.");
   }, [getAccessToken, walletAddress]);
 
+
+
+  const restoreActiveTrade = useCallback((active: ActiveTradeResponse) => {
+    const entry = active.entry_price;
+    const liq = active.liquidation_price ?? active.liq_price;
+    if (!active.exists || !entry || !liq || !active.leverage || !active.wager_usdc) {
+      return false;
+    }
+    const restoredDirection: TradeDirection = active.is_long === false ? "short" : "long";
+    setPlayMode("live");
+    setDirection(restoredDirection);
+    setLeverage(active.leverage);
+    setWager(Math.max(1, Math.round(active.wager_usdc)));
+    setPnl(active.pnl_usdc ?? 0);
+    gameRef.current?.restoreLiveTrade(
+      active.leverage,
+      active.wager_usdc,
+      entry,
+      liq,
+      restoredDirection,
+      active.current_price ?? entry,
+    );
+    setLiveTradeReady(true);
+    setOpenInFlight(false);
+    setActiveRecovery(false);
+    setSettling(active.status === "closing");
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated || paperMode || !walletAddress || gameState !== "IDLE") return;
+    let cancelled = false;
+    const recover = async () => {
+      let detectedActive = false;
+      setActiveRecovery(true);
+      try {
+        const active = await getActiveTrade(getAccessToken, walletAddress);
+        if (cancelled) return;
+        if (!active.exists) {
+          console.info("[trade/active-ui] no active trade");
+          return;
+        }
+
+        detectedActive = true;
+        console.info("[trade/active-ui] active trade detected", { status: active.status, sessionId: active.session_id, tradeIndex: active.trade_index });
+        showTradeError("Active Trade Detected — Reconnecting");
+        if (active.status === "opening" || active.status === "pending_confirmation") {
+          setOpenInFlight(true);
+          setLiveTradeReady(false);
+          const sessionId = active.session_id || active.tx_hash || active.open_tx_hash;
+          if (!sessionId) throw new Error("Active opening trade is missing a session id.");
+          const live = await waitForLiveTrade(sessionId);
+          if (cancelled) return;
+          const restored: ActiveTradeResponse = {
+            ...active,
+            exists: true,
+            status: "live",
+            entry_price: live.entry_price,
+            liquidation_price: live.liquidation_price ?? live.liq_price,
+            liq_price: live.liquidation_price ?? live.liq_price,
+            trade_index: live.trade_index,
+          };
+          if (!restoreActiveTrade(restored)) throw new Error("Active trade became live but was missing prices.");
+          return;
+        }
+
+        if (active.status === "live" || active.status === "open" || active.status === "closing") {
+          if (!restoreActiveTrade(active)) throw new Error("Active trade was missing entry/liquidation data.");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const raw = e instanceof Error ? e.message : String(e);
+        console.warn("[trade/active-ui] recovery failed:", e);
+        showTradeError(`Active Trade Detected — Reconnecting. ${raw.slice(0, 160)}`);
+      } finally {
+        if (!cancelled && !detectedActive) setActiveRecovery(false);
+      }
+    };
+    recover();
+    const retry = window.setInterval(() => {
+      if (cancelled) return;
+      if (gameState === "IDLE") recover();
+    }, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(retry);
+    };
+  }, [authenticated, paperMode, walletAddress, getAccessToken, gameState, waitForLiveTrade, restoreActiveTrade, showTradeError]);
+
   const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
     const activeDirection = actionDirection ?? direction;
     const clickedAt = performance.now();
     console.info("[trade/open-ui] click received", { state: gameState, direction: activeDirection });
+    if (activeRecovery) {
+      showTradeError("Active Trade Detected — Reconnecting");
+      return;
+    }
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
       if (!isConnected) {
@@ -387,7 +481,7 @@ export default function Home() {
     } else if (gameState === "STOPPED" && !settling) {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, activeRecovery, isConnected, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -443,7 +537,7 @@ export default function Home() {
         balance={balance}
         pnl={pnl}
         direction={direction}
-        busy={openInFlight}
+        busy={openInFlight || activeRecovery}
         state={gameState}
         isConnected={isConnected}
         liveTradeReady={liveTradeReady}

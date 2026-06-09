@@ -1,6 +1,6 @@
 export type TradeDirection = "long" | "short";
 
-export type TradeOpenStatus = "opening" | "live" | "failed_open" | "closed";
+export type TradeOpenStatus = "opening" | "live" | "open" | "closing" | "pending_confirmation" | "failed_open" | "closed";
 
 export interface OpenTradeResponse {
   status?: TradeOpenStatus;
@@ -54,6 +54,30 @@ export interface ActiveTrade {
   liquidation_price: number;
   opened_at: string;
   is_long: boolean;
+}
+
+export interface ActiveTradeResponse {
+  exists: boolean;
+  status: TradeOpenStatus | null;
+  wallet: string | null;
+  session_id: string | null;
+  open_tx_hash: string | null;
+  tx_hash: string | null;
+  trade_index: number | null;
+  avantis_pair_index: number | null;
+  leverage: number | null;
+  wager_usdc: number | null;
+  collateral_usdc: number | null;
+  house_fee_usdc: number | null;
+  entry_price: number | null;
+  current_price: number | null;
+  pnl_usdc: number | null;
+  pnl_pct: number | null;
+  liq_price: number | null;
+  liquidation_price: number | null;
+  opened_at: string | null;
+  is_long: boolean | null;
+  error: string | null;
 }
 
 export interface BalanceResponse {
@@ -249,12 +273,61 @@ export async function forceCloseTrade(
   );
 }
 
+const NO_ACTIVE_TRADE: ActiveTradeResponse = {
+  exists: false,
+  status: null,
+  wallet: null,
+  session_id: null,
+  open_tx_hash: null,
+  tx_hash: null,
+  trade_index: null,
+  avantis_pair_index: null,
+  leverage: null,
+  wager_usdc: null,
+  collateral_usdc: null,
+  house_fee_usdc: null,
+  entry_price: null,
+  current_price: null,
+  pnl_usdc: null,
+  pnl_pct: null,
+  liq_price: null,
+  liquidation_price: null,
+  opened_at: null,
+  is_long: null,
+  error: null,
+};
+
 export async function getActiveTrade(
   getAccessToken?: () => Promise<string | null>,
   walletAddress?: string,
-): Promise<ActiveTrade | null> {
-  if (isMock()) return mockTradeState;
-  return apiFetch<ActiveTrade | null>(
+): Promise<ActiveTradeResponse> {
+  if (isMock()) {
+    if (!mockTradeState) return NO_ACTIVE_TRADE;
+    return {
+      exists: true,
+      status: "live",
+      wallet: walletAddress ?? "0xstub",
+      session_id: "0xstub",
+      open_tx_hash: "0xstub",
+      tx_hash: "0xstub",
+      trade_index: mockTradeState.trade_index,
+      avantis_pair_index: mockTradeState.avantis_pair_index,
+      leverage: mockTradeState.leverage,
+      wager_usdc: mockTradeState.wager_usdc,
+      collateral_usdc: mockTradeState.collateral_usdc,
+      house_fee_usdc: mockTradeState.wager_usdc * 0.025,
+      entry_price: mockTradeState.entry_price,
+      current_price: mockTradeState.current_price,
+      pnl_usdc: mockTradeState.pnl_usdc,
+      pnl_pct: mockTradeState.pnl_pct,
+      liq_price: mockTradeState.liquidation_price,
+      liquidation_price: mockTradeState.liquidation_price,
+      opened_at: mockTradeState.opened_at,
+      is_long: mockTradeState.is_long,
+      error: null,
+    };
+  }
+  return apiFetch<ActiveTradeResponse>(
     "/trade/active",
     { method: "GET" },
     getAccessToken,

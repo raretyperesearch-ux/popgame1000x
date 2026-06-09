@@ -71,6 +71,30 @@ class ActiveTrade(BaseModel):
     is_long: bool = True
 
 
+class ActiveTradeResponse(BaseModel):
+    exists: bool
+    status: Optional[str] = None
+    wallet: Optional[str] = None
+    session_id: Optional[str] = None
+    open_tx_hash: Optional[str] = None
+    trade_index: Optional[int] = None
+    avantis_pair_index: Optional[int] = None
+    leverage: Optional[int] = None
+    wager_usdc: Optional[float] = None
+    collateral_usdc: Optional[float] = None
+    house_fee_usdc: Optional[float] = None
+    entry_price: Optional[float] = None
+    liq_price: Optional[float] = None
+    liquidation_price: Optional[float] = None
+    current_price: Optional[float] = None
+    pnl_usdc: Optional[float] = None
+    pnl_pct: Optional[float] = None
+    opened_at: Optional[datetime] = None
+    tx_hash: Optional[str] = None
+    is_long: Optional[bool] = None
+    error: Optional[str] = None
+
+
 class PriceStreamMessage(BaseModel):
     eth_price: float
     timestamp: datetime

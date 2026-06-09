@@ -178,6 +178,50 @@ def record_open(
         return False
 
 
+def active_open_for_wallet(wallet_address: str) -> Optional[dict]:
+    """Return the newest locally-open trade row for a wallet, if any."""
+    if not is_enabled():
+        return None
+    try:
+        res = (
+            _client.table(_TABLE)
+            .select("*")
+            .eq("wallet_address", wallet_address.lower())
+            .is_("closed_at", "null")
+            .order("opened_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return dict(res.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] active_open_for_wallet failed for {wallet_address}: {e}")
+    return None
+
+
+def mark_stale_open_reconciled(*, wallet_address: str, trade_index: int, reason: str) -> bool:
+    """Close a stale local open row when Avantis no longer has it open."""
+    if not is_enabled():
+        return False
+    try:
+        now = _iso(datetime.now(timezone.utc))
+        _client.table(_TABLE).update(
+            {
+                "closed_at": now,
+                "close_tx_hash": f"reconciled-stale:{reason}",
+            }
+        ).eq("wallet_address", wallet_address.lower()).eq(
+            "trade_index", trade_index
+        ).is_("closed_at", "null").execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"[persistence] mark_stale_open_reconciled failed "
+            f"for {wallet_address} #{trade_index}: {e}"
+        )
+        return False
+
+
 def record_house_fee_pending(
     *,
     idempotency_key: str,

@@ -132,7 +132,7 @@ async def test_active_no_feed_yet_falls_back_to_entry() -> None:
 
 
 async def test_active_no_open_trade_returns_none() -> None:
-    """Empty get_trades → None response."""
+    """Empty get_trades → structured exists=false response."""
     from routes import trade as trade_mod
     fake_client = AsyncMock()
     fake_client.trade = AsyncMock()
@@ -142,9 +142,9 @@ async def test_active_no_open_trade_returns_none() -> None:
         out = await trade_mod.get_active_trade(
             AuthedUser(did="u", wallet_id="w", address="0xabc")
         )
-    if out is not None:
-        _fail("active.empty", f"expected None, got {out}")
-    _ok("active.empty trades → None")
+    if out.exists:
+        _fail("active.empty", f"expected exists=false, got {out}")
+    _ok("active.empty trades → exists=false")
 
 
 def test_exit_price_back_compute_winning_trade() -> None:

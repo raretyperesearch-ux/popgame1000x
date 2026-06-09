@@ -335,6 +335,14 @@ export interface GameSceneHandle {
   ) => void;
   stopTrade: () => void;
   confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
+  restoreLiveTrade: (
+    leverage: number,
+    wager: number,
+    entryPrice: number,
+    liquidationPrice: number,
+    direction: TradeDirection,
+    currentPrice?: number,
+  ) => void;
   cancelLaunch: () => void;
 }
 
@@ -2023,14 +2031,60 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     }
   }, []);
 
+
+  const restoreLiveTrade = useCallback((
+    lev: number,
+    wag: number,
+    entryPrice: number,
+    liqPrice: number,
+    direction: TradeDirection,
+    currentPrice?: number,
+  ) => {
+    const a = anim.current;
+    const livePrice = currentPrice && currentPrice > 0 ? currentPrice : entryPrice;
+    a.state = "LIVE";
+    setGameState("LIVE");
+    setEndOfGame(null);
+    a.positionLev = lev;
+    a.positionWager = wag;
+    a.tradeDirection = direction;
+    a.entry = entryPrice;
+    a.pendingEntry = entryPrice;
+    a.liquidationPrice = liqPrice;
+    a.pendingLiqPrice = liqPrice;
+    a.price = livePrice;
+    a.renderPrice = livePrice;
+    a.prevPrice = livePrice;
+    a.figPrice = entryPrice;
+    a.smoothFigPrice = entryPrice;
+    a.figPriceVel = 0;
+    a.smoothDelta = 0;
+    a.flightPose = "air";
+    a.curBobY = 0;
+    a.tradeStartTime = performance.now();
+    a.settleInFlight = false;
+    a.flightFx.length = 0;
+    a.flightBubble = { text: "", start: 0, until: 0 };
+    a.nextFlightCueAt = 0;
+    a.lastFlightMilestone = 0;
+    a.liveShake = 0;
+    a.liveZoomPunch = 0;
+    setSpriteState("air");
+    setLevTagText(`${lev}x`);
+    setLevTagShow(true);
+    onSettlingChange?.(false);
+    onPnlChange(0);
+  }, [setGameState, setSpriteState, onSettlingChange, onPnlChange]);
+
   const cancelLaunch = useCallback(() => {
     reset();
   }, [reset]);
 
-  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, cancelLaunch }), [
+  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, restoreLiveTrade, cancelLaunch }), [
     startJump,
     stopTrade,
     confirmTrade,
+    restoreLiveTrade,
     cancelLaunch,
   ]);
 
