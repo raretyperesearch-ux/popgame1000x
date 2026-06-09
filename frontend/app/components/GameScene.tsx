@@ -100,6 +100,10 @@ const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
+// Keep normal losing trades visually away from the red liquidation/surface line;
+// the gap fades out only as the real feed approaches liquidation danger.
+const LIQUIDATION_LINE_SAFE_GAP_PX = 36;
+const LIQUIDATION_DANGER_THRESHOLD = 0.82;
 const PARACHUTE_MIN_AIR_GAP_PX = 48;
 const HUD_NO_FLY_GAP_PX = 22;
 type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "boost" | "fall" | "land" | "parachute" | "fail";
@@ -2585,12 +2589,35 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (priceToY) {
           const groundYNow = getTerrainY(figWorldX);
           const rawFigY = priceToY(a.figPrice);
+          // Visual-only guard: price/PnL/liquidation math still uses a.price above,
+          // but the sprite should not ride the red line until the trade is truly near liquidation.
+          let safeFigY = rawFigY;
+          if (liqPrice !== null) {
+            const liqY = priceToY(liqPrice);
+            const liqSpan = Math.abs(a.entry - liqPrice);
+            const liquidationProgress = liqSpan > 0
+              ? clamp(
+                  a.entry >= liqPrice
+                    ? (a.entry - a.price) / liqSpan
+                    : (a.price - a.entry) / liqSpan,
+                  0,
+                  1,
+                )
+              : 1;
+            if (liquidationProgress < LIQUIDATION_DANGER_THRESHOLD) {
+              const gapScale = 1 - clamp(liquidationProgress / LIQUIDATION_DANGER_THRESHOLD, 0, 1);
+              const safeGap = LIQUIDATION_LINE_SAFE_GAP_PX * gapScale;
+              safeFigY = a.entry >= liqPrice
+                ? Math.min(safeFigY, liqY - safeGap)
+                : Math.max(safeFigY, liqY + safeGap);
+            }
+          }
           const groundCeilingY = groundYNow - LIVE_MIN_AIR_GAP_PX;
           const lift = a.skyAlt * a.stageH * 0.25;
           const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
           const hudCeilingY = getHudNoFlyBottom() + lift + SPRITE_DISPLAY_H * figScale;
           const effectiveHudCeilingY = Math.min(hudCeilingY, groundCeilingY - 8);
-          const figY = Math.min(Math.max(rawFigY, effectiveHudCeilingY), groundCeilingY);
+          const figY = Math.min(Math.max(safeFigY, effectiveHudCeilingY), groundCeilingY);
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, LIVE_BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);

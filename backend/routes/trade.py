@@ -408,47 +408,6 @@ async def _finalize_optimistic_open(session_id: str) -> None:
                 )
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
-def _cancel_preflight_tasks(*tasks: Optional[asyncio.Task]) -> None:
-    for task in tasks:
-        if task is not None and not task.done():
-            task.cancel()
-
-
-def _record_open_and_queue_fee(
-    *,
-    user: AuthedUser,
-    leverage: int,
-    wager_usdc: float,
-    house_fee: float,
-    collateral: float,
-    treasury_address: Optional[str],
-    pair_index: int,
-    trade,
-    opened_at: datetime,
-    tx_hash: str,
-    background_tasks: Optional[BackgroundTasks] = None,
-    idempotency_key: Optional[str] = None,
-) -> tuple[bool, Optional[str]]:
-    recorded = persistence.record_open(
-        did=user.did,
-        wallet_address=user.address,
-        trade_index=trade.trade.trade_index,
-        pair_index=pair_index,
-        leverage=leverage,
-        wager_usdc=wager_usdc,
-        house_fee_usdc=house_fee,
-        collateral_usdc=collateral,
-        entry_price=float(trade.trade.open_price),
-        liquidation_price=float(trade.liquidation_price),
-        opened_at=opened_at,
-        open_tx_hash=tx_hash,
-    )
-    if not recorded:
-        print(
-            f"[trade/open] session record failed wallet={user.address} "
-            f"trade_index={trade.trade.trade_index} tx_hash={tx_hash}"
-        )
-
     fee_idempotency_key: Optional[str] = None
     if house_fee > 0 and treasury_address:
         fee_idempotency_key = idempotency_key or _house_fee_idempotency_key(
@@ -970,6 +929,10 @@ async def open_trade(
         opened_at=opened_at,
         tx_hash=tx_hash,
         background_tasks=background_tasks,
+    )
+    timer.mark(
+        "session recorded" if recorded else "session record failed",
+        trade_index=new_trade.trade.trade_index,
     )
     timer.mark(
         "session recorded" if recorded else "session record failed",
