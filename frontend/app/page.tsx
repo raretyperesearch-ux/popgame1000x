@@ -144,16 +144,16 @@ export default function Home() {
     pnl !== null &&
     positionCollateral > 0 &&
     pnl <= -(positionCollateral * ADD_FUEL_DANGER_PNL_RATIO);
-  const showFuelPanel = (needsFuel && nearLiquidationFuelAlert) || showLowFuelPreview;
+  const showFuelPanel = nearLiquidationFuelAlert || showLowFuelPreview;
 
   const flashAddFuelButton = useCallback(() => {
     setAddFuelPulseKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
-    if (!needsFuel || !nearLiquidationFuelAlert || openInFlight || activeRecovery) return;
+    if (!nearLiquidationFuelAlert || openInFlight || activeRecovery) return;
     flashAddFuelButton();
-  }, [needsFuel, nearLiquidationFuelAlert, openInFlight, activeRecovery, flashAddFuelButton]);
+  }, [nearLiquidationFuelAlert, openInFlight, activeRecovery, flashAddFuelButton]);
 
   useEffect(() => {
     if (!fuelPreview || needsFuel) return;

@@ -110,6 +110,9 @@ export default function Controls({
   const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
   const fundingShortfall = Math.max(0, wager - balance);
   const displayShortfall = showFuelPanel ? fuelShortfall : fundingShortfall;
+  const addFuelPanelDetail = displayShortfall > 0
+    ? `Need $${displayShortfall.toFixed(2)} more`
+    : "Emergency top up";
 
   return (
     <div className="controls">
@@ -177,7 +180,7 @@ export default function Controls({
             <div className="add-fuel-slot-copy">
               <span className="add-fuel-slot-siren" aria-hidden="true" />
               <strong>ADD FUEL</strong>
-              <span>Need ${displayShortfall.toFixed(2)} more</span>
+              <span>{addFuelPanelDetail}</span>
             </div>
             <div className="add-fuel-slot-amounts" aria-label="Fuel top-up amount">
               {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (

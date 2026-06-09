@@ -1866,7 +1866,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
-        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : -1;
+        const pnlPct = result.res.was_liquidated ? -1 : positionWager > 0 ? pnlDollars / positionWager : -1;
         console.info("[trade/close-ui] close response received", { kind: "force-close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
       } else if (paperMode || isDemo) {

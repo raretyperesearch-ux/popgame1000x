@@ -1003,11 +1003,13 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     timer.mark("close tx sent", tx_hash=tx_hash)
 
     balance_after = balance_before
-    for _ in range(5):
+    balance_poll_tries = 1 if was_liquidated else 5
+    for attempt in range(balance_poll_tries):
         balance_after = await client.get_usdc_balance(user.address)
         if balance_after != balance_before:
             break
-        await asyncio.sleep(1.0)
+        if attempt < balance_poll_tries - 1:
+            await asyncio.sleep(1.0)
 
     timer.mark("close confirmed/settled", balance_before=float(balance_before), balance_after=float(balance_after))
 
