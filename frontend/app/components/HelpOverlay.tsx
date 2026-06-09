@@ -35,16 +35,34 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
             priority
           />
         </div>
-        <div className="help-title">how this works</div>
-        <div className="help-subtitle">leveraged ETH/USD perps, dressed as a runner</div>
-        <ol className="help-list" role="list">
-          <li>pick fuel (USDC collateral) &amp; boost <b>75&ndash;500&times;</b></li>
-          <li>choose long to jump skyward, or short to dive underwater</li>
-          <li>each 1% ETH move &times; leverage = % change on net collateral</li>
-          <li>pull chute / surface &rarr; exits at market, net PnL settles to USDC</li>
-          <li>loss eats collateral &rarr; auto-close (liquidation, forfeit)</li>
-          <li>fees: 2.5% house on open &middot; Avantis fee on profit only</li>
-        </ol>
+        <div className="help-title">how it works</div>
+        <div className="help-subtitle">ETH/USD perp trading with arcade controls</div>
+        <div className="help-flow" role="list">
+          <section className="help-step-card" role="listitem">
+            <span className="help-step-num">1</span>
+            <div>
+              <b>Fuel is your USDC collateral.</b>
+              <p>Pick the amount you want at risk, then choose a boost from 75&times; to 500&times;.</p>
+            </div>
+          </section>
+          <section className="help-step-card" role="listitem">
+            <span className="help-step-num">2</span>
+            <div>
+              <b>Jump means long. Dive means short.</b>
+              <p>The runner moves with ETH price while the top PnL panel shows an estimate.</p>
+            </div>
+          </section>
+          <section className="help-step-card" role="listitem">
+            <span className="help-step-num">3</span>
+            <div>
+              <b>Pull chute closes at market.</b>
+              <p>Closed trade PnL settles back to USDC. If losses use the collateral first, the trade can liquidate.</p>
+            </div>
+          </section>
+        </div>
+        <div className="help-fee-note">
+          fees: 2.5% house on open · Avantis fee on profit only
+        </div>
         {/* Trust + legal surface lives inside the help overlay — that's
             where new players already look for "how does this work?".
             target=_blank so opening a doc doesn't kick them out of the

@@ -50,7 +50,9 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
      none open. We track this in state (rather than CSS :hover) so
      touch / keyboard users can pin a detail card open. */
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [detailShift, setDetailShift] = useState(0);
   const stripRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   /* Close the popover on outside click + Escape. Mirrors the topbar
      menu behaviour so the interaction model is consistent. */
@@ -79,8 +81,38 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
     setOpenIdx(null);
   }, [history]);
 
+  const clampDetailToViewport = useCallback(() => {
+    const el = detailRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const gutter = 10;
+    const maxRight = window.innerWidth - gutter;
+    const baseLeft = rect.left - detailShift;
+    const baseRight = rect.right - detailShift;
+    const minShift = gutter - baseLeft;
+    const maxShift = maxRight - baseRight;
+    const next = Math.round(Math.min(Math.max(0, minShift), maxShift));
+    setDetailShift(next);
+  }, [detailShift]);
+
+  useEffect(() => {
+    if (openIdx === null) {
+      setDetailShift(0);
+      return;
+    }
+    const raf = window.requestAnimationFrame(clampDetailToViewport);
+    window.addEventListener("resize", clampDetailToViewport);
+    window.visualViewport?.addEventListener("resize", clampDetailToViewport);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", clampDetailToViewport);
+      window.visualViewport?.removeEventListener("resize", clampDetailToViewport);
+    };
+  }, [openIdx, clampDetailToViewport]);
+
   const toggle = useCallback((idx: number, hasDetail: boolean) => {
     if (!hasDetail) return;
+    setDetailShift(0);
     setOpenIdx((prev) => (prev === idx ? null : idx));
   }, []);
 
@@ -123,7 +155,17 @@ export default function HistoryStrip({ history }: HistoryStripProps) {
               {label}
             </button>
             {hasDetail && openIdx === i && (
-              <div className="h-detail" role="dialog" aria-label="Trade detail">
+              <div
+                ref={detailRef}
+                className="h-detail"
+                role="dialog"
+                aria-label="Trade detail"
+                style={
+                  detailShift
+                    ? { transform: `translateX(calc(-50% + ${detailShift}px))` }
+                    : undefined
+                }
+              >
                 <div className="h-detail-row">
                   <span className="h-detail-label">net</span>
                   <span className={`h-detail-value ${h.win ? "win" : "loss"}`}>

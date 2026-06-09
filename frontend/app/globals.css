@@ -455,6 +455,8 @@ button.h-tag:focus-visible {
      popover read over the chart while never blocking those overlays. */
   z-index: 25;
   min-width: 168px;
+  max-width: calc(100vw - 20px);
+  box-sizing: border-box;
   padding: 8px 10px 9px;
   background: #08080f;
   border: 2px dashed rgba(244,236,216,0.65);
@@ -2800,6 +2802,7 @@ button.h-tag:focus-visible {
   transition: opacity 0.3s ease;
   padding: 16px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .help-overlay.show {
   opacity: 1;
@@ -2812,11 +2815,13 @@ button.h-tag:focus-visible {
     linear-gradient(180deg, rgba(12, 14, 26, 0.98), rgba(5, 5, 9, 0.98)),
     var(--night);
   border: 2px solid rgba(255, 213, 93, 0.82);
-  padding: 12px 16px 14px;
-  max-width: min(340px, calc(100vw - 32px));
+  padding: 12px 14px 14px;
+  max-width: min(370px, calc(100vw - 28px));
   width: 100%;
+  max-height: calc(100dvh - 34px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--ink);
-  transform: rotate(-0.5deg);
   box-shadow:
     0 0 0 3px rgba(255, 95, 81, 0.22),
     0 0 28px rgba(0, 218, 255, 0.18),
@@ -2842,9 +2847,9 @@ button.h-tag:focus-visible {
 .help-art {
   position: relative;
   z-index: 1;
-  width: min(100%, 200px);
-  height: 60px;
-  margin: -4px auto 0;
+  width: min(100%, 180px);
+  height: 52px;
+  margin: -3px auto 0;
   filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5));
 }
 .help-art img {
@@ -2857,11 +2862,10 @@ button.h-tag:focus-visible {
   position: relative;
   z-index: 1;
   font-family: 'Caveat', cursive;
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 700;
   margin-bottom: 2px;
   text-align: center;
-  transform: rotate(-1.2deg);
   text-shadow:
     0 2px 0 rgba(0,0,0,0.55),
     0 0 12px rgba(255, 213, 93, 0.24);
@@ -2874,45 +2878,73 @@ button.h-tag:focus-visible {
   letter-spacing: 0.5px;
   color: rgba(244, 236, 216, 0.62);
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   text-transform: lowercase;
 }
-.help-list {
+.help-flow {
   position: relative;
   z-index: 1;
-  counter-reset: help-step;
   display: grid;
-  gap: 4px;
-  padding: 0;
-  margin: 0 0 12px 0;
-  list-style: none;
-  font-family: 'Tiny5', monospace;
-  font-size: 12px;
-  line-height: 1.25;
+  gap: 7px;
+  margin: 0 0 10px;
 }
-.help-list li {
-  counter-increment: help-step;
-  position: relative;
-  padding: 6px 8px 6px 28px;
-  background: linear-gradient(90deg, rgba(244,236,216,0.07), rgba(0,218,255,0.035));
+.help-step-card {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 8px 9px;
+  background:
+    linear-gradient(90deg, rgba(244,236,216,0.08), rgba(0,218,255,0.04)),
+    rgba(0,0,0,0.22);
+  border: 1px solid rgba(244,236,216,0.15);
   border-left: 3px solid rgba(0, 218, 255, 0.78);
+  border-radius: 7px;
   box-shadow: inset 0 -1px 0 rgba(255,255,255,0.04);
-  color: var(--ink);
 }
-.help-list li::before {
-  content: counter(help-step);
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  min-width: 14px;
-  text-align: center;
+.help-step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 213, 93, 0.65);
+  border-radius: 999px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
   color: var(--gold);
+  background: rgba(255, 213, 93, 0.08);
   text-shadow: 0 0 8px rgba(255, 213, 93, 0.5);
 }
-.help-list b {
+.help-step-card b {
+  display: block;
+  margin-bottom: 3px;
+  font-family: 'Tiny5', monospace;
+  font-size: 12px;
+  line-height: 1.15;
   color: var(--cyan);
   font-weight: 400;
+}
+.help-step-card p {
+  margin: 0;
+  font-family: 'Tiny5', monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(244,236,216,0.78);
+}
+.help-fee-note {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  border: 1px dashed rgba(255,213,93,0.32);
+  border-radius: 7px;
+  background: rgba(255,213,93,0.06);
+  font-family: 'Tiny5', monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  color: rgba(244,236,216,0.72);
+  text-align: center;
+  text-transform: lowercase;
 }
 .help-got-it {
   position: relative;
@@ -3456,12 +3488,19 @@ button.h-tag:focus-visible {
      where the pill ends up in the flex row. */
   .leaderboard-menu {
     position: fixed;
-    top: 60px;
-    left: 8px;
-    right: 8px;
+    top: clamp(68px, 12dvh, 96px);
+    left: max(18px, calc((100vw - 330px) / 2));
+    right: max(18px, calc((100vw - 330px) / 2));
     width: auto;
     max-width: none;
-    max-height: calc(100dvh - 80px);
+    max-height: min(58dvh, 420px);
+    padding: 8px;
+  }
+  .leaderboard-row {
+    padding: 4px 5px;
+  }
+  .leaderboard-pnl {
+    font-size: 17px;
   }
 }
 .leaderboard-header {
@@ -3615,6 +3654,24 @@ button.h-tag:focus-visible {
   font-size: 14px;
   color: var(--ink);
   letter-spacing: 0.5px;
+}
+@media (max-width: 600px) {
+  .wallet-menu {
+    position: fixed;
+    top: clamp(68px, 12dvh, 96px);
+    left: max(14px, calc((100vw - 330px) / 2));
+    right: max(14px, calc((100vw - 330px) / 2));
+    width: auto;
+    max-height: min(62dvh, 460px);
+    padding: 8px;
+  }
+  .wallet-menu .user-menu-header {
+    padding: 6px 8px;
+  }
+  .wallet-menu .user-menu-section {
+    margin-top: 3px;
+    padding-top: 3px;
+  }
 }
 @keyframes user-menu-pop {
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
@@ -3937,7 +3994,11 @@ button.h-tag:focus-visible {
    their own, not inside the game frame, so they own the viewport. */
 
 .docs-shell {
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
+  min-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: auto;
   background:
     radial-gradient(circle at 18% 12%, rgba(0, 218, 255, 0.10), transparent 38%),
     radial-gradient(circle at 82% 88%, rgba(255, 95, 81, 0.08), transparent 42%),
@@ -3945,6 +4006,8 @@ button.h-tag:focus-visible {
   color: var(--ink, #f4ecd8);
   display: flex;
   flex-direction: column;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .docs-topbar {
@@ -3986,6 +4049,7 @@ button.h-tag:focus-visible {
   flex: 1;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   padding: 36px 20px 60px;
 }
 
@@ -4131,10 +4195,42 @@ button.h-tag:focus-visible {
 .docs-avantis img { height: 22px; width: auto; }
 
 @media (max-width: 600px) {
-  .docs-card { padding: 22px 18px 20px; }
+  .docs-topbar {
+    align-items: flex-start;
+    padding: 12px 14px;
+  }
+  .docs-nav {
+    width: 100%;
+    gap: 10px 14px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .docs-page {
+    padding: 18px 12px calc(38px + env(safe-area-inset-bottom));
+  }
+  .docs-card {
+    padding: 22px 16px 20px;
+    border-width: 1px;
+    box-shadow:
+      0 0 0 2px rgba(255, 95, 81, 0.16),
+      0 0 24px rgba(0, 218, 255, 0.10);
+  }
+  .docs-card::before { inset: 5px; }
   .docs-title { font-size: 32px; }
-  .docs-body { font-size: 12.5px; }
+  .docs-subtitle { font-size: 12px; line-height: 1.35; }
+  .docs-body {
+    font-size: 12.5px;
+    line-height: 1.58;
+    overflow-wrap: anywhere;
+  }
   .docs-body h2 { font-size: 22px; }
+  .docs-body ul,
+  .docs-body ol {
+    padding-left: 17px;
+  }
+  .docs-card-footer {
+    flex-wrap: wrap;
+  }
 }
 
 /* ---------- Doc links inside HelpOverlay ----------
@@ -4150,7 +4246,7 @@ button.h-tag:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 auto 12px;
+  margin: 0 auto 11px;
   font-family: 'Tiny5', monospace;
   font-size: 10px;
   letter-spacing: 0.5px;
