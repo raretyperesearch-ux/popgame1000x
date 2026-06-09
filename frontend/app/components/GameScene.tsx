@@ -331,6 +331,7 @@ export interface GameSceneHandle {
     entryPrice: number,
     liquidationPrice: number,
     direction: TradeDirection,
+    demoRun?: boolean,
   ) => void;
   stopTrade: () => void;
   confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
@@ -1967,7 +1968,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
-    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection) => {
+    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection, demoRun = false) => {
       const a = anim.current;
       sounds.play("lever-pull");
       a.state = "RUNNING";
@@ -1993,7 +1994,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteParachuteStart = 0;
       a.dustParticles.length = 0;
       a.flightFx.length = 0;
-      a.flightBubble = { text: "", start: 0, until: 0 };
+      a.flightBubble = { text: "LAUNCHING...", start: performance.now(), until: performance.now() + 1800 };
       a.nextFlightCueAt = 0;
       a.lastFlightMilestone = 0;
       a.liveShake = 0;
@@ -2005,7 +2006,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.loco.rightFoot = { x: a.loco.bodyX + 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: false };
       a.loco.squash = 0;
     },
-    [setGameState],
+    [setGameState, playMode],
   );
 
 
@@ -2601,12 +2602,35 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (priceToY) {
           const groundYNow = getTerrainY(figWorldX);
           const rawFigY = priceToY(a.figPrice);
+          // Visual-only guard: price/PnL/liquidation math still uses a.price above,
+          // but the sprite should not ride the red line until the trade is truly near liquidation.
+          let safeFigY = rawFigY;
+          if (liqPrice !== null) {
+            const liqY = priceToY(liqPrice);
+            const liqSpan = Math.abs(a.entry - liqPrice);
+            const liquidationProgress = liqSpan > 0
+              ? clamp(
+                  a.entry >= liqPrice
+                    ? (a.entry - a.price) / liqSpan
+                    : (a.price - a.entry) / liqSpan,
+                  0,
+                  1,
+                )
+              : 1;
+            if (liquidationProgress < LIQUIDATION_DANGER_THRESHOLD) {
+              const gapScale = 1 - clamp(liquidationProgress / LIQUIDATION_DANGER_THRESHOLD, 0, 1);
+              const safeGap = LIQUIDATION_LINE_SAFE_GAP_PX * gapScale;
+              safeFigY = a.entry >= liqPrice
+                ? Math.min(safeFigY, liqY - safeGap)
+                : Math.max(safeFigY, liqY + safeGap);
+            }
+          }
           const groundCeilingY = groundYNow - LIVE_MIN_AIR_GAP_PX;
           const lift = a.skyAlt * a.stageH * 0.25;
           const figScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
           const hudCeilingY = getHudNoFlyBottom() + lift + SPRITE_DISPLAY_H * figScale;
           const effectiveHudCeilingY = Math.min(hudCeilingY, groundCeilingY - 8);
-          const figY = Math.min(Math.max(rawFigY, effectiveHudCeilingY), groundCeilingY);
+          const figY = Math.min(Math.max(safeFigY, effectiveHudCeilingY), groundCeilingY);
           const alt = a.stageH - figY;
           a.smoothAlt = lerp(a.smoothAlt, alt, LIVE_BODY_LERP * dtNorm);
           setFig(figScreenX, a.smoothAlt, a.smoothRot);
