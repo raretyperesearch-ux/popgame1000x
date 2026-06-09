@@ -121,7 +121,7 @@ const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
-const SETTLE_TIMEOUT_MS = 4500;
+const SETTLE_TIMEOUT_MS = 15000;
 const HOUSE_FEE_RATE = 0.025;
 const COLLATERAL_RATE = 1 - HOUSE_FEE_RATE;
 const LOCAL_MOCK_MODE = !process.env.NEXT_PUBLIC_API_URL;
@@ -151,6 +151,7 @@ type FlightFxKind = "streak" | "spark" | "coin" | "ring";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 export type TradeDirection = "long" | "short";
+export type PlayMode = "live" | "demo";
 
 /* ============ UTILITY ============ */
 function lerp(a: number, b: number, t: number): number {
@@ -325,8 +326,11 @@ export interface GameSceneHandle {
     entryPrice: number,
     liquidationPrice: number,
     direction: TradeDirection,
+    demoRun?: boolean,
   ) => void;
   stopTrade: () => void;
+  confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
+  cancelLaunch: () => void;
 }
 
 interface GameSceneProps {
@@ -341,6 +345,10 @@ interface GameSceneProps {
   onPnlChange: (pnl: number | null) => void;
   pnlReadout?: React.ReactNode;
   paperMode?: boolean;
+  playMode?: PlayMode;
+  onDemoEnd?: () => void;
+  onError?: (message: string) => void;
+  onSettlingChange?: (settling: boolean) => void;
 }
 
 const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene(
@@ -353,6 +361,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     onPnlChange,
     pnlReadout,
     paperMode = false,
+    playMode = "live",
+    onDemoEnd,
+    onError,
+    onSettlingChange,
   },
   ref,
 ) {
@@ -406,6 +418,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
        at the LIVE-state transition. */
     pendingEntry: 0 as number,
     pendingLiqPrice: 0 as number,
+    awaitingOpenConfirm: false,
+    settleInFlight: false,
     liquidationPrice: 0 as number,
     figPrice: 3500, // figure's virtual price-level during LIVE
     figPriceVel: 0,
@@ -1715,6 +1729,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.dustParticles.length = 0;
     a.flightFx.length = 0;
     a.flightBubble = { text: "", start: 0, until: 0 };
+    a.awaitingOpenConfirm = false;
+    a.settleInFlight = false;
+    onSettlingChange?.(false);
     a.nextFlightCueAt = 0;
     a.lastFlightMilestone = 0;
     a.liveShake = 0;
@@ -1726,14 +1743,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     slowMoUntilRef.current = 0;
     setImpactFx("");
     setJumpCinematic(false);
-  }, [setGameState, setSpriteState, onPnlChange]);
+  }, [setGameState, setSpriteState, onPnlChange, onSettlingChange]);
 
   /* ============ SPLAT (liquidation) ============ */
   const splat = useCallback(() => {
     const a = anim.current;
     if (a.state === "DEAD") return;
+    console.info("[trade/close-ui] close triggered", { reason: "liquidation" });
     a.state = "DEAD";
     setGameState("DEAD");
+    a.settleInFlight = true;
+    onSettlingChange?.(true);
+    console.info("[trade/close-ui] closing state set", { state: "DEAD" });
     setSpriteState("fail");
     sounds.play("rekt-crash");
     const crashNow = performance.now();
@@ -1752,6 +1773,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
     const pnlDollarsOptimistic = -positionCollateral; // liq = full collateral loss; house fee was paid on open
+    const isDemo = playMode === "demo";
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1759,18 +1781,23 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number | null,
     ) => {
-      onHistoryPush({
-        amt: pnlDollars,
-        win: pnlDollars >= 0,
-        direction: positionDirection,
-        entry: entryPrice,
-        exit: exitPrice,
-        leverage: positionLev,
-        wager: positionWager,
-        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
-        closedAt: new Date().toISOString(),
-        liquidated: true,
-      });
+      if (!isDemo) {
+        onHistoryPush({
+          amt: pnlDollars,
+          win: pnlDollars >= 0,
+          direction: positionDirection,
+          entry: entryPrice,
+          exit: exitPrice,
+          leverage: positionLev,
+          wager: positionWager,
+          openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+          closedAt: new Date().toISOString(),
+          liquidated: true,
+        });
+      }
+      a.settleInFlight = false;
+      onSettlingChange?.(false);
+      console.info("[trade/close-ui] result modal shown", { kind: "rekt", demo: isDemo });
       setEndOfGame({
         kind: "rekt",
         direction: positionDirection,
@@ -1781,6 +1808,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: positionLev,
         wager: positionWager,
         durationSeconds,
+        demo: isDemo,
       });
     };
 
@@ -1788,12 +1816,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // modal opens only after the splat reads visually AND we have real
     // PnL (or a clear fallback if the backend is unreachable).
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    const settleReq = paperMode
+    const settleReq = paperMode || isDemo
       ? Promise.resolve({ ok: false as const })
       : withTimeout(forceCloseTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
+            console.warn("[trade] forceCloseTrade failed — close remains retryable:", e);
             return { ok: false as const };
           });
     Promise.all([settleReq, minDelay]).then(([result]) => {
@@ -1802,22 +1830,37 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
         const pnlPct = positionWager > 0 ? pnlDollars / positionWager : -1;
+        console.info("[trade/close-ui] close response received", { kind: "force-close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
-      } else {
+      } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
+      } else {
+        a.settleInFlight = false;
+        onSettlingChange?.(false);
+        a.flightBubble = { text: "CLOSE PENDING · RETRY", start: performance.now(), until: performance.now() + 3200 };
+        onError?.("Close Pending — Retry Close. Final PnL will show after the real close succeeds.");
+        console.info("[trade/close-ui] close response received", { kind: "force-close", ok: false });
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
     const a = anim.current;
-    if (a.state !== "LIVE") return;
-    a.state = "STOPPED";
-    setGameState("STOPPED");
-    sounds.play("deploy-chute");
-    if (parachuteRef.current) parachuteRef.current.classList.remove("deployed");
-    setSpriteState("parachute");
+    if (a.state !== "LIVE" && a.state !== "STOPPED") return;
+    if (a.settleInFlight) return;
+    console.info("[trade/close-ui] close triggered", { state: a.state });
+    if (a.state === "LIVE") {
+      a.state = "STOPPED";
+      setGameState("STOPPED");
+      sounds.play("deploy-chute");
+      if (parachuteRef.current) parachuteRef.current.classList.remove("deployed");
+      setSpriteState("parachute");
+    }
+    a.settleInFlight = true;
+    onSettlingChange?.(true);
+    a.flightBubble = { text: "SETTLING...", start: performance.now(), until: performance.now() + 2400 };
+    console.info("[trade/close-ui] closing state set", { state: "STOPPED" });
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
@@ -1828,10 +1871,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
 
-    // Optimistic fallback PnL based on the live chart price.
+    // Estimated PnL based on the live chart price. Demo/paper can resolve
+    // locally; real-money final PnL still waits for backend close success.
     const moveOptimistic = tradeMove(exitOptimistic, entry, a.tradeDirection);
     const pnlPctOptimistic = moveOptimistic * positionLev;
     const pnlDollarsOptimistic = pnlPctOptimistic * positionCollateral;
+    const isDemo = playMode === "demo";
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1839,19 +1884,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number,
     ) => {
-      setBalance((prev: number) => prev + positionCollateral + pnlDollars);
-      onHistoryPush({
-        amt: pnlDollars,
-        win: pnlDollars >= 0,
-        direction: positionDirection,
-        entry: entryPrice,
-        exit: exitPrice,
-        leverage: positionLev,
-        wager: positionWager,
-        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
-        closedAt: new Date().toISOString(),
-        liquidated: false,
-      });
+      if (!isDemo) {
+        setBalance((prev: number) => prev + positionCollateral + pnlDollars);
+        onHistoryPush({
+          amt: pnlDollars,
+          win: pnlDollars >= 0,
+          direction: positionDirection,
+          entry: entryPrice,
+          exit: exitPrice,
+          leverage: positionLev,
+          wager: positionWager,
+          openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+          closedAt: new Date().toISOString(),
+          liquidated: false,
+        });
+      }
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       if (kind === "win") {
@@ -1861,6 +1908,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         setImpactFx("loss");
         setTimeout(() => setImpactFx(""), 300);
       }
+      a.settleInFlight = false;
+      onSettlingChange?.(false);
+      console.info("[trade/close-ui] result modal shown", { kind, demo: isDemo });
       setEndOfGame({
         kind,
         direction: positionDirection,
@@ -1871,19 +1921,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: positionLev,
         wager: positionWager,
         durationSeconds,
+        demo: isDemo,
       });
     };
 
-    // Race the on-chain close against the parachute descent. Modal opens
-    // when both finish — real net_pnl_usdc when available, optimistic
-    // local calc when backend is unreachable.
+    // Race the on-chain close against the parachute descent. Real-money
+    // modal opens only after backend net_pnl_usdc; failures leave a retryable
+    // STOPPED state instead of faking final PnL.
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    const closeReq = paperMode
+    const closeReq = paperMode || isDemo
       ? Promise.resolve({ ok: false as const })
       : withTimeout(closeTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
+            console.warn("[trade] closeTrade failed — close remains retryable:", e);
             return { ok: false as const };
           });
     Promise.all([closeReq, minDelay]).then(([result]) => {
@@ -1892,20 +1943,29 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
         const pnlPct = positionWager > 0 ? pnlDollars / positionWager : 0;
+        console.info("[trade/close-ui] close response received", { kind: "close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
-      } else {
+      } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, pnlPctOptimistic, entry, exitOptimistic);
+      } else {
+        a.settleInFlight = false;
+        onSettlingChange?.(false);
+        a.flightBubble = { text: "CLOSE PENDING · RETRY", start: performance.now(), until: performance.now() + 3200 };
+        onError?.("Close Pending — Retry Close. Final PnL will show after the real close succeeds.");
+        console.info("[trade/close-ui] close response received", { kind: "close", ok: false });
       }
     });
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
 
   const closeEndOfGame = useCallback(() => {
+    const wasDemo = playMode === "demo";
     reset();
-  }, [reset]);
+    if (wasDemo) onDemoEnd?.();
+  }, [onDemoEnd, playMode, reset]);
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
-    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection) => {
+    (lev: number, wag: number, entryPrice: number, liqPrice: number, direction: TradeDirection, demoRun = false) => {
       const a = anim.current;
       sounds.play("lever-pull");
       a.state = "RUNNING";
@@ -1915,6 +1975,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.tradeDirection = direction;
       a.pendingEntry = entryPrice;
       a.pendingLiqPrice = liqPrice;
+      a.awaitingOpenConfirm = !demoRun && playMode !== "demo" && (entryPrice <= 0 || liqPrice <= 0);
+      a.settleInFlight = false;
       a.runFrame = 0;
       a.stepPhase = 0;
       a.prevStepHalf = 0;
@@ -1930,7 +1992,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.spriteParachuteStart = 0;
       a.dustParticles.length = 0;
       a.flightFx.length = 0;
-      a.flightBubble = { text: "", start: 0, until: 0 };
+      a.flightBubble = { text: "LAUNCHING...", start: performance.now(), until: performance.now() + 1800 };
       a.nextFlightCueAt = 0;
       a.lastFlightMilestone = 0;
       a.liveShake = 0;
@@ -1942,12 +2004,33 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.loco.rightFoot = { x: a.loco.bodyX + 1.2, y: a.loco.bodyY + BODY_HEIGHT_PX, planted: false };
       a.loco.squash = 0;
     },
-    [setGameState],
+    [setGameState, playMode],
   );
 
-  useImperativeHandle(ref, () => ({ startJump, stopTrade }), [
+
+  const confirmTrade = useCallback((entryPrice: number, liqPrice: number) => {
+    const a = anim.current;
+    a.pendingEntry = entryPrice;
+    a.pendingLiqPrice = liqPrice;
+    a.awaitingOpenConfirm = false;
+    a.flightBubble = { text: "TRADE CONFIRMED", start: performance.now(), until: performance.now() + 1400 };
+    if (a.state === "LIVE" || a.state === "STOPPED") {
+      a.entry = entryPrice;
+      a.liquidationPrice = liqPrice;
+      a.figPrice = a.price;
+      a.smoothDelta = 0;
+    }
+  }, []);
+
+  const cancelLaunch = useCallback(() => {
+    reset();
+  }, [reset]);
+
+  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, cancelLaunch }), [
     startJump,
     stopTrade,
+    confirmTrade,
+    cancelLaunch,
   ]);
 
   /* ============ MAIN ANIMATION LOOP ============ */
@@ -2290,7 +2373,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.figPriceVel = 0.06 + n.y * 0.02;
         }
 
-        if (elapsed > activeJumpDuration) {
+        const chartY = getTerrainY(figWorldX);
+        const baseAlt = a.stageH - chartY;
+        if (elapsed > activeJumpDuration && a.awaitingOpenConfirm) {
+          const holdT = clamp((elapsed - activeJumpDuration) / 900, 0, 1);
+          a.flightBubble = a.flightBubble.until > time && a.flightBubble.text
+            ? a.flightBubble
+            : { text: "OPENING ON AVANTIS...", start: time, until: time + 1600 };
+          setSpriteState(a.tradeDirection === "short" ? "fall" : "boost", time);
+          a.curBobY = Math.sin(time * 0.012) * 5;
+          a.smoothAlt = Math.max(a.smoothAlt, baseAlt + 38 + Math.sin(holdT * Math.PI) * 8);
+          a.smoothRot = lerp(a.smoothRot, a.tradeDirection === "short" ? 24 : -12, ROTATION_LERP * dtNorm);
+          setFig(figScreenX, a.smoothAlt, a.smoothRot);
+          a.figPrice = priceAtFig;
+          a.frame++;
+        } else if (elapsed > activeJumpDuration) {
           /* enter LIVE — use the on-chain entry/liq from /trade/open if
              present (positive value); otherwise fall back to the current
              price for entry and the 1/lev formula for liq so the game
@@ -2317,8 +2414,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           if (fig) fig.style.transition = "none";
         } else {
           const jumpT = clamp(elapsed / activeJumpDuration, 0, 1);
-          const chartY = getTerrainY(figWorldX);
-          const baseAlt = a.stageH - chartY;
           if (a.tradeDirection === "short") {
             const hopT = clamp(jumpT / 0.34, 0, 1);
             const diveT = clamp((jumpT - 0.22) / 0.78, 0, 1);
@@ -2776,6 +2871,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       <div className={`lev-tag${levTagShow ? " show" : ""}`}>
         {levTagText}
       </div>
+      {playMode === "demo" && gameState !== "IDLE" && (
+        <div className="demo-mode-pill" role="status">
+          demo mode · no real trade
+        </div>
+      )}
       {pnlReadout}
       <div className="crash-warning" ref={crashWarningRef} aria-hidden="true" />
       <div className="race-flag" aria-hidden="true" ref={raceFlagRef} />
