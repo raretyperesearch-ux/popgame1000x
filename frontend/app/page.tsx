@@ -12,6 +12,7 @@ import HelpOverlay from "./components/HelpOverlay";
 import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
+import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotionalFor } from "@/lib/trade-sizing";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
@@ -309,6 +310,13 @@ export default function Home() {
         );
         return;
       }
+      if (isBelowMinPosition(wager, leverage)) {
+        sounds.play("ui-click");
+        showTradeError(
+          `Position Too Small — Increase Boost Or Wager. ${minPositionHint(wager, leverage)}. Current ~$${liveNotionalFor(wager, leverage).toFixed(0)} / min ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)}.`,
+        );
+        return;
+      }
       setOpenInFlight(true);
       setLiveTradeReady(false);
       gameRef.current?.startJump(leverage, wager, 0, 0, activeDirection);
@@ -339,12 +347,18 @@ export default function Home() {
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try {
-            const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
-            if (parsed.detail) detail = parsed.detail;
+            const parsed = JSON.parse(jsonMatch[0]) as { detail?: string | { message?: string } };
+            if (typeof parsed.detail === "string") {
+              detail = parsed.detail;
+            } else if (parsed.detail?.message) {
+              detail = parsed.detail.message;
+            }
           } catch { /* fall through */ }
         }
         if (status === 409) {
           showStuckTradeError(detail.slice(0, 240));
+        } else if (status === 400 && raw.includes("below_min_position")) {
+          showTradeError("Position Too Small — Increase Boost Or Wager. Avantis minimum notional not met.");
         } else if (status === 402 || status === 504 || status === 502) {
           showTradeError(detail.slice(0, 240));
         } else if (status === 0) {

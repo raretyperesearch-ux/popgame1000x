@@ -27,6 +27,7 @@ from time import monotonic, perf_counter
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from avantis_trader_sdk import TraderClient
 from avantis_trader_sdk.types import TradeInput, TradeInputOrderType
@@ -89,6 +90,11 @@ _RECEIPT_POLL_INTERVAL = 1.0
 _RECEIPT_POLL_MAX_TRIES = 20  # ~20 s; Railway's request timeout is 60s, must
                               # leave headroom for approval + open + this poll
 _TRADE_OPEN_MODE = os.getenv("TRADE_OPEN_MODE", "optimistic").strip().lower()
+_MIN_TRADE_NOTIONAL_USD = float(
+    os.getenv("AVANTIS_MIN_POSITION_USD")
+    or os.getenv("MIN_TRADE_NOTIONAL_USD")
+    or "125"
+)
 
 _trader_client: Optional[TraderClient] = None
 _eth_pair_index: Optional[int] = None
@@ -112,6 +118,50 @@ class _OpenTradeTimer:
         )
         self.previous = now
 
+
+
+def _min_position_detail(collateral: float, leverage: int) -> dict:
+    current_notional = round(collateral * leverage, 4)
+    suggested_min_wager = round(
+        ((_MIN_TRADE_NOTIONAL_USD / max(leverage, 1)) / 0.975) + 0.005,
+        2,
+    )
+    suggested_min_leverage = int(((_MIN_TRADE_NOTIONAL_USD / max(collateral, 1e-9)) + 0.9999))
+    return {
+        "error": "below_min_position",
+        "message": "Position is below Avantis minimum size.",
+        "min_notional_usd": _MIN_TRADE_NOTIONAL_USD,
+        "current_notional_usd": current_notional,
+        "suggested_min_wager": suggested_min_wager,
+        "suggested_min_leverage": suggested_min_leverage,
+    }
+
+
+def _log_below_min_position(detail: dict) -> None:
+    print(
+        "[trade/open] rejected below min position "
+        f"current_notional={detail['current_notional_usd']} "
+        f"min={detail['min_notional_usd']} "
+        f"suggested_min_wager={detail['suggested_min_wager']} "
+        f"suggested_min_leverage={detail['suggested_min_leverage']}"
+    )
+
+
+def _below_min_position_response(collateral: float, leverage: int) -> JSONResponse:
+    detail = _min_position_detail(collateral, leverage)
+    _log_below_min_position(detail)
+    return JSONResponse(status_code=400, content=detail)
+
+
+def _reject_below_min_position(collateral: float, leverage: int) -> None:
+    detail = _min_position_detail(collateral, leverage)
+    _log_below_min_position(detail)
+    raise HTTPException(status_code=400, detail=detail)
+
+
+def _is_below_min_position_error(exc: Exception) -> bool:
+    msg = str(exc).upper()
+    return "BELOW_MIN_POS" in msg or "BELOW_MIN_POSITION" in msg
 
 def _house_fee_idempotency_key(
     user: AuthedUser, trade_index: int, open_tx_hash: str
@@ -310,32 +360,6 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         session["status"] = "failed_open"
         session["error"] = str(e)
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
-
-
-class _OpenTradeTimer:
-    def __init__(self, wallet_address: str):
-        self.wallet_address = wallet_address
-        self.started = perf_counter()
-        self.previous = self.started
-
-    def mark(self, step: str, **fields) -> None:
-        now = perf_counter()
-        extra = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
-        suffix = f" {extra}" if extra else ""
-        print(
-            f"[trade/open] {step} wallet={self.wallet_address} "
-            f"+{now - self.previous:.3f}s total={now - self.started:.3f}s{suffix}"
-        )
-        self.previous = now
-
-
-def _house_fee_idempotency_key(
-    user: AuthedUser, trade_index: int, open_tx_hash: str
-) -> str:
-    # open_tx_hash is globally unique and stable for the Avantis open. Include
-    # wallet/trade_index for readable Supabase rows and human reconciliation.
-    return f"house-fee:{user.address.lower()}:{trade_index}:{open_tx_hash.lower()}"
-
 
 async def _collect_queued_house_fee(
     *,
@@ -598,6 +622,9 @@ async def open_trade(
     collateral = round(body.wager_usdc - house_fee, 4)
     if collateral <= 0:
         raise HTTPException(400, "wager too small after house fee")
+    if collateral * body.leverage < _MIN_TRADE_NOTIONAL_USD:
+        _cancel_preflight_tasks(allowance_task)
+        return _below_min_position_response(collateral, body.leverage)
     treasury_address = _valid_treasury_address() if house_fee > 0 else None
     if house_fee > 0 and not treasury_address:
         _cancel_preflight_tasks(usdc_task, allowance_task)
@@ -669,18 +696,29 @@ async def open_trade(
         sl=0,
         timestamp=0,
     )
-    open_tx = await client.trade.build_trade_open_tx(
-        trade_input,
-        TradeInputOrderType.MARKET_ZERO_FEE,
-        slippage_percentage=1,
-    )
+    try:
+        open_tx = await client.trade.build_trade_open_tx(
+            trade_input,
+            TradeInputOrderType.MARKET_ZERO_FEE,
+            slippage_percentage=1,
+        )
+    except Exception as e:  # noqa: BLE001
+        if _is_below_min_position_error(e):
+            return _below_min_position_response(collateral, body.leverage)
+        print(f"[trade/open] Avantis tx build failed wallet={user.address}: {e}")
+        raise
     timer.mark("Avantis tx built")
 
-    if _is_legacy_user(user):
-        receipt = await client.sign_and_get_receipt(open_tx)
-        tx_hash = _tx_hash_str(receipt)
-    else:
-        tx_hash = await _send_user_tx(user, open_tx)
+    try:
+        if _is_legacy_user(user):
+            receipt = await client.sign_and_get_receipt(open_tx)
+            tx_hash = _tx_hash_str(receipt)
+        else:
+            tx_hash = await _send_user_tx(user, open_tx)
+    except Exception as e:  # noqa: BLE001
+        if _is_below_min_position_error(e):
+            return _below_min_position_response(collateral, body.leverage)
+        raise
     timer.mark("Avantis tx sent", tx_hash=tx_hash)
 
     opened_at = datetime.now(timezone.utc)
@@ -747,37 +785,6 @@ async def open_trade(
         trade_index=new_trade.trade.trade_index,
     )
     timer.mark("session recorded", trade_index=new_trade.trade.trade_index)
-
-    if house_fee > 0 and treasury_address:
-        idempotency_key = _house_fee_idempotency_key(
-            user, new_trade.trade.trade_index, tx_hash
-        )
-        fee_event = persistence.record_house_fee_pending(
-            idempotency_key=idempotency_key,
-            did=user.did,
-            wallet_address=user.address,
-            wallet_id=user.wallet_id,
-            trade_index=new_trade.trade.trade_index,
-            session_id=tx_hash,
-            collateral_usdc=collateral,
-            fee_usdc=house_fee,
-            treasury_address=treasury_address,
-        )
-        timer.mark(
-            "fee queued",
-            idempotency_key=idempotency_key,
-            durable=bool(fee_event),
-        )
-        if fee_event:
-            background_tasks.add_task(
-                _collect_queued_house_fee,
-                idempotency_key=idempotency_key,
-                user=user,
-                fee_usdc=house_fee,
-                treasury_address=treasury_address,
-            )
-    else:
-        timer.mark("fee queued", idempotency_key="none")
 
     response = OpenTradeResponse(
         status="live",

@@ -878,30 +878,33 @@ button.h-tag:focus-visible {
 }
 
 /* Trade error toast — clickable to dismiss, auto-clears after ~6s.
-   Pinned to the top of the cabinet so it's visible immediately on
-   trade failure (gas missing, allowance, etc). */
+   Fixed to the browser viewport so cabinet/canvas overflow cannot clip
+   long backend validation errors on desktop. */
 .trade-error-banner {
-  position: absolute;
-  top: 76px;
+  position: fixed;
+  top: clamp(72px, 10vh, 120px);
   left: 50%;
   transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  overflow-wrap: break-word;
   background: var(--bg-body);
   border: 2px solid var(--red);
   color: var(--red);
   padding: 10px 14px;
-  max-width: 88%;
   font-family: 'Press Start 2P', monospace;
   font-size: 10px;
   line-height: 1.5;
   text-align: center;
   box-shadow: 0 0 20px rgba(255,95,86,0.35);
-  z-index: 20;
+  z-index: 9999;
   animation: trade-error-in 0.18s ease-out;
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.trade-error-text { flex: 1 1 auto; text-align: left; }
+.trade-error-text { flex: 1 1 auto; min-width: 0; text-align: left; }
 .trade-error-actions { display: flex; gap: 6px; }
 .trade-error-btn {
   font-family: 'Press Start 2P', monospace;

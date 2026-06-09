@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import { isBelowMinPosition, minPositionHint } from "@/lib/trade-sizing";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type TradeDirection = "long" | "short";
@@ -72,6 +73,7 @@ export default function Controls({
   }
   const showSplitAction = state === "IDLE" && !opening;
   const needsFunding = isConnected && wager > balance;
+  const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
   const fundingShortfall = Math.max(0, wager - balance);
 
   return (
@@ -129,10 +131,12 @@ export default function Controls({
                 ? "try the game free · no login needed"
                 : needsFunding
                   ? `need $${fundingShortfall.toFixed(0)} · lower wager or deposit`
-                  : "choose your move"}
+                  : belowMinPosition
+                    ? minPositionHint(wager, leverage)
+                    : "choose your move"}
             </div>
             <div
-              className={`action-split${!isConnected ? " demo-hint" : ""}${needsFunding ? " funding-hint" : ""}`}
+              className={`action-split${!isConnected ? " demo-hint" : ""}${needsFunding ? " funding-hint" : ""}${belowMinPosition ? " funding-hint" : ""}`}
               role="group"
               aria-label="Choose jump or dive"
             >
