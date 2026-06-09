@@ -1842,6 +1842,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       a.settleInFlight = false;
       onSettlingChange?.(false);
+      onPnlChange(pnlDollars);
       console.info("[trade/close-ui] result modal shown", { kind: "rekt", demo: isDemo });
       setEndOfGame({
         kind: "rekt",
@@ -1883,7 +1884,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         markSettlementPending();
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange, reset]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange, onPnlChange, reset]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
@@ -1951,6 +1952,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       }
       a.settleInFlight = false;
       onSettlingChange?.(false);
+      onPnlChange(pnlDollars);
       console.info("[trade/close-ui] result modal shown", { kind, demo: isDemo });
       setEndOfGame({
         kind,
@@ -1996,7 +1998,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         console.info("[trade/close-ui] close response received", { kind: "close", ok: false });
       }
     });
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange, onPnlChange]);
 
   const closeEndOfGame = useCallback(() => {
     const wasDemo = playMode === "demo";
