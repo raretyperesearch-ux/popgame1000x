@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import {
   usePrivy,
+  useLogin,
   useSigners,
   useFundWallet,
   useSendTransaction,
@@ -49,7 +50,23 @@ const USDC_TRANSFER_ABI = [
 ] as const;
 
 export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError, leaderboardRefreshKey, paperMode }: TopbarProps) {
-  const { login, logout, authenticated, user, ready, getAccessToken } = usePrivy();
+  const { logout, authenticated, user, ready, getAccessToken } = usePrivy();
+  const { login } = useLogin({
+    onComplete: () => {
+      sounds.play("ui-click");
+    },
+    onError: (error) => {
+      const raw = error as unknown;
+      const msg =
+        raw instanceof Error
+          ? raw.message
+          : typeof raw === "string"
+            ? raw
+            : "Privy login failed. Please try again.";
+      console.warn("[auth] Privy login failed:", error);
+      onError?.(`Login failed: ${msg.slice(0, 180)}`);
+    },
+  });
   const { addSigners } = useSigners();
   const { fundWallet } = useFundWallet();
   const { sendTransaction } = useSendTransaction();
@@ -80,12 +97,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const [usernameSaving, setUsernameSaving] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [usernameEditing, setUsernameEditing] = useState(false);
-  // First-login nudge to pick a username. Drives a small banner in the
-  // topbar between the gas pill and avatar that points at the username
-  // section. We dismiss it locally per-user (keyed by privy_id) so a
-  // veteran who explicitly skipped doesn't see it on every refresh,
-  // and unconditionally hide it once a username actually exists.
-  const [usernameNudgeDismissed, setUsernameNudgeDismissed] = useState(false);
   const walletWrapRef = useRef<HTMLDivElement>(null);
   const profileWrapRef = useRef<HTMLDivElement>(null);
 
@@ -118,55 +129,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setUsernameDraft("");
     setUsernameError(null);
     setUsernameEditing(false);
-    setUsernameNudgeDismissed(false);
   }, [walletAddress]);
-
-  // Restore the per-user "I dismissed the nudge" state from localStorage
-  // on profile load. Keyed by privy_id (or fall back to wallet address)
-  // so different accounts on the same browser don't collide.
-  useEffect(() => {
-    const key = profile?.privy_id || walletAddress;
-    if (!key) return;
-    try {
-      const saw = localStorage.getItem(`sr_username_nudge_dismissed:${key}`);
-      if (saw === "1") setUsernameNudgeDismissed(true);
-    } catch {
-      /* SSR / private mode — fail silent */
-    }
-  }, [profile?.privy_id, walletAddress]);
-
-  const dismissUsernameNudge = useCallback(() => {
-    setUsernameNudgeDismissed(true);
-    const key = profile?.privy_id || walletAddress;
-    if (!key) return;
-    try {
-      localStorage.setItem(`sr_username_nudge_dismissed:${key}`, "1");
-    } catch {
-      /* SSR / private mode */
-    }
-  }, [profile?.privy_id, walletAddress]);
-
-  const openUsernameEditor = useCallback(() => {
-    sounds.play("ui-click");
-    setProfileMenuOpen(true);
-    setWalletMenuOpen(false);
-    setUsernameDraft(profile?.username ?? "");
-    setUsernameError(null);
-    setUsernameEditing(true);
-    dismissUsernameNudge();
-  }, [profile?.username, dismissUsernameNudge]);
-
-  // Show the nudge only when authenticated, the profile finished loading,
-  // there's no username yet, and the user hasn't explicitly dismissed it.
-  // `profile === null` covers the loading window so we don't flash the
-  // nudge before /user/me resolves.
-  const showUsernameNudge = Boolean(
-    authenticated &&
-      profile &&
-      !profile.username &&
-      !usernameEditing &&
-      !usernameNudgeDismissed,
-  );
 
   /* Register the user into the shared Hiscore bm_players table on every
      authenticated session. Idempotent — the backend upserts on privy_id
@@ -422,9 +385,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setUsernameDraft(profile?.username ?? "");
     setUsernameError(null);
     setUsernameEditing(true);
-    // Treat opening the editor as implicit dismissal of the nudge —
-    // the user is already on the right path; no point still nagging.
-    dismissUsernameNudge();
   };
 
   const copyAddress = async () => {
@@ -587,8 +547,20 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
           />
         )}
         {!authenticated ? (
-          <button className="deposit-btn" onClick={() => { sounds.play("ui-click"); login(); }}>
-            <span>deposit to play</span>
+          <button
+            className="deposit-btn"
+            disabled={!ready}
+            aria-busy={!ready}
+            onClick={() => {
+              sounds.play("ui-click");
+              if (!ready) {
+                onError?.("Login is still loading. Try again in a second.");
+                return;
+              }
+              login();
+            }}
+          >
+            <span>{ready ? "deposit to play" : "login loading"}</span>
             <span className="deposit-arrow" aria-hidden="true">›</span>
           </button>
         ) : (
@@ -723,27 +695,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 setProfileMenuOpen(false);
               }}
             />
-            {showUsernameNudge && (
-              <div className="username-nudge" role="status">
-                <button
-                  type="button"
-                  className="username-nudge-cta"
-                  onClick={openUsernameEditor}
-                  title="Pick a name to appear on the hiscore.me leaderboard"
-                >
-                  <span className="username-nudge-spark" aria-hidden="true">★</span>
-                  <span className="username-nudge-text">pick a name</span>
-                </button>
-                <button
-                  type="button"
-                  className="username-nudge-dismiss"
-                  onClick={dismissUsernameNudge}
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </div>
-            )}
             <div
               className={`gas-pill ${hasGas ? "ok" : "warn"}`}
               title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
