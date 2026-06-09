@@ -1423,6 +1423,12 @@ async def add_trade_margin(
             f"tx_hash={tx_hash} before={before_collateral} amount={amount} "
             f"collateral={collateral}"
         )
+    if collateral > before_collateral:
+        persistence.update_current_collateral(
+            wallet_address=user.address,
+            trade_index=int(target.trade.trade_index),
+            current_collateral_usdc=round(collateral, 6),
+        )
     return AddMarginResponse(
         trade_index=int(target.trade.trade_index),
         avantis_pair_index=int(target.trade.pair_index),
@@ -1630,6 +1636,7 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
                 wallet_address=user.address,
                 trade_index=local_trade_index or -1,
                 reason="replaced-by-avantis-active",
+                finalize_as_liquidation=True,
             )
             print(
                 f"[trade/active] stale local session reconciled wallet={user.address} "
@@ -1656,6 +1663,7 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
                 wallet_address=user.address,
                 trade_index=trade_index,
                 reason="avantis-empty",
+                finalize_as_liquidation=True,
             )
         print(
             f"[trade/active] stale local session reconciled wallet={user.address} "

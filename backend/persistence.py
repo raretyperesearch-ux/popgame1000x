@@ -135,6 +135,7 @@ def record_open(
         "wager_usdc": wager_usdc,
         "house_fee_usdc": house_fee_usdc,
         "collateral_usdc": collateral_usdc,
+        "current_collateral_usdc": collateral_usdc,
         "entry_price": entry_price,
         "liquidation_price": liquidation_price,
         "opened_at": _iso(opened_at),
@@ -322,17 +323,90 @@ def opening_session_for_wallet(wallet_address: str) -> Optional[dict]:
     return None
 
 
-def mark_stale_open_reconciled(*, wallet_address: str, trade_index: int, reason: str) -> bool:
+def update_current_collateral(
+    *,
+    wallet_address: str,
+    trade_index: int,
+    current_collateral_usdc: float,
+) -> bool:
+    """Track current margin separately from open collateral.
+
+    `collateral_usdc` is intentionally the open collateral because it defines
+    original notional. This field lets later reconciliation record the real
+    at-risk amount after add-fuel deposits.
+    """
+    if not is_enabled():
+        return False
+    try:
+        _client.table(_TABLE).update(
+            {"current_collateral_usdc": current_collateral_usdc}
+        ).eq("wallet_address", wallet_address.lower()).eq(
+            "trade_index", trade_index
+        ).is_("closed_at", "null").execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"[persistence] update_current_collateral failed "
+            f"for {wallet_address} #{trade_index}: {e}"
+        )
+        return False
+
+
+def _open_row_for_index(wallet_address: str, trade_index: int) -> Optional[dict]:
+    if not is_enabled():
+        return None
+    try:
+        res = (
+            _client.table(_TABLE)
+            .select("*")
+            .eq("wallet_address", wallet_address.lower())
+            .eq("trade_index", trade_index)
+            .is_("closed_at", "null")
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return dict(res.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] open row lookup failed for {wallet_address} #{trade_index}: {e}")
+    return None
+
+
+def mark_stale_open_reconciled(
+    *,
+    wallet_address: str,
+    trade_index: int,
+    reason: str,
+    finalize_as_liquidation: bool = False,
+) -> bool:
     """Close a stale local open row when Avantis no longer has it open."""
     if not is_enabled():
         return False
     try:
         now = _iso(datetime.now(timezone.utc))
+        patch = {
+            "closed_at": now,
+            "close_tx_hash": f"reconciled-stale:{reason}",
+        }
+        if finalize_as_liquidation:
+            row = _open_row_for_index(wallet_address, trade_index) or {}
+            collateral = float(
+                row.get("current_collateral_usdc")
+                or row.get("collateral_usdc")
+                or 0
+            )
+            liquidation_price = row.get("liquidation_price")
+            patch.update(
+                {
+                    "exit_price": liquidation_price,
+                    "gross_pnl_usdc": round(-collateral, 6),
+                    "avantis_win_fee_usdc": 0,
+                    "net_pnl_usdc": round(-collateral, 6),
+                    "was_liquidated": True,
+                }
+            )
         _client.table(_TABLE).update(
-            {
-                "closed_at": now,
-                "close_tx_hash": f"reconciled-stale:{reason}",
-            }
+            patch
         ).eq("wallet_address", wallet_address.lower()).eq(
             "trade_index", trade_index
         ).is_("closed_at", "null").execute()
@@ -523,7 +597,9 @@ def recent_trades_for(wallet_address: str, limit: int = 25) -> list[dict]:
             _client.table(_TABLE)
             .select("*")
             .eq("wallet_address", wallet_address.lower())
-            .order("opened_at", desc=True)
+            .not_.is_("closed_at", "null")
+            .not_.is_("net_pnl_usdc", "null")
+            .order("closed_at", desc=True)
             .limit(limit)
             .execute()
         )

@@ -684,6 +684,12 @@ button.h-tag:focus-visible {
   color: rgba(244,236,216,0.56);
   letter-spacing: 2px;
 }
+.pnl-readout-label small {
+  margin-left: 4px;
+  font-size: 0.75em;
+  color: rgba(255,176,79,0.72);
+  letter-spacing: 1px;
+}
 .pnl-readout-amount {
   white-space: nowrap;
 }
