@@ -16,6 +16,8 @@ import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotion
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
+const COLLATERAL_RATE = 0.975;
+const ADD_FUEL_DANGER_PNL_RATIO = 0.75;
 const FUEL_TOP_UPS = [
   { label: "+$5", amount: 5 },
   { label: "+$25", amount: 25 },
@@ -70,7 +72,6 @@ export default function Home() {
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [showPaperModeNotice, setShowPaperModeNotice] = useState(false);
-  const [lowFuelPrompt, setLowFuelPrompt] = useState(false);
   const [fuelTankOpen, setFuelTankOpen] = useState(false);
   const [fuelTankAmount, setFuelTankAmount] = useState(5);
   const [customFuelAmount, setCustomFuelAmount] = useState("50");
@@ -137,20 +138,22 @@ export default function Home() {
   const needsFuel = isConnected && fuelShortfall > 0;
   const displayedFuelShortfall = fuelPreview && !needsFuel ? 96.95 : fuelShortfall;
   const showLowFuelPreview = fuelPreview && gameState === "IDLE";
-  const showFuelPanel = (needsFuel && (lowFuelPrompt || gameState === "IDLE")) || showLowFuelPreview;
+  const positionCollateral = wager * COLLATERAL_RATE;
+  const nearLiquidationFuelAlert =
+    (gameState === "LIVE" || gameState === "STOPPED") &&
+    pnl !== null &&
+    positionCollateral > 0 &&
+    pnl <= -(positionCollateral * ADD_FUEL_DANGER_PNL_RATIO);
+  const showFuelPanel = (needsFuel && nearLiquidationFuelAlert) || showLowFuelPreview;
 
   const flashAddFuelButton = useCallback(() => {
     setAddFuelPulseKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
-    if (!needsFuel || gameState !== "IDLE" || openInFlight || activeRecovery) return;
+    if (!needsFuel || !nearLiquidationFuelAlert || openInFlight || activeRecovery) return;
     flashAddFuelButton();
-  }, [needsFuel, wager, gameState, openInFlight, activeRecovery, flashAddFuelButton]);
-
-  useEffect(() => {
-    if (!needsFuel) setLowFuelPrompt(false);
-  }, [needsFuel]);
+  }, [needsFuel, nearLiquidationFuelAlert, openInFlight, activeRecovery, flashAddFuelButton]);
 
   useEffect(() => {
     if (!fuelPreview || needsFuel) return;
@@ -160,12 +163,10 @@ export default function Home() {
   const openFuelTank = useCallback(() => {
     setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
     setFuelTankOpen(true);
-    setLowFuelPrompt(false);
   }, [displayedFuelShortfall]);
 
   const fundFromFuelTank = useCallback(() => {
     window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fuelTankAmount } }));
-    setLowFuelPrompt(false);
     setFuelTankOpen(false);
   }, [fuelTankAmount]);
 
@@ -191,7 +192,6 @@ export default function Home() {
   const showLowFuelPrompt = useCallback(() => {
     sounds.play("ui-click");
     setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
-    setLowFuelPrompt(true);
     flashAddFuelButton();
   }, [displayedFuelShortfall, flashAddFuelButton]);
 
