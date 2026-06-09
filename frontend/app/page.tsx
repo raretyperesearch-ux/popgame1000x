@@ -9,11 +9,14 @@ import GameScene, { type GameSceneHandle, type TradeDirection } from "./componen
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade, getHistory, type HistoryTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type PlayMode = "live" | "demo";
+
+const DEMO_WAGER_USDC = 100;
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -47,6 +50,7 @@ export default function Home() {
   const [wager, setWager] = useState(100);
   const [direction, setDirection] = useState<TradeDirection>("long");
   const [gameState, setGameState] = useState<GameState>("IDLE");
+  const [playMode, setPlayMode] = useState<PlayMode>("live");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
   /* Bumped after every trade close so the topbar Leaderboard picks up
@@ -55,6 +59,7 @@ export default function Home() {
   const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
+  const [liveTradeReady, setLiveTradeReady] = useState(true);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -114,6 +119,7 @@ export default function Home() {
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
+  const isConnected = authenticated && Boolean(walletAddress);
 
   useEffect(() => {
     if (!paperMode) {
@@ -261,83 +267,103 @@ export default function Home() {
     setLeaderboardRefreshKey((k) => k + 1);
   }, []);
 
+  const waitForLiveTrade = useCallback(async (sessionId: string) => {
+    for (let i = 0; i < 24; i += 1) {
+      const status = await getTradeStatus(sessionId, getAccessToken, walletAddress);
+      if (status.status === "live" && status.entry_price && (status.liquidation_price || status.liq_price)) {
+        return status;
+      }
+      if (status.status === "failed_open") {
+        throw new Error(status.error || "Trade failed to open on Avantis.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error("Trade is still opening on Avantis. Try again in a moment.");
+  }, [getAccessToken, walletAddress]);
+
   const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
     const activeDirection = actionDirection ?? direction;
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
-      // No client-side balance gate on the wager — let the user pick any
-      // amount they want, then surface a clear "needs more USDC" hint
-      // when they're short rather than silently no-op'ing the JUMP.
+      if (!isConnected) {
+        setPlayMode("demo");
+        gameRef.current?.startJump(
+          leverage,
+          DEMO_WAGER_USDC,
+          0,
+          0,
+          activeDirection,
+        );
+        return;
+      }
+      setPlayMode("live");
+      // No client-side live open when the selected wager is underfunded:
+      // keep JUMP/DIVE visible, but route the connected user to funding
+      // instead of silently starting a demo or hitting /trade/open.
       if (wager > balance) {
         const need = (wager - balance).toFixed(2);
+        sounds.play("ui-click");
+        window.dispatchEvent(new Event("popgame:fund-usdc"));
         showTradeError(
-          `Not enough USDC for a $${wager} wager — need $${need} more to ${
-            activeDirection === "short" ? "dive" : "jump"
-          }.`,
+          `Deposit To Play Live — need $${need} for this wager. Lower wager or deposit.`,
         );
         return;
       }
       setOpenInFlight(true);
+      setLiveTradeReady(false);
+      gameRef.current?.startJump(leverage, wager, 0, 0, activeDirection);
       try {
-        let entryPrice = 0;
-        let liquidationPrice = 0;
-        let tradeOk = true;
-        if (!paperMode) {
+        const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
+        let entryPrice = trade.entry_price;
+        let liquidationPrice = trade.liquidation_price;
+        if ((trade.status ?? "live") === "opening") {
+          const live = await waitForLiveTrade(trade.session_id || trade.tx_hash);
+          entryPrice = live.entry_price;
+          liquidationPrice = live.liquidation_price ?? live.liq_price;
+        }
+        if (!entryPrice || !liquidationPrice) {
+          throw new Error("Trade opened but Avantis entry/liquidation prices were not available yet.");
+        }
+        setBalance((prev) => prev - wager);
+        gameRef.current?.confirmTrade(entryPrice, liquidationPrice);
+        setLiveTradeReady(true);
+      } catch (e) {
+        setLiveTradeReady(true);
+        gameRef.current?.cancelLaunch();
+        // apiFetch's "API <status>: <body>" format — pull the JSON
+        // detail out so we can show something readable.
+        const raw = e instanceof Error ? e.message : String(e);
+        const statusMatch = raw.match(/^API (\d+):/);
+        const status = statusMatch ? Number(statusMatch[1]) : 0;
+        let detail = raw;
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
           try {
-            const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
-            entryPrice = trade.entry_price;
-            liquidationPrice = trade.liquidation_price;
-          } catch (e) {
-            tradeOk = false;
-          // apiFetch's "API <status>: <body>" format — pull the JSON
-          // detail out so we can show something readable.
-          const raw = e instanceof Error ? e.message : String(e);
-          const statusMatch = raw.match(/^API (\d+):/);
-          const status = statusMatch ? Number(statusMatch[1]) : 0;
-          let detail = raw;
-          const jsonMatch = raw.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
-              if (parsed.detail) detail = parsed.detail;
-            } catch { /* fall through */ }
-          }
-          if (status === 409) {
-            // Existing open trade — common when a previous round's
-            // close didn't land cleanly (network blip, browser closed
-            // mid-settle). Pin the banner with a recovery button.
-            showStuckTradeError(detail.slice(0, 240));
-          } else if (status === 402 || status === 504 || status === 502) {
-            // 402: needs ETH for gas.
-            // 504: Privy signer timeout (delegation usually). 502: Privy
-            // returned an error (insufficient funds, bad signature, etc).
-            // All three backend messages are user-readable; surface
-            // verbatim. Truncate just to keep the banner from blowing up.
-            showTradeError(detail.slice(0, 240));
-          } else if (status === 0) {
-            // No HTTP status — fetch itself failed (CORS, server reset,
-            // browser closed connection). Tell the user to retry rather
-            // than the unhelpful raw "Failed to fetch".
-            showTradeError(
-              "Lost connection to the trade server. Try again in a moment.",
-            );
-          } else {
-            showTradeError(`Trade didn't land (${status}): ${detail.slice(0, 200)}`);
-          }
-            console.warn("[trade] openTrade failed:", e);
-          }
+            const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
+            if (parsed.detail) detail = parsed.detail;
+          } catch { /* fall through */ }
         }
-        if (tradeOk) {
-          setBalance((prev) => prev - wager);
-          gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice, activeDirection);
+        if (status === 409) {
+          showStuckTradeError(detail.slice(0, 240));
+        } else if (status === 402 || status === 504 || status === 502) {
+          showTradeError(detail.slice(0, 240));
+        } else if (status === 0) {
+          showTradeError(`TRADE FAILED TO OPEN — ${detail.slice(0, 200)}`);
+        } else {
+          showTradeError(`TRADE FAILED TO OPEN (${status}): ${detail.slice(0, 200)}`);
         }
+        console.warn("[trade] openTrade failed:", e);
       } finally {
         setOpenInFlight(false);
       }
     } else if (gameState === "LIVE") {
+      if (!liveTradeReady) {
+        showTradeError("Still opening trade — confirming on Avantis before close is enabled.");
+        return;
+      }
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, liveTradeReady, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -380,6 +406,8 @@ export default function Home() {
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
         paperMode={paperMode}
+        playMode={playMode}
+        onDemoEnd={() => setPlayMode("live")}
         pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
@@ -391,6 +419,8 @@ export default function Home() {
         direction={direction}
         busy={openInFlight}
         state={gameState}
+        isConnected={isConnected}
+        liveTradeReady={liveTradeReady}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAction={handleAction}
