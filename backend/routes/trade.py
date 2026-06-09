@@ -1019,7 +1019,7 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     timer.mark("close tx sent", tx_hash=tx_hash)
 
     balance_after = balance_before
-    balance_poll_tries = 1 if was_liquidated else 5
+    balance_poll_tries = 8
     for attempt in range(balance_poll_tries):
         balance_after = await client.get_usdc_balance(user.address)
         if balance_after != balance_before:

@@ -2750,7 +2750,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         );
         const liquidatedByPnl = LOCAL_MOCK_MODE
           ? pnlPct <= MOCK_LIQUIDATION_PNL_FLOOR
-          : pnlPct <= -1;
+          : false;
         if (crossedCrashLine || liquidatedByPnl) {
           splat();
         }
