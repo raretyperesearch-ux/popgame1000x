@@ -1858,7 +1858,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       : withTimeout(forceCloseTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] forceCloseTrade failed — close remains retryable:", e);
+            console.warn("[trade] forceCloseTrade failed — showing optimistic liquidation:", e);
             return { ok: false as const };
           });
     Promise.all([settleReq, minDelay]).then(([result]) => {
@@ -1872,11 +1872,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
       } else {
-        a.settleInFlight = false;
-        onSettlingChange?.(false);
-        a.flightBubble = { text: "CLOSE PENDING · RETRY", start: performance.now(), until: performance.now() + 3200 };
-        onError?.("Close Pending — Retry Close. Final PnL will show after the real close succeeds.");
+        onError?.("Liquidation shown locally. Refresh recovery will check the chain state.");
         console.info("[trade/close-ui] close response received", { kind: "force-close", ok: false });
+        settleAndShow(pnlDollarsOptimistic, -1, entry, null);
       }
     });
   }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);

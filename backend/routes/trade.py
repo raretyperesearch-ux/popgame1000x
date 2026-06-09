@@ -995,11 +995,17 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
         raise
     timer.mark("Avantis close tx built", trade_index=target.trade.trade_index)
 
-    if _is_legacy_user(user):
-        receipt = await client.sign_and_get_receipt(close_tx)
-        tx_hash = _tx_hash_str(receipt)
-    else:
-        tx_hash = await _send_user_tx(user, close_tx)
+    try:
+        if _is_legacy_user(user):
+            receipt = await client.sign_and_get_receipt(close_tx)
+            tx_hash = _tx_hash_str(receipt)
+        else:
+            tx_hash = await _send_user_tx(user, close_tx)
+    except Exception as exc:
+        if was_liquidated:
+            timer.mark("liquidation close tx send failed", error=str(exc)[:160])
+            return _liquidation_close_response(target, user, feed_price_at_close, timer)
+        raise
     timer.mark("close tx sent", tx_hash=tx_hash)
 
     balance_after = balance_before

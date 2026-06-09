@@ -17,7 +17,7 @@ import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotion
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
 const COLLATERAL_RATE = 0.975;
-const ADD_FUEL_DANGER_PNL_RATIO = 0.75;
+const ADD_FUEL_DANGER_PNL_RATIO = 0.6;
 const FUEL_TOP_UPS = [
   { label: "+$5", amount: 5 },
   { label: "+$25", amount: 25 },
