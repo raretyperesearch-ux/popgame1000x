@@ -662,21 +662,23 @@ export default function Home() {
               className={`low-fuel-chip${customFuelSelected ? " active" : ""}`}
               onClick={selectCustomFuel}
             >
-              CUSTOM
+              {customFuelSelected ? (
+                <span className="low-fuel-custom-inline" onClick={(e) => e.stopPropagation()}>
+                  <span>$</span>
+                  <input
+                    value={customFuelAmount}
+                    onChange={(e) => changeCustomFuel(e.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    aria-label="Custom fuel amount"
+                    autoFocus
+                  />
+                </span>
+              ) : (
+                "CUSTOM"
+              )}
             </button>
           </div>
-          {customFuelSelected && (
-            <label className="low-fuel-custom">
-              <span>$</span>
-              <input
-                value={customFuelAmount}
-                onChange={(e) => changeCustomFuel(e.target.value)}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                aria-label="Custom fuel amount"
-              />
-            </label>
-          )}
           <div className="low-fuel-actions">
             <button type="button" className="low-fuel-action primary" onClick={fundFromFuelTank}>
               ADD ${fuelTankAmount}
