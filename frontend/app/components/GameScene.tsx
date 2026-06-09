@@ -100,10 +100,11 @@ const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
-// Keep normal losing trades visually away from the red liquidation/surface line;
-// the gap fades out only as the real feed approaches liquidation danger.
-const LIQUIDATION_LINE_SAFE_GAP_PX = 36;
-const LIQUIDATION_DANGER_THRESHOLD = 0.82;
+// Avantis opens with a tight spread, so the runner starts close to ENTRY
+// and then separates from that neutral line as real mark-price/PnL moves.
+const ENTRY_LINE_SPAWN_OFFSET_PX = 8;
+const PNL_Y_SCALE = 0.72;
+const ENTRY_PRICE_ANCHOR_LERP = 0.045;
 const PARACHUTE_MIN_AIR_GAP_PX = 48;
 const HUD_NO_FLY_GAP_PX = 22;
 type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "boost" | "fall" | "land" | "parachute" | "fail";
@@ -2391,8 +2392,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
                 ? a.entry + a.entry / a.positionLev
                 : a.entry - a.entry / a.positionLev;
           a.tradeStartTime = time;
-          a.figPrice = a.price;
-          a.figPriceVel = 0.08;
+          a.figPrice = a.entry;
+          a.smoothFigPrice = a.entry;
+          a.figPriceVel = 0;
+          if (priceToY) {
+            const entryLineY = priceToY(a.entry);
+            const openingY = entryLineY
+              + (a.tradeDirection === "short" ? ENTRY_LINE_SPAWN_OFFSET_PX : -ENTRY_LINE_SPAWN_OFFSET_PX);
+            a.smoothAlt = a.stageH - clamp(openingY, 0, a.stageH);
+          }
           a.smoothDelta = 0;
           a.flightPose = "air";
           a.frame = 0;
@@ -2452,6 +2460,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
+        const pnlAnchoredPrice = a.entry + (a.price - a.entry) * PNL_Y_SCALE;
+        a.figPrice = lerp(a.figPrice, pnlAnchoredPrice, ENTRY_PRICE_ANCHOR_LERP * dtNorm);
 
         /* figPrice is the visual flight path. Crashing the figure into the
            ground is reserved for real liquidations (a.price crossing the
