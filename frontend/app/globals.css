@@ -2120,6 +2120,231 @@ button.h-tag:focus-visible {
   text-shadow: 0 2px 0 rgba(0,0,0,0.72);
 }
 
+.add-fuel-slot {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-height: 118px;
+  padding: 9px 10px 10px;
+  border: 2px solid #ff3b30;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(255,59,48,0.32), transparent 28%),
+    radial-gradient(circle at 86% 0%, rgba(255,176,0,0.25), transparent 26%),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, rgba(12,36,16,0.98), rgba(5,14,9,0.99));
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.16),
+    inset 0 -5px 0 rgba(0,0,0,0.48),
+    0 4px 0 rgba(0,0,0,0.56),
+    0 0 20px rgba(255,59,48,0.62),
+    0 0 36px rgba(217,255,57,0.2);
+  animation:
+    add-fuel-slot-bump 0.24s ease-out,
+    add-fuel-slot-alarm 0.7s steps(2, end) 4;
+}
+.add-fuel-slot::before,
+.add-fuel-slot::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  width: 24px;
+  height: 24px;
+  background-image: url("/assets/ui/add-fuel-slot-siren-sheet.png");
+  background-repeat: no-repeat;
+  background-size: 96px 24px;
+  image-rendering: pixelated;
+  animation: add-fuel-slot-siren-strip 0.32s steps(4) infinite;
+  filter:
+    drop-shadow(0 0 7px rgba(255,59,48,0.92))
+    drop-shadow(0 0 10px rgba(255,176,0,0.44));
+  pointer-events: none;
+}
+.add-fuel-slot::before {
+  left: 9px;
+}
+.add-fuel-slot::after {
+  right: 9px;
+  transform: scaleX(-1);
+}
+.add-fuel-slot-copy {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-areas:
+    "siren title"
+    "siren sub";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+  padding: 1px 26px 0;
+  font-family: 'Press Start 2P', monospace;
+  text-transform: uppercase;
+}
+.add-fuel-slot-siren {
+  grid-area: siren;
+  width: 30px;
+  height: 30px;
+  background-image: url("/assets/ui/add-fuel-slot-siren-sheet.png");
+  background-repeat: no-repeat;
+  background-size: 120px 30px;
+  image-rendering: pixelated;
+  animation: add-fuel-slot-siren-strip-main 0.32s steps(4) infinite;
+  filter:
+    drop-shadow(0 0 8px rgba(255,176,0,0.55))
+    drop-shadow(0 0 9px rgba(255,59,48,0.48));
+}
+.add-fuel-slot-copy strong {
+  grid-area: title;
+  color: #d9ff39;
+  font-size: 10px;
+  line-height: 1.2;
+  text-shadow: 0 3px 0 rgba(0,0,0,0.74), 0 0 14px rgba(217,255,57,0.54);
+}
+.add-fuel-slot-copy span:last-child {
+  grid-area: sub;
+  color: #ffb04f;
+  font-size: 6px;
+  line-height: 1.35;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72), 0 0 10px rgba(255,126,31,0.32);
+}
+.add-fuel-slot-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.add-fuel-slot-chip {
+  min-height: 28px;
+  min-width: 0;
+  border: 2px solid rgba(255,241,116,0.42);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(95,113,133,0.28), rgba(21,27,36,0.94)),
+    #111823;
+  color: rgba(244,236,216,0.86);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.11),
+    inset 0 -3px 0 rgba(0,0,0,0.45);
+}
+.add-fuel-slot-chip.active {
+  border-color: #fff174;
+  color: #fff174;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255,221,40,0.34), transparent 48%),
+    linear-gradient(180deg, rgba(112,75,0,0.9), rgba(37,25,0,0.96)),
+    #2b1c02;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.16),
+    inset 0 -3px 0 rgba(0,0,0,0.48),
+    0 0 12px rgba(255,217,102,0.34);
+}
+.add-fuel-slot-custom {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  color: #fff174;
+}
+.add-fuel-slot-custom input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff7b2;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72);
+}
+.add-fuel-slot-primary {
+  position: relative;
+  min-height: 34px;
+  width: 100%;
+  overflow: hidden;
+  border: 2px solid #ff3b30;
+  border-radius: 7px;
+  padding: 4px 28px 5px;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.18), transparent 20%, transparent 80%, rgba(255,255,255,0.12)),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.12) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, #ffb000 0%, #ff3b30 52%, #72070c 100%);
+  color: #fff7b2;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.32),
+    inset 0 -5px 0 rgba(74,0,0,0.7),
+    0 0 18px rgba(255,59,48,0.62);
+  text-shadow:
+    0 2px 0 rgba(72,0,0,0.82),
+    0 0 8px rgba(255,255,255,0.42);
+  animation:
+    add-fuel-emergency-shake 0.22s steps(2, end) infinite,
+    add-fuel-pulse 0.8s ease-in-out infinite;
+}
+.add-fuel-slot-primary::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translateY(-50%);
+  background-image: url("/assets/ui/add-fuel-slot-siren-sheet.png");
+  background-repeat: no-repeat;
+  background-size: 80px 20px;
+  image-rendering: pixelated;
+  animation: add-fuel-slot-siren-strip-cta 0.32s steps(4) infinite;
+  filter: drop-shadow(0 0 6px rgba(255,59,48,0.9));
+}
+@keyframes add-fuel-slot-siren-strip {
+  from { background-position: 0 0; }
+  to { background-position: -96px 0; }
+}
+@keyframes add-fuel-slot-siren-strip-main {
+  from { background-position: 0 0; }
+  to { background-position: -120px 0; }
+}
+@keyframes add-fuel-slot-siren-strip-cta {
+  from { background-position: 0 0; }
+  to { background-position: -80px 0; }
+}
+@keyframes add-fuel-slot-bump {
+  0% { transform: scale(0.97) rotate(-0.5deg); }
+  45% { transform: scale(1.02) rotate(0.6deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes add-fuel-slot-alarm {
+  0%, 100% {
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,0.16),
+      inset 0 -5px 0 rgba(0,0,0,0.48),
+      0 4px 0 rgba(0,0,0,0.56),
+      0 0 20px rgba(255,59,48,0.62),
+      0 0 36px rgba(217,255,57,0.2);
+  }
+  50% {
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,0.23),
+      inset 0 -5px 0 rgba(0,0,0,0.48),
+      0 4px 0 rgba(0,0,0,0.56),
+      0 0 30px rgba(255,59,48,0.9),
+      0 0 48px rgba(255,176,0,0.38);
+  }
+}
+
 .low-fuel-popover {
   position: fixed;
   left: 50%;

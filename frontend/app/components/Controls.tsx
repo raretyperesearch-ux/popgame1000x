@@ -18,13 +18,26 @@ interface ControlsProps {
   liveTradeReady?: boolean;
   settling?: boolean;
   addFuelPulseKey?: number;
+  showFuelPanel?: boolean;
+  fuelShortfall?: number;
+  fuelTankAmount?: number;
+  customFuelAmount?: string;
+  customFuelSelected?: boolean;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
   onAddFuel?: () => void;
+  onSelectFuelAmount?: (amount: number) => void;
+  onSelectCustomFuel?: () => void;
+  onCustomFuelChange?: (value: string) => void;
+  onFundFuel?: () => void;
   onAction: (direction?: TradeDirection) => void;
 }
 
 const CHIPS = [1, 25, 100, 1000];
+const LOW_FUEL_TOP_UPS = [
+  { label: "+$5", amount: 5 },
+  { label: "+$25", amount: 25 },
+];
 
 export default function Controls({
   leverage,
@@ -38,9 +51,18 @@ export default function Controls({
   liveTradeReady = true,
   settling = false,
   addFuelPulseKey = 0,
+  showFuelPanel = false,
+  fuelShortfall = 0,
+  fuelTankAmount = 5,
+  customFuelAmount = "50",
+  customFuelSelected = false,
   onLeverageChange,
   onWagerChange,
   onAddFuel,
+  onSelectFuelAmount,
+  onSelectCustomFuel,
+  onCustomFuelChange,
+  onFundFuel,
   onAction,
 }: ControlsProps) {
   const opening = busy && state === "IDLE";
@@ -87,6 +109,7 @@ export default function Controls({
   const needsFunding = isConnected && wager > balance;
   const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
   const fundingShortfall = Math.max(0, wager - balance);
+  const displayShortfall = showFuelPanel ? fuelShortfall : fundingShortfall;
 
   return (
     <div className="controls">
@@ -136,7 +159,7 @@ export default function Controls({
             </button>
           ))}
         </div>
-        {needsFunding && (
+        {needsFunding && !showFuelPanel && (
           <div className="fuel-helper-row">
             <span />
             <button
@@ -149,7 +172,51 @@ export default function Controls({
             </button>
           </div>
         )}
-        {showSplitAction ? (
+        {showFuelPanel ? (
+          <div key={addFuelPulseKey} className="add-fuel-slot" role="dialog" aria-label="Add fuel">
+            <div className="add-fuel-slot-copy">
+              <span className="add-fuel-slot-siren" aria-hidden="true" />
+              <strong>ADD FUEL</strong>
+              <span>Need ${displayShortfall.toFixed(2)} more</span>
+            </div>
+            <div className="add-fuel-slot-amounts" aria-label="Fuel top-up amount">
+              {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={`add-fuel-slot-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
+                  onClick={() => onSelectFuelAmount?.(amount)}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`add-fuel-slot-chip${customFuelSelected ? " active" : ""}`}
+                onClick={onSelectCustomFuel}
+              >
+                {customFuelSelected ? (
+                  <span className="add-fuel-slot-custom" onClick={(e) => e.stopPropagation()}>
+                    <span>$</span>
+                    <input
+                      value={customFuelAmount}
+                      onChange={(e) => onCustomFuelChange?.(e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      aria-label="Custom fuel amount"
+                      autoFocus
+                    />
+                  </span>
+                ) : (
+                  "CUSTOM"
+                )}
+              </button>
+            </div>
+            <button type="button" className="add-fuel-slot-primary" onClick={onFundFuel ?? onAddFuel}>
+              ADD ${fuelTankAmount}
+            </button>
+          </div>
+        ) : showSplitAction ? (
           <>
             <div className="controls-action-hint">
               {!isConnected

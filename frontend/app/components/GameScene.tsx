@@ -545,6 +545,30 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     const a = anim.current;
+    const oldW = a.stageW;
+    const oldH = a.stageH;
+    if (oldW > 0 && oldH > 0 && (Math.abs(rect.width - oldW) > 1 || Math.abs(rect.height - oldH) > 1)) {
+      const sx = rect.width / oldW;
+      const sy = rect.height / oldH;
+      a.smoothAlt *= sy;
+      a.flagDisplayY = a.flagDisplayY >= 0 ? a.flagDisplayY * sy : a.flagDisplayY;
+      a.dustParticles = a.dustParticles.map((p) => ({
+        ...p,
+        x: p.x * sx,
+        y: p.y * sy,
+        vx: p.vx * sx,
+        vy: p.vy * sy,
+      }));
+      a.flightFx = [];
+      a.loco.bodyX *= sx;
+      a.loco.bodyY *= sy;
+      a.loco.velocityX *= sx;
+      a.loco.velocityY *= sy;
+      a.loco.leftFoot = { ...a.loco.leftFoot, x: a.loco.leftFoot.x * sx, y: a.loco.leftFoot.y * sy };
+      a.loco.rightFoot = { ...a.loco.rightFoot, x: a.loco.rightFoot.x * sx, y: a.loco.rightFoot.y * sy };
+      a.loco.leftTargetX *= sx;
+      a.loco.rightTargetX *= sx;
+    }
     a.stageW = rect.width;
     a.stageH = rect.height;
     const terrainCount = Math.max(a.terrainPoints.length || 0, a.prices.length || TOTAL_POINTS);
@@ -2785,7 +2809,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     setSpriteState("idle");
     const handleResize = () => resizeCanvas();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.visualViewport?.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.visualViewport?.removeEventListener("resize", handleResize);
+    };
   }, [resizeCanvas, setSpriteState]);
 
   /* ============ SPRITE IMAGE LOAD ============ */

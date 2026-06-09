@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import Topbar from "./components/Topbar";
@@ -22,7 +21,6 @@ const FUEL_TOP_UPS = [
   { label: "+$25", amount: 25 },
   { label: "+$100", amount: 100 },
 ];
-const LOW_FUEL_TOP_UPS = FUEL_TOP_UPS.slice(0, 2);
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -78,7 +76,6 @@ export default function Home() {
   const [customFuelAmount, setCustomFuelAmount] = useState("50");
   const [customFuelSelected, setCustomFuelSelected] = useState(false);
   const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
-  const [lowFuelBumpKey, setLowFuelBumpKey] = useState(0);
   const [fuelPreview, setFuelPreview] = useState(false);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTradeError = useCallback((msg: string) => {
@@ -140,6 +137,7 @@ export default function Home() {
   const needsFuel = isConnected && fuelShortfall > 0;
   const displayedFuelShortfall = fuelPreview && !needsFuel ? 96.95 : fuelShortfall;
   const showLowFuelPreview = fuelPreview && gameState === "IDLE";
+  const showFuelPanel = (lowFuelPrompt && needsFuel) || showLowFuelPreview;
 
   const flashAddFuelButton = useCallback(() => {
     setAddFuelPulseKey((k) => k + 1);
@@ -194,7 +192,6 @@ export default function Home() {
     sounds.play("ui-click");
     setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
     setLowFuelPrompt(true);
-    setLowFuelBumpKey((k) => k + 1);
     flashAddFuelButton();
   }, [displayedFuelShortfall, flashAddFuelButton]);
 
@@ -620,72 +617,20 @@ export default function Home() {
         liveTradeReady={liveTradeReady}
         settling={settling}
         addFuelPulseKey={addFuelPulseKey}
+        showFuelPanel={showFuelPanel}
+        fuelShortfall={displayedFuelShortfall}
+        fuelTankAmount={fuelTankAmount}
+        customFuelAmount={customFuelAmount}
+        customFuelSelected={customFuelSelected}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAddFuel={openFuelTank}
+        onSelectFuelAmount={selectFuelAmount}
+        onSelectCustomFuel={selectCustomFuel}
+        onCustomFuelChange={changeCustomFuel}
+        onFundFuel={fundFromFuelTank}
         onAction={handleAction}
       />
-      {((lowFuelPrompt && needsFuel) || showLowFuelPreview) && (
-        <div key={lowFuelBumpKey} className="low-fuel-popover" role="dialog" aria-label="Add fuel">
-          <button
-            type="button"
-            className="low-fuel-close"
-            onClick={() => setLowFuelPrompt(false)}
-            aria-label="Dismiss low fuel prompt"
-          >
-            ×
-          </button>
-          <div className="low-fuel-copy">
-            <Image
-              src="/assets/ui/fuel-canister.png"
-              alt=""
-              className="low-fuel-canister"
-              width={128}
-              height={128}
-            />
-            <strong>ADD FUEL</strong>
-            <span>Need ${displayedFuelShortfall.toFixed(2)} more</span>
-          </div>
-          <div className="low-fuel-amounts" aria-label="Fuel top-up amount">
-            {LOW_FUEL_TOP_UPS.map(({ label, amount }) => (
-              <button
-                key={label}
-                type="button"
-                className={`low-fuel-chip${!customFuelSelected && fuelTankAmount === amount ? " active" : ""}`}
-                onClick={() => selectFuelAmount(amount)}
-              >
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              className={`low-fuel-chip${customFuelSelected ? " active" : ""}`}
-              onClick={selectCustomFuel}
-            >
-              {customFuelSelected ? (
-                <span className="low-fuel-custom-inline" onClick={(e) => e.stopPropagation()}>
-                  <span>$</span>
-                  <input
-                    value={customFuelAmount}
-                    onChange={(e) => changeCustomFuel(e.target.value)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    aria-label="Custom fuel amount"
-                    autoFocus
-                  />
-                </span>
-              ) : (
-                "CUSTOM"
-              )}
-            </button>
-          </div>
-          <div className="low-fuel-actions">
-            <button type="button" className="low-fuel-action primary" onClick={fundFromFuelTank}>
-              ADD ${fuelTankAmount}
-            </button>
-          </div>
-        </div>
-      )}
       {fuelTankOpen && (
         <div className="fuel-tank-modal" role="dialog" aria-modal="true" aria-labelledby="fuel-tank-title">
           <button
