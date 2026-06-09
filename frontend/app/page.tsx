@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import Topbar from "./components/Topbar";
@@ -17,7 +16,11 @@ import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotion
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
-const FUEL_PRESETS = [1, 25, 100, 1000];
+const FUEL_TOP_UPS = [
+  { label: "+$5", amount: 5 },
+  { label: "+$25", amount: 25 },
+  { label: "+$100", amount: 100 },
+];
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -147,6 +150,11 @@ export default function Home() {
     if (!needsFuel) setLowFuelPrompt(false);
   }, [needsFuel]);
 
+  useEffect(() => {
+    if (!fuelPreview || needsFuel) return;
+    setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
+  }, [fuelPreview, needsFuel, displayedFuelShortfall]);
+
   const openFuelTank = useCallback(() => {
     setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
     setFuelTankOpen(true);
@@ -155,26 +163,17 @@ export default function Home() {
 
   const fundFromFuelTank = useCallback(() => {
     window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fuelTankAmount } }));
+    setLowFuelPrompt(false);
     setFuelTankOpen(false);
   }, [fuelTankAmount]);
 
-  const lowerFuel = useCallback(() => {
-    const affordable = FUEL_PRESETS.filter((amt) => amt <= balance);
-    if (affordable.length > 0) {
-      setWager(Math.max(...affordable));
-      setLowFuelPrompt(false);
-      return;
-    }
-    setWager(1);
-    flashAddFuelButton();
-  }, [balance, flashAddFuelButton]);
-
   const showLowFuelPrompt = useCallback(() => {
     sounds.play("ui-click");
+    setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
     setLowFuelPrompt(true);
     setLowFuelBumpKey((k) => k + 1);
     flashAddFuelButton();
-  }, [flashAddFuelButton]);
+  }, [displayedFuelShortfall, flashAddFuelButton]);
 
   useEffect(() => {
     if (!paperMode) {
@@ -604,7 +603,7 @@ export default function Home() {
         onAction={handleAction}
       />
       {((lowFuelPrompt && needsFuel) || showLowFuelPreview) && (
-        <div key={lowFuelBumpKey} className="low-fuel-popover" role="dialog" aria-label="Low fuel">
+        <div key={lowFuelBumpKey} className="low-fuel-popover" role="dialog" aria-label="Add fuel">
           <button
             type="button"
             className="low-fuel-close"
@@ -613,23 +612,28 @@ export default function Home() {
           >
             ×
           </button>
-          <Image
-            src="/assets/ui/low-fuel-sign.png"
-            alt=""
-            className="low-fuel-sign"
-            width={256}
-            height={256}
-          />
           <div className="low-fuel-copy">
-            <strong>LOW FUEL</strong>
+            <strong>ADD FUEL</strong>
             <span>Need ${displayedFuelShortfall.toFixed(2)} more</span>
           </div>
+          <div className="low-fuel-amounts" aria-label="Fuel top-up amount">
+            {[
+              ...FUEL_TOP_UPS,
+              { label: "NEED", amount: Math.max(5, Math.ceil(displayedFuelShortfall || 5)) },
+            ].map(({ label, amount }) => (
+              <button
+                key={label}
+                type="button"
+                className={`low-fuel-chip${fuelTankAmount === amount ? " active" : ""}`}
+                onClick={() => setFuelTankAmount(amount)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="low-fuel-actions">
-            <button type="button" className="low-fuel-action primary" onClick={openFuelTank}>
-              ADD FUEL
-            </button>
-            <button type="button" className="low-fuel-action" onClick={lowerFuel}>
-              LOWER FUEL
+            <button type="button" className="low-fuel-action primary" onClick={fundFromFuelTank}>
+              ADD ${fuelTankAmount}
             </button>
           </div>
         </div>
@@ -653,9 +657,7 @@ export default function Home() {
           </div>
           <div className="fuel-tank-buttons" aria-label="Funding shortcuts">
             {[
-              { label: "+$5", amount: 5 },
-              { label: "+$25", amount: 25 },
-              { label: "+$100", amount: 100 },
+              ...FUEL_TOP_UPS,
               { label: "MAX", amount: Math.max(5, Math.ceil(displayedFuelShortfall || wager)) },
             ].map(({ label, amount }) => (
               <button
