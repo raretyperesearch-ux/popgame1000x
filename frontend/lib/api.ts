@@ -1,17 +1,32 @@
 export type TradeDirection = "long" | "short";
 
+export type TradeOpenStatus = "opening" | "live" | "failed_open" | "closed";
+
 export interface OpenTradeResponse {
-  trade_index: number;
+  status?: TradeOpenStatus;
+  session_id?: string | null;
+  trade_index: number | null;
   avantis_pair_index: number;
   leverage: number;
   wager_usdc: number;
   house_fee_usdc: number;
   collateral_usdc: number;
-  entry_price: number;
-  liquidation_price: number;
+  entry_price: number | null;
+  liquidation_price: number | null;
   opened_at: string;
   tx_hash: string;
   is_long: boolean;
+}
+
+export interface TradeStatusResponse {
+  status: TradeOpenStatus;
+  session_id: string;
+  tx_hash: string;
+  trade_index: number | null;
+  entry_price: number | null;
+  liq_price: number | null;
+  liquidation_price: number | null;
+  error: string | null;
 }
 
 export interface CloseTradeResponse {
@@ -109,6 +124,8 @@ export async function openTrade(
       is_long,
     };
     return {
+      status: "live",
+      session_id: "0xstub",
       trade_index: 0,
       avantis_pair_index: 1,
       leverage,
@@ -128,6 +145,31 @@ export async function openTrade(
       method: "POST",
       body: JSON.stringify({ leverage, wager_usdc: wager, is_long: direction === "long" }),
     },
+    getAccessToken,
+    walletAddress,
+  );
+}
+
+export async function getTradeStatus(
+  sessionId: string,
+  getAccessToken?: () => Promise<string | null>,
+  walletAddress?: string,
+): Promise<TradeStatusResponse> {
+  if (isMock()) {
+    return {
+      status: mockTradeState ? "live" : "closed",
+      session_id: sessionId,
+      tx_hash: sessionId,
+      trade_index: mockTradeState?.trade_index ?? null,
+      entry_price: mockTradeState?.entry_price ?? null,
+      liq_price: mockTradeState?.liquidation_price ?? null,
+      liquidation_price: mockTradeState?.liquidation_price ?? null,
+      error: null,
+    };
+  }
+  return apiFetch<TradeStatusResponse>(
+    `/trade/session/${encodeURIComponent(sessionId)}`,
+    { method: "GET" },
     getAccessToken,
     walletAddress,
   );
