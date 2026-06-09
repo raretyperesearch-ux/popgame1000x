@@ -15,6 +15,7 @@ export interface EndOfGameData {
   boost: number;        // leverage multiplier, displayed as "Nx LONG ETH"
   wager: number;
   durationSeconds: number;
+  demo?: boolean;
 }
 
 interface Props {
@@ -237,7 +238,6 @@ async function renderShareImage(data: EndOfGameData): Promise<Blob | null> {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const copy = KIND_COPY[data.kind];
-
   // Background palette
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
   if (data.kind === "win") {
@@ -491,6 +491,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
   if (!data) return null;
   const copy = KIND_COPY[data.kind];
+  const isDemo = data.demo === true;
 
   const handleDownload = async () => {
     sounds.play("coin-clink");
@@ -537,8 +538,10 @@ export default function EndOfGameModal({ data, onClose }: Props) {
 
         <div className="eog-header">
           <div>
-            <div className="eog-title">END OF GAME</div>
-            <div className="eog-subtitle">{copy.subtitle}</div>
+            <div className="eog-title">{isDemo ? "PRACTICE RUN" : "END OF GAME"}</div>
+            <div className="eog-subtitle">
+              {isDemo ? "DEMO ONLY — NO REAL MONEY TRADE WAS OPENED." : copy.subtitle}
+            </div>
           </div>
           <div className={`eog-badge ${data.kind}`}>
             <BadgeIcon kind={data.kind} />
@@ -557,6 +560,12 @@ export default function EndOfGameModal({ data, onClose }: Props) {
             <div className="eog-pnl-pct">{fmtPct(data.pnlPct)}</div>
           </div>
         </div>
+
+        {isDemo && (
+          <div className="eog-demo-note">
+            practice PNL only · no Avantis trade · no house fee · no leaderboard impact
+          </div>
+        )}
 
         <div className="eog-stats">
           <div className="eog-stat">
@@ -579,10 +588,12 @@ export default function EndOfGameModal({ data, onClose }: Props) {
           </div>
         </div>
 
-        <div className="eog-actions">
-          <button className="eog-btn" onClick={handleShare}>SHARE</button>
-          <button className="eog-btn" onClick={handleDownload}>DOWNLOAD</button>
-          <button className="eog-btn primary" onClick={() => { sounds.play("ui-click"); onClose(); }}>CONTINUE</button>
+        <div className={`eog-actions${isDemo ? " demo" : ""}`}>
+          {!isDemo && <button className="eog-btn" onClick={handleShare}>SHARE</button>}
+          {!isDemo && <button className="eog-btn" onClick={handleDownload}>DOWNLOAD</button>}
+          <button className="eog-btn primary" onClick={() => { sounds.play("ui-click"); onClose(); }}>
+            {isDemo ? "CONNECT / FUND WALLET TO PLAY LIVE" : "CONTINUE"}
+          </button>
         </div>
       </div>
     </div>

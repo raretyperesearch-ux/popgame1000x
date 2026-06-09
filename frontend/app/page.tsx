@@ -14,6 +14,9 @@ import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type PlayMode = "live" | "demo";
+
+const DEMO_WAGER_USDC = 100;
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -47,6 +50,7 @@ export default function Home() {
   const [wager, setWager] = useState(100);
   const [direction, setDirection] = useState<TradeDirection>("long");
   const [gameState, setGameState] = useState<GameState>("IDLE");
+  const [playMode, setPlayMode] = useState<PlayMode>("live");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
   /* Bumped after every trade close so the topbar Leaderboard picks up
@@ -114,6 +118,7 @@ export default function Home() {
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
+  const isConnected = authenticated && Boolean(walletAddress);
 
   useEffect(() => {
     if (!paperMode) {
@@ -265,15 +270,27 @@ export default function Home() {
     const activeDirection = actionDirection ?? direction;
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
-      // No client-side balance gate on the wager — let the user pick any
-      // amount they want, then surface a clear "needs more USDC" hint
-      // when they're short rather than silently no-op'ing the JUMP.
+      if (!isConnected) {
+        setPlayMode("demo");
+        gameRef.current?.startJump(
+          leverage,
+          DEMO_WAGER_USDC,
+          0,
+          0,
+          activeDirection,
+        );
+        return;
+      }
+      setPlayMode("live");
+      // No client-side live open when the selected wager is underfunded:
+      // keep JUMP/DIVE visible, but route the connected user to funding
+      // instead of silently starting a demo or hitting /trade/open.
       if (wager > balance) {
         const need = (wager - balance).toFixed(2);
+        sounds.play("ui-click");
+        window.dispatchEvent(new Event("popgame:fund-usdc"));
         showTradeError(
-          `Not enough USDC for a $${wager} wager — need $${need} more to ${
-            activeDirection === "short" ? "dive" : "jump"
-          }.`,
+          `Deposit To Play Live — need $${need} for this wager. Lower wager or deposit.`,
         );
         return;
       }
@@ -337,7 +354,7 @@ export default function Home() {
     } else if (gameState === "LIVE") {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, isConnected, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -380,6 +397,8 @@ export default function Home() {
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
         paperMode={paperMode}
+        playMode={playMode}
+        onDemoEnd={() => setPlayMode("live")}
         pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
@@ -391,6 +410,7 @@ export default function Home() {
         direction={direction}
         busy={openInFlight}
         state={gameState}
+        isConnected={isConnected}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAction={handleAction}
