@@ -177,7 +177,7 @@ export default function Home() {
         setBalance((prev) => Math.max(0, prev - requestedAmount));
         const updatedWager = result.collateral_usdc / COLLATERAL_RATE;
         if (Number.isFinite(updatedWager) && updatedWager > 0) {
-          setWager((prev) => Math.max(prev, Math.round(updatedWager * 100) / 100));
+          setWager((prev) => Math.max(prev, updatedWager));
         }
         gameRef.current?.applyMarginUpdate(result.collateral_usdc, result.liquidation_price);
         setFuelTankOpen(false);
@@ -401,7 +401,7 @@ export default function Home() {
     setPlayMode("live");
     setDirection(restoredDirection);
     setLeverage(active.leverage);
-    setWager(Math.max(1, Math.round(active.wager_usdc)));
+    setWager(Math.max(1, active.wager_usdc));
     setPnl(active.pnl_usdc ?? 0);
     gameRef.current?.restoreLiveTrade(
       active.leverage,

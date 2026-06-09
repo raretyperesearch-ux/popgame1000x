@@ -36,6 +36,7 @@ _TABLE = "pg_trades"
 _LEADERBOARD_VIEW = "pg_trade_leaderboard"
 _BM_PLAYERS = "bm_players"
 _HOUSE_FEE_EVENTS = "pg_house_fee_events"
+_OPEN_SESSIONS = "pg_open_sessions"
 
 
 def init() -> None:
@@ -196,6 +197,128 @@ def active_open_for_wallet(wallet_address: str) -> Optional[dict]:
             return dict(res.data[0])
     except Exception as e:  # noqa: BLE001
         print(f"[persistence] active_open_for_wallet failed for {wallet_address}: {e}")
+    return None
+
+
+def record_open_session_pending(
+    *,
+    session_id: str,
+    did: str,
+    wallet_address: str,
+    wallet_id: str,
+    tx_hash: str,
+    pair_index: int,
+    leverage: int,
+    wager_usdc: float,
+    house_fee_usdc: float,
+    collateral_usdc: float,
+    treasury_address: Optional[str],
+    is_long: bool,
+    opened_at: datetime,
+) -> bool:
+    """Persist an optimistic-open session before Avantis exposes prices.
+
+    This survives app restarts during the opening window. Missing table or
+    Supabase outage remains non-fatal: the in-memory session still handles the
+    common path, and /trade/active can recover directly from Avantis later.
+    """
+    if not is_enabled() or not session_id:
+        return False
+    row = {
+        "session_id": session_id,
+        "did": did,
+        "wallet_address": wallet_address.lower(),
+        "wallet_id": wallet_id,
+        "tx_hash": tx_hash,
+        "status": "opening",
+        "trade_index": None,
+        "pair_index": pair_index,
+        "leverage": leverage,
+        "wager_usdc": wager_usdc,
+        "house_fee_usdc": house_fee_usdc,
+        "collateral_usdc": collateral_usdc,
+        "treasury_address": treasury_address.lower() if treasury_address else None,
+        "is_long": is_long,
+        "entry_price": None,
+        "liquidation_price": None,
+        "error": None,
+        "opened_at": _iso(opened_at),
+    }
+    try:
+        _client.table(_OPEN_SESSIONS).upsert(row, on_conflict="session_id").execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] open session pending write failed ({session_id}): {e}")
+        return False
+
+
+def update_open_session(
+    *,
+    session_id: str,
+    status: str,
+    trade_index: Optional[int] = None,
+    entry_price: Optional[float] = None,
+    liquidation_price: Optional[float] = None,
+    error: Optional[str] = None,
+    house_fee_idempotency_key: Optional[str] = None,
+) -> bool:
+    if not is_enabled() or not session_id:
+        return False
+    patch = {
+        "status": status,
+        "error": error,
+    }
+    if trade_index is not None:
+        patch["trade_index"] = trade_index
+    if entry_price is not None:
+        patch["entry_price"] = entry_price
+    if liquidation_price is not None:
+        patch["liquidation_price"] = liquidation_price
+    if house_fee_idempotency_key is not None:
+        patch["house_fee_idempotency_key"] = house_fee_idempotency_key
+    try:
+        _client.table(_OPEN_SESSIONS).update(patch).eq("session_id", session_id).execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] open session update failed ({session_id}): {e}")
+        return False
+
+
+def open_session_by_id(session_id: str) -> Optional[dict]:
+    if not is_enabled() or not session_id:
+        return None
+    try:
+        res = (
+            _client.table(_OPEN_SESSIONS)
+            .select("*")
+            .eq("session_id", session_id)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return dict(res.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] open_session_by_id failed ({session_id}): {e}")
+    return None
+
+
+def opening_session_for_wallet(wallet_address: str) -> Optional[dict]:
+    if not is_enabled():
+        return None
+    try:
+        res = (
+            _client.table(_OPEN_SESSIONS)
+            .select("*")
+            .eq("wallet_address", wallet_address.lower())
+            .eq("status", "opening")
+            .order("opened_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return dict(res.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] opening_session_for_wallet failed for {wallet_address}: {e}")
     return None
 
 

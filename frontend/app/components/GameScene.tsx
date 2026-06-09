@@ -1812,6 +1812,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const durationSeconds = getTradeDurationSeconds();
     const pnlDollarsOptimistic = -positionCollateral; // liq = full collateral loss; house fee was paid on open
     const isDemo = playMode === "demo";
+    const markSettlementPending = () => {
+      a.settleInFlight = false;
+      onSettlingChange?.(false);
+      onError?.("Liquidation Settlement Pending — no final PnL recorded yet. Reconnecting from chain.");
+      console.info("[trade/close-ui] close response received", { kind: "force-close", ok: false, pending: true });
+      reset();
+    };
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1859,7 +1866,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       : withTimeout(forceCloseTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] forceCloseTrade failed — showing optimistic liquidation:", e);
+            console.warn("[trade] forceCloseTrade failed — settlement pending:", e);
             return { ok: false as const };
           });
     Promise.all([settleReq, minDelay]).then(([result]) => {
@@ -1867,18 +1874,16 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const exitPrice = result.res.exit_price > 0 ? result.res.exit_price : exitOptimistic;
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
-        const pnlPct = result.res.was_liquidated ? -1 : positionWager > 0 ? pnlDollars / positionWager : -1;
+        const pnlPct = positionWager > 0 ? pnlDollars / positionWager : result.res.was_liquidated ? -1 : 0;
         console.info("[trade/close-ui] close response received", { kind: "force-close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
       } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
       } else {
-        onError?.("Liquidation shown locally. Refresh recovery will check the chain state.");
-        console.info("[trade/close-ui] close response received", { kind: "force-close", ok: false });
-        settleAndShow(pnlDollarsOptimistic, -1, entry, null);
+        markSettlementPending();
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange, reset]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {

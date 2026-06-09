@@ -111,6 +111,7 @@ export default function Controls({
   const needsFunding = isConnected && wager > balance;
   const belowMinPosition = isConnected && !needsFunding && isBelowMinPosition(wager, leverage);
   const fundingShortfall = Math.max(0, wager - balance);
+  const wagerLabel = Number.isInteger(wager) ? wager.toFixed(0) : wager.toFixed(2);
   const displayShortfall = showFuelPanel ? fuelShortfall : fundingShortfall;
   const addFuelPanelDetail = displayShortfall > 0
     ? `Need $${displayShortfall.toFixed(2)} more`
@@ -181,7 +182,7 @@ export default function Controls({
             disabled={disabled}
             onChange={(e) => onWagerChange(parseInt(e.target.value, 10))}
           />
-          <div className="slider-value">${wager}</div>
+          <div className="slider-value">${wagerLabel}</div>
         </div>
         <div className="wager-row">
           {CHIPS.map((amt) => (

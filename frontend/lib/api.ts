@@ -105,6 +105,15 @@ function isMock(): boolean {
 
 let mockTradeState: ActiveTrade | null = null;
 
+function mockLiquidationPriceAfterMargin(trade: ActiveTrade, nextCollateral: number): number {
+  if (nextCollateral <= 0 || trade.collateral_usdc <= 0) return trade.liquidation_price;
+  const fixedNotional = trade.collateral_usdc * trade.leverage;
+  const effectiveLeverage = fixedNotional / nextCollateral;
+  if (!Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return trade.liquidation_price;
+  const move = (trade.entry_price / effectiveLeverage) * MOCK_LIQUIDATION_BUFFER_MULT;
+  return trade.is_long ? trade.entry_price - move : trade.entry_price + move;
+}
+
 async function apiFetch<T>(
   path: string,
   options?: RequestInit,
@@ -291,17 +300,20 @@ export async function addTradeMargin(
   if (isMock()) {
     if (!mockTradeState) throw new Error("no open trade");
     const amount_usdc = Math.max(0, amount);
+    const collateral_usdc = mockTradeState.collateral_usdc + amount_usdc;
+    const liquidation_price = mockLiquidationPriceAfterMargin(mockTradeState, collateral_usdc);
     mockTradeState = {
       ...mockTradeState,
       wager_usdc: mockTradeState.wager_usdc + amount_usdc,
-      collateral_usdc: mockTradeState.collateral_usdc + amount_usdc,
+      collateral_usdc,
+      liquidation_price,
     };
     return {
       trade_index: mockTradeState.trade_index,
       avantis_pair_index: mockTradeState.avantis_pair_index,
       amount_usdc,
       collateral_usdc: mockTradeState.collateral_usdc,
-      liquidation_price: mockTradeState.liquidation_price,
+      liquidation_price,
       tx_hash: "0xstub-margin",
       updated_at: new Date().toISOString(),
     };

@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from time import monotonic, perf_counter
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -43,6 +44,8 @@ from usdc_approval import (
     get_avantis_trading_address,
     get_eth_balance_wei,
     MIN_GAS_ETH_WEI,
+    USDC_BASE_ADDRESS,
+    USDC_DECIMALS,
 )
 from models import (
     OpenTradeRequest,
@@ -98,6 +101,9 @@ _MIN_TRADE_NOTIONAL_USD = float(
     or os.getenv("MIN_TRADE_NOTIONAL_USD")
     or "125"
 )
+_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_SETTLEMENT_LOG_POLL_TRIES = 10
+_SETTLEMENT_LOG_POLL_INTERVAL = 1.0
 
 _trader_client: Optional[TraderClient] = None
 _eth_pair_index: Optional[int] = None
@@ -255,12 +261,61 @@ def _session_response(session: dict) -> TradeStatusResponse:
     )
 
 
+def _session_from_persisted(row: dict) -> dict:
+    return {
+        "status": row.get("status", "opening"),
+        "session_id": row["session_id"],
+        "tx_hash": row.get("tx_hash") or row["session_id"],
+        "wallet_address": (row.get("wallet_address") or "").lower(),
+        "user": AuthedUser(
+            did=row.get("did") or "recovered",
+            wallet_id=row.get("wallet_id") or "",
+            address=row.get("wallet_address") or "",
+        ),
+        "avantis_pair_index": row.get("pair_index"),
+        "trade_index": row.get("trade_index"),
+        "leverage": row.get("leverage"),
+        "wager_usdc": float(row.get("wager_usdc") or 0),
+        "house_fee_usdc": float(row.get("house_fee_usdc") or 0),
+        "collateral_usdc": float(row.get("collateral_usdc") or 0),
+        "treasury_address": row.get("treasury_address"),
+        "is_long": row.get("is_long"),
+        "entry_price": _float_or_none(row.get("entry_price")),
+        "liquidation_price": _float_or_none(row.get("liquidation_price")),
+        "opened_at": _iso_datetime(row.get("opened_at")),
+        "error": row.get("error"),
+        "house_fee_idempotency_key": row.get("house_fee_idempotency_key"),
+    }
+
+
+def _persisted_opening_session_for_wallet(wallet_address: str) -> Optional[dict]:
+    row = persistence.opening_session_for_wallet(wallet_address)
+    if not row:
+        return None
+    session = _session_from_persisted(row)
+    if session.get("wallet_address") != wallet_address.lower():
+        return None
+    _open_sessions.setdefault(session["session_id"], session)
+    return session
+
+
+def _persisted_session_by_id(session_id: str, wallet_address: str) -> Optional[dict]:
+    row = persistence.open_session_by_id(session_id)
+    if not row:
+        return None
+    session = _session_from_persisted(row)
+    if session.get("wallet_address") != wallet_address.lower():
+        return None
+    _open_sessions.setdefault(session_id, session)
+    return session
+
+
 def _find_opening_session_for_wallet(wallet_address: str) -> Optional[dict]:
     wallet = wallet_address.lower()
     for session in _open_sessions.values():
         if session.get("wallet_address") == wallet and session.get("status") == "opening":
             return session
-    return None
+    return _persisted_opening_session_for_wallet(wallet_address)
 
 
 def _cancel_preflight_tasks(*tasks: Optional[asyncio.Task]) -> None:
@@ -347,6 +402,11 @@ def _record_open_and_queue_fee(
 async def _finalize_optimistic_open(session_id: str) -> None:
     session = _open_sessions.get(session_id)
     if not session:
+        persisted = persistence.open_session_by_id(session_id)
+        if persisted:
+            session = _session_from_persisted(persisted)
+            _open_sessions[session_id] = session
+    if not session:
         return
     fee_idempotency_key: Optional[str] = session.get("house_fee_idempotency_key")
     print(
@@ -364,6 +424,11 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         if not trades:
             session["status"] = "failed_open"
             session["error"] = "open tx broadcast but trade did not appear after polling"
+            persistence.update_open_session(
+                session_id=session_id,
+                status="failed_open",
+                error=session["error"],
+            )
             print(
                 f"[trade/open] optimistic failed_open wallet={user.address} "
                 f"session_id={session_id} tx_hash={session['tx_hash']}"
@@ -397,6 +462,14 @@ async def _finalize_optimistic_open(session_id: str) -> None:
                 "user": user,
             }
         )
+        persistence.update_open_session(
+            session_id=session_id,
+            status="live",
+            trade_index=int(trade.trade.trade_index),
+            entry_price=float(trade.trade.open_price),
+            liquidation_price=float(trade.liquidation_price),
+            house_fee_idempotency_key=fee_idempotency_key,
+        )
         print(
             f"[trade/open] trade visible/confirmed wallet={user.address} "
             f"session_id={session_id} trade_index={trade.trade.trade_index}"
@@ -414,6 +487,11 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         session["error"] = str(e)
         msg = str(e)
         _mark_house_fee_failed_safe(fee_idempotency_key, msg)
+        persistence.update_open_session(
+            session_id=session_id,
+            status="failed_open",
+            error=msg,
+        )
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
 def _valid_treasury_address() -> Optional[str]:
@@ -580,6 +658,98 @@ async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
         # gas") that the user can act on. Surface them verbatim under a
         # 502 so the frontend toast shows something specific.
         raise HTTPException(502, f"Privy signer rejected the tx: {msg}")
+
+
+async def _base_rpc(method: str, params: list) -> Optional[dict | str | list]:
+    payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as ax:
+            r = await ax.post(_PROVIDER_URL, json=payload)
+            r.raise_for_status()
+            body = r.json()
+    except Exception as e:  # noqa: BLE001
+        print(f"[trade/settlement] rpc failed method={method}: {e}")
+        return None
+    if body.get("error"):
+        print(f"[trade/settlement] rpc error method={method}: {body['error']}")
+        return None
+    return body.get("result")
+
+
+async def _tx_block_number(tx_hash: str) -> Optional[int]:
+    result = await _base_rpc("eth_getTransactionReceipt", [tx_hash])
+    if not isinstance(result, dict):
+        return None
+    block = result.get("blockNumber")
+    if not isinstance(block, str) or not block.startswith("0x"):
+        return None
+    return int(block, 16)
+
+
+async def _latest_base_block() -> Optional[int]:
+    result = await _base_rpc("eth_blockNumber", [])
+    if not isinstance(result, str) or not result.startswith("0x"):
+        return None
+    return int(result, 16)
+
+
+def _address_topic(address: str) -> str:
+    return "0x" + address.lower().replace("0x", "").rjust(64, "0")
+
+
+async def _incoming_usdc_between_blocks(address: str, from_block: int, to_block: int) -> Optional[float]:
+    if to_block < from_block:
+        return 0.0
+    result = await _base_rpc(
+        "eth_getLogs",
+        [
+            {
+                "address": USDC_BASE_ADDRESS,
+                "fromBlock": hex(from_block),
+                "toBlock": hex(to_block),
+                "topics": [_TRANSFER_TOPIC, None, _address_topic(address)],
+            }
+        ],
+    )
+    if not isinstance(result, list):
+        return None
+    raw_total = 0
+    for log in result:
+        if not isinstance(log, dict):
+            continue
+        data = log.get("data")
+        if isinstance(data, str) and data.startswith("0x"):
+            raw_total += int(data, 16)
+    return raw_total / (10**USDC_DECIMALS)
+
+
+async def _poll_close_settlement_received(tx_hash: str, address: str) -> Optional[float]:
+    """Return USDC transferred into the wallet after a close tx.
+
+    Avantis settlement can arrive in a follow-up tx one or two blocks after
+    the user's close tx. Transfer logs are narrower than wallet balance deltas:
+    they ignore unrelated outgoing transfers and give us a block-bounded view
+    of settlement receipts. None means RPC/receipt was unavailable, so caller
+    should fall back to the older balance-poll path.
+    """
+    close_block: Optional[int] = None
+    for attempt in range(_SETTLEMENT_LOG_POLL_TRIES):
+        if close_block is None:
+            close_block = await _tx_block_number(tx_hash)
+        latest = await _latest_base_block() if close_block is not None else None
+        if close_block is not None and latest is not None:
+            received = await _incoming_usdc_between_blocks(address, close_block, latest)
+            if received is None:
+                return None
+            if received > 0:
+                return round(received, 6)
+            if latest >= close_block + 3 and attempt >= 3:
+                return 0.0
+        if attempt < _SETTLEMENT_LOG_POLL_TRIES - 1:
+            await asyncio.sleep(_SETTLEMENT_LOG_POLL_INTERVAL)
+    if close_block is None:
+        return None
+    return 0.0
 
 
 @router.post("/open", response_model=OpenTradeResponse)
@@ -760,6 +930,21 @@ async def open_trade(
             "is_long": body.is_long,
             "opened_at": opened_at,
         }
+        persistence.record_open_session_pending(
+            session_id=session_id,
+            did=user.did,
+            wallet_address=user.address,
+            wallet_id=user.wallet_id,
+            tx_hash=tx_hash,
+            pair_index=pair_index,
+            leverage=body.leverage,
+            wager_usdc=body.wager_usdc,
+            house_fee_usdc=house_fee,
+            collateral_usdc=collateral,
+            treasury_address=treasury_address,
+            is_long=body.is_long,
+            opened_at=opened_at,
+        )
         background_tasks.add_task(_finalize_optimistic_open, session_id)
         timer.mark("response returned", status="opening", tx_hash=tx_hash)
         return OpenTradeResponse(
@@ -832,6 +1017,10 @@ async def trade_session_status(
     user: AuthedUser = Depends(require_user),
 ):
     session = _open_sessions.get(session_id)
+    if not session:
+        session = _persisted_session_by_id(session_id, user.address)
+        if session and session.get("status") == "opening":
+            asyncio.create_task(_finalize_optimistic_open(session_id))
     if session:
         if session.get("wallet_address") != user.address.lower():
             raise HTTPException(404, "trade session not found")
@@ -920,51 +1109,29 @@ def _trade_current_collateral(t) -> float:
     return open_collateral or 0.0
 
 
-def _liquidation_close_response(target, user: AuthedUser, feed_price_at_close: Optional[float], timer: _CloseTradeTimer) -> CloseTradeResponse:
-    entry_price = float(target.trade.open_price)
-    leverage = float(target.trade.leverage)
-    collateral = _trade_current_collateral(target)
-    gross_pnl = -collateral
-    avantis_win_fee = 0.0
-    net_pnl = -collateral
-
-    exit_price = _float_or_none(getattr(target, "liquidation_price", None))
-    if exit_price is None or exit_price <= 0:
-        exit_price = _exit_price_from_pnl(entry_price, leverage, collateral, gross_pnl)
-    if exit_price is None and feed_price_at_close is not None:
-        exit_price = float(feed_price_at_close)
-    if exit_price is None:
-        exit_price = 0.0
-
-    closed_at = datetime.now(timezone.utc)
-    tx_hash = "liquidation"
-
-    persistence.record_close(
-        wallet_address=user.address,
+def _raise_liquidation_settlement_pending(
+    *,
+    target,
+    reason: str,
+    timer: _CloseTradeTimer,
+) -> None:
+    timer.mark(
+        "liquidation settlement pending",
         trade_index=target.trade.trade_index,
-        exit_price=float(exit_price),
-        gross_pnl_usdc=float(gross_pnl),
-        avantis_win_fee_usdc=float(avantis_win_fee),
-        net_pnl_usdc=float(net_pnl),
-        was_liquidated=True,
-        closed_at=closed_at,
-        close_tx_hash=tx_hash,
+        reason=reason,
     )
-    timer.mark("liquidation recorded without close tx", trade_index=target.trade.trade_index)
-
-    response = CloseTradeResponse(
-        trade_index=target.trade.trade_index,
-        entry_price=entry_price,
-        exit_price=exit_price,
-        gross_pnl_usdc=gross_pnl,
-        avantis_win_fee_usdc=avantis_win_fee,
-        net_pnl_usdc=net_pnl,
-        was_liquidated=True,
-        closed_at=closed_at,
-        tx_hash=tx_hash,
+    raise HTTPException(
+        409,
+        {
+            "error": "liquidation_settlement_pending",
+            "message": (
+                "Liquidation settlement is not final yet. No local full-loss "
+                "record was written; retry recovery or refresh after the chain settles."
+            ),
+            "trade_index": int(target.trade.trade_index),
+            "reason": reason,
+        },
     )
-    timer.mark("response returned", trade_index=response.trade_index)
-    return response
 
 
 async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTradeResponse:
@@ -981,7 +1148,7 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     target = trades[0]
     timer.mark("current trade/session loaded", trade_index=target.trade.trade_index)
 
-    balance_before = await client.get_usdc_balance(user.address)
+    balance_before = float(await client.get_usdc_balance(user.address))
 
     # Snapshot the price *before* broadcast — by the time the receipt
     # lands the feed will have ticked one or more times, and the player
@@ -1000,8 +1167,11 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
         )
     except Exception as exc:
         if was_liquidated and _is_invalid_close_amount_error(exc):
-            timer.mark("Avantis close tx skipped", reason="INV_AMOUNT")
-            return _liquidation_close_response(target, user, feed_price_at_close, timer)
+            _raise_liquidation_settlement_pending(
+                target=target,
+                reason="invalid-close-amount",
+                timer=timer,
+            )
         raise
     timer.mark("Avantis close tx built", trade_index=target.trade.trade_index)
 
@@ -1014,20 +1184,33 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
     except Exception as exc:
         if was_liquidated:
             timer.mark("liquidation close tx send failed", error=str(exc)[:160])
-            return _liquidation_close_response(target, user, feed_price_at_close, timer)
+            _raise_liquidation_settlement_pending(
+                target=target,
+                reason="close-send-failed",
+                timer=timer,
+            )
         raise
     timer.mark("close tx sent", tx_hash=tx_hash)
 
+    settlement_received = await _poll_close_settlement_received(tx_hash, user.address)
     balance_after = balance_before
-    balance_poll_tries = 8
-    for attempt in range(balance_poll_tries):
-        balance_after = await client.get_usdc_balance(user.address)
-        if balance_after != balance_before:
-            break
-        if attempt < balance_poll_tries - 1:
-            await asyncio.sleep(1.0)
+    if settlement_received is not None:
+        balance_after = balance_before + settlement_received
+    else:
+        balance_poll_tries = 8
+        for attempt in range(balance_poll_tries):
+            balance_after = float(await client.get_usdc_balance(user.address))
+            if balance_after != balance_before:
+                break
+            if attempt < balance_poll_tries - 1:
+                await asyncio.sleep(1.0)
 
-    timer.mark("close confirmed/settled", balance_before=float(balance_before), balance_after=float(balance_after))
+    timer.mark(
+        "close confirmed/settled",
+        balance_before=float(balance_before),
+        balance_after=float(balance_after),
+        settlement_received=settlement_received,
+    )
 
     close_collateral = _trade_current_collateral(target)
     received = balance_after - balance_before
