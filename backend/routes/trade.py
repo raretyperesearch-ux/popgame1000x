@@ -408,6 +408,142 @@ async def _finalize_optimistic_open(session_id: str) -> None:
                 )
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
+    fee_idempotency_key: Optional[str] = None
+    if house_fee > 0 and treasury_address:
+        fee_idempotency_key = idempotency_key or _house_fee_idempotency_key(
+            user, trade.trade.trade_index, tx_hash
+        )
+        fee_event = persistence.record_house_fee_pending(
+            idempotency_key=fee_idempotency_key,
+            did=user.did,
+            wallet_address=user.address,
+            wallet_id=user.wallet_id,
+            trade_index=trade.trade.trade_index,
+            session_id=tx_hash,
+            collateral_usdc=collateral,
+            fee_usdc=house_fee,
+            treasury_address=treasury_address,
+        )
+        print(
+            f"[trade/open] fee queued wallet={user.address} "
+            f"idempotency_key={fee_idempotency_key} durable={bool(fee_event)}"
+        )
+        if fee_event and background_tasks:
+            background_tasks.add_task(
+                _collect_queued_house_fee,
+                idempotency_key=fee_idempotency_key,
+                user=user,
+                fee_usdc=house_fee,
+                treasury_address=treasury_address,
+            )
+        elif fee_event:
+            asyncio.create_task(
+                _collect_queued_house_fee(
+                    idempotency_key=fee_idempotency_key,
+                    user=user,
+                    fee_usdc=house_fee,
+                    treasury_address=treasury_address,
+                )
+            )
+    return recorded, fee_idempotency_key
+
+
+async def _finalize_optimistic_open(session_id: str) -> None:
+    session = _open_sessions.get(session_id)
+    if not session:
+        return
+    fee_idempotency_key: Optional[str] = session.get("house_fee_idempotency_key")
+    try:
+        client = _require_trader()
+        user = session["user"]
+        treasury_address = session.get("treasury_address")
+        if session.get("house_fee_usdc", 0) > 0 and not treasury_address:
+            treasury_address = _valid_treasury_address()
+            session["treasury_address"] = treasury_address
+        trades = await _poll_for_trade(client, user.address, expect_present=True)
+        if not trades:
+            session["status"] = "failed_open"
+            session["error"] = "open tx broadcast but trade did not appear after polling"
+            print(
+                f"[trade/open] optimistic failed_open wallet={user.address} "
+                f"session_id={session_id} tx_hash={session['tx_hash']}"
+            )
+            return
+        trade = trades[0]
+        opened_at = datetime.now(timezone.utc)
+        _, fee_idempotency_key = _record_open_and_queue_fee(
+            user=user,
+            leverage=session["leverage"],
+            wager_usdc=session["wager_usdc"],
+            house_fee=session["house_fee_usdc"],
+            collateral=session["collateral_usdc"],
+            treasury_address=treasury_address,
+            pair_index=session["avantis_pair_index"],
+            trade=trade,
+            opened_at=opened_at,
+            tx_hash=session["tx_hash"],
+            background_tasks=None,
+            idempotency_key=fee_idempotency_key,
+        )
+        if fee_idempotency_key:
+            session["house_fee_idempotency_key"] = fee_idempotency_key
+        session.update(
+            {
+                "status": "live",
+                "trade_index": trade.trade.trade_index,
+                "entry_price": float(trade.trade.open_price),
+                "liquidation_price": float(trade.liquidation_price),
+                "opened_at": opened_at,
+                "user": user,
+            }
+        )
+        print(
+            f"[trade/open] trade visible/confirmed wallet={user.address} "
+            f"session_id={session_id} trade_index={trade.trade.trade_index}"
+        )
+        print(
+            f"[trade/open] optimistic live wallet={user.address} "
+            f"session_id={session_id} trade_index={trade.trade.trade_index}"
+        )
+        print(
+            f"[trade/open] finalize optimistic live session_id={session_id} "
+            f"fee_idempotency_key={fee_idempotency_key or '(none)'}"
+        )
+    except Exception as e:  # noqa: BLE001
+        session["status"] = "failed_open"
+        session["error"] = str(e)
+        msg = str(e)
+        if fee_idempotency_key:
+            try:
+                persistence.mark_house_fee_failed(fee_idempotency_key, msg)
+            except Exception as mark_err:  # noqa: BLE001
+                print(
+                    f"[trade/open] async fee failed mark skipped "
+                    f"idempotency_key={fee_idempotency_key} error={mark_err}"
+                )
+        print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
+
+    try:
+        fee_tx = build_usdc_transfer_tx(treasury_address, fee_usdc)
+        client = _require_trader()
+        if _is_legacy_user(user):
+            receipt = await client.sign_and_get_receipt(fee_tx)
+            fee_hash = _tx_hash_str(receipt)
+        else:
+            fee_hash = await _send_user_tx(user, fee_tx)
+        persistence.mark_house_fee_collected(idempotency_key, fee_hash)
+        print(
+            f"[trade/open] async fee collected idempotency_key={idempotency_key} "
+            f"wallet={user.address} treasury={treasury_address} "
+            f"fee_usdc={fee_usdc} tx_hash={fee_hash}"
+        )
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        persistence.mark_house_fee_failed(idempotency_key, msg)
+        print(
+            f"[trade/open] async fee failed idempotency_key={idempotency_key} "
+            f"wallet={user.address} fee_usdc={fee_usdc} error={msg}"
+        )
 
 def _valid_treasury_address() -> Optional[str]:
     """Return a configured treasury address, ignoring local placeholders."""
@@ -798,6 +934,11 @@ async def open_trade(
         "session recorded" if recorded else "session record failed",
         trade_index=new_trade.trade.trade_index,
     )
+    timer.mark(
+        "session recorded" if recorded else "session record failed",
+        trade_index=new_trade.trade.trade_index,
+    )
+    timer.mark("session recorded", trade_index=new_trade.trade.trade_index)
 
     response = OpenTradeResponse(
         status="live",
