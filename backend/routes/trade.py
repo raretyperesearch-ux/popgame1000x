@@ -312,6 +312,65 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
 
 
+class _OpenTradeTimer:
+    def __init__(self, wallet_address: str):
+        self.wallet_address = wallet_address
+        self.started = perf_counter()
+        self.previous = self.started
+
+    def mark(self, step: str, **fields) -> None:
+        now = perf_counter()
+        extra = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        suffix = f" {extra}" if extra else ""
+        print(
+            f"[trade/open] {step} wallet={self.wallet_address} "
+            f"+{now - self.previous:.3f}s total={now - self.started:.3f}s{suffix}"
+        )
+        self.previous = now
+
+
+def _house_fee_idempotency_key(
+    user: AuthedUser, trade_index: int, open_tx_hash: str
+) -> str:
+    # open_tx_hash is globally unique and stable for the Avantis open. Include
+    # wallet/trade_index for readable Supabase rows and human reconciliation.
+    return f"house-fee:{user.address.lower()}:{trade_index}:{open_tx_hash.lower()}"
+
+
+async def _collect_queued_house_fee(
+    *,
+    idempotency_key: str,
+    user: AuthedUser,
+    fee_usdc: float,
+    treasury_address: str,
+) -> None:
+    claimed = persistence.claim_house_fee_event(idempotency_key)
+    if not claimed:
+        print(f"[trade/open] async fee skipped idempotency_key={idempotency_key}")
+        return
+
+    try:
+        fee_tx = build_usdc_transfer_tx(treasury_address, fee_usdc)
+        client = _require_trader()
+        if _is_legacy_user(user):
+            receipt = await client.sign_and_get_receipt(fee_tx)
+            fee_hash = _tx_hash_str(receipt)
+        else:
+            fee_hash = await _send_user_tx(user, fee_tx)
+        persistence.mark_house_fee_collected(idempotency_key, fee_hash)
+        print(
+            f"[trade/open] async fee collected idempotency_key={idempotency_key} "
+            f"wallet={user.address} treasury={treasury_address} "
+            f"fee_usdc={fee_usdc} tx_hash={fee_hash}"
+        )
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        persistence.mark_house_fee_failed(idempotency_key, msg)
+        print(
+            f"[trade/open] async fee failed idempotency_key={idempotency_key} "
+            f"wallet={user.address} fee_usdc={fee_usdc} error={msg}"
+        )
+
 def _valid_treasury_address() -> Optional[str]:
     """Return a configured treasury address, ignoring local placeholders."""
     if not _TREASURY_ADDRESS:
@@ -687,6 +746,38 @@ async def open_trade(
         "session recorded" if recorded else "session record failed",
         trade_index=new_trade.trade.trade_index,
     )
+    timer.mark("session recorded", trade_index=new_trade.trade.trade_index)
+
+    if house_fee > 0 and treasury_address:
+        idempotency_key = _house_fee_idempotency_key(
+            user, new_trade.trade.trade_index, tx_hash
+        )
+        fee_event = persistence.record_house_fee_pending(
+            idempotency_key=idempotency_key,
+            did=user.did,
+            wallet_address=user.address,
+            wallet_id=user.wallet_id,
+            trade_index=new_trade.trade.trade_index,
+            session_id=tx_hash,
+            collateral_usdc=collateral,
+            fee_usdc=house_fee,
+            treasury_address=treasury_address,
+        )
+        timer.mark(
+            "fee queued",
+            idempotency_key=idempotency_key,
+            durable=bool(fee_event),
+        )
+        if fee_event:
+            background_tasks.add_task(
+                _collect_queued_house_fee,
+                idempotency_key=idempotency_key,
+                user=user,
+                fee_usdc=house_fee,
+                treasury_address=treasury_address,
+            )
+    else:
+        timer.mark("fee queued", idempotency_key="none")
 
     response = OpenTradeResponse(
         status="live",
