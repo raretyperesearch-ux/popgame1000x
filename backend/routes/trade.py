@@ -192,6 +192,18 @@ def _house_fee_idempotency_key(
     return f"house-fee:{user.address.lower()}:{trade_index}:{open_tx_hash.lower()}"
 
 
+def _mark_house_fee_failed_safe(idempotency_key: Optional[str], error: str) -> None:
+    if not idempotency_key:
+        return
+    try:
+        persistence.mark_house_fee_failed(idempotency_key, error)
+    except Exception as mark_err:  # noqa: BLE001
+        print(
+            f"[trade/open] async fee failed mark skipped "
+            f"idempotency_key={idempotency_key} error={mark_err}"
+        )
+
+
 async def _collect_queued_house_fee(
     *,
     idempotency_key: str,
@@ -220,7 +232,7 @@ async def _collect_queued_house_fee(
         )
     except Exception as e:  # noqa: BLE001
         msg = str(e)
-        persistence.mark_house_fee_failed(idempotency_key, msg)
+        _mark_house_fee_failed_safe(idempotency_key, msg)
         print(
             f"[trade/open] async fee failed idempotency_key={idempotency_key} "
             f"wallet={user.address} fee_usdc={fee_usdc} error={msg}"
@@ -399,37 +411,8 @@ async def _finalize_optimistic_open(session_id: str) -> None:
         session["status"] = "failed_open"
         session["error"] = str(e)
         msg = str(e)
-        if fee_idempotency_key:
-            try:
-                persistence.mark_house_fee_failed(fee_idempotency_key, msg)
-            except Exception as mark_err:  # noqa: BLE001
-                print(
-                    f"[trade/open] async fee failed mark skipped "
-                    f"idempotency_key={fee_idempotency_key} error={mark_err}"
-                )
+        _mark_house_fee_failed_safe(fee_idempotency_key, msg)
         print(f"[trade/open] optimistic finalize failed session_id={session_id}: {e}")
-
-    try:
-        fee_tx = build_usdc_transfer_tx(treasury_address, fee_usdc)
-        client = _require_trader()
-        if _is_legacy_user(user):
-            receipt = await client.sign_and_get_receipt(fee_tx)
-            fee_hash = _tx_hash_str(receipt)
-        else:
-            fee_hash = await _send_user_tx(user, fee_tx)
-        persistence.mark_house_fee_collected(idempotency_key, fee_hash)
-        print(
-            f"[trade/open] async fee collected idempotency_key={idempotency_key} "
-            f"wallet={user.address} treasury={treasury_address} "
-            f"fee_usdc={fee_usdc} tx_hash={fee_hash}"
-        )
-    except Exception as e:  # noqa: BLE001
-        msg = str(e)
-        persistence.mark_house_fee_failed(idempotency_key, msg)
-        print(
-            f"[trade/open] async fee failed idempotency_key={idempotency_key} "
-            f"wallet={user.address} fee_usdc={fee_usdc} error={msg}"
-        )
 
 def _valid_treasury_address() -> Optional[str]:
     """Return a configured treasury address, ignoring local placeholders."""

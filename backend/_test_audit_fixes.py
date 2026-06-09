@@ -254,6 +254,110 @@ def test_min_position_validation_detail() -> None:
         _fail("min_position.raise", "expected HTTPException")
     _ok("min-position guard returns structured 400")
 
+
+async def test_optimistic_finalize_queues_fee_once() -> None:
+    """Optimistic finalization should only queue the durable fee event."""
+    from auth import AuthedUser
+    from routes import trade as trade_mod
+
+    user = AuthedUser(did="did:privy:u", wallet_id="wallet-1", address="0xabc")
+    inner = FakeTradeInner(
+        idx=7,
+        pair_index=0,
+        lev=100,
+        collateral=9.75,
+        open_price=3500.0,
+        ts=1714400000,
+    )
+    trade_obj = FakeTrade(inner, liq=3465.0)
+    session_id = "sess-finalize-ok"
+    trade_mod._open_sessions[session_id] = {
+        "session_id": session_id,
+        "status": "opening",
+        "tx_hash": "0xopen",
+        "wallet_address": user.address.lower(),
+        "user": user,
+        "leverage": 100,
+        "wager_usdc": 10.0,
+        "house_fee_usdc": 0.25,
+        "collateral_usdc": 9.75,
+        "avantis_pair_index": 0,
+        "treasury_address": "0x" + "22" * 20,
+        "house_fee_idempotency_key": "fee-once",
+    }
+    calls = []
+
+    def fake_record_open_and_queue_fee(**kwargs):
+        calls.append(kwargs)
+        return True, kwargs["idempotency_key"]
+
+    try:
+        with (
+            patch.object(trade_mod, "_require_trader", return_value=object()),
+            patch.object(trade_mod, "_poll_for_trade", AsyncMock(return_value=[trade_obj])),
+            patch.object(trade_mod, "_record_open_and_queue_fee", side_effect=fake_record_open_and_queue_fee),
+            patch.object(trade_mod, "build_usdc_transfer_tx", side_effect=AssertionError("inline fee transfer should not run")),
+        ):
+            await trade_mod._finalize_optimistic_open(session_id)
+    finally:
+        session = trade_mod._open_sessions.pop(session_id, None)
+
+    if session is None:
+        _fail("optimistic_finalize.session", "session disappeared")
+    if session.get("status") != "live":
+        _fail("optimistic_finalize.status", f"expected live, got {session.get('status')}")
+    if session.get("trade_index") != 7:
+        _fail("optimistic_finalize.trade_index", f"expected 7, got {session.get('trade_index')}")
+    if session.get("house_fee_idempotency_key") != "fee-once":
+        _fail("optimistic_finalize.fee_key", f"unexpected key {session.get('house_fee_idempotency_key')}")
+    if len(calls) != 1:
+        _fail("optimistic_finalize.queue_once", f"expected one queue call, got {len(calls)}")
+    _ok("optimistic finalize queues durable fee once")
+
+
+async def test_optimistic_finalize_fee_failure_mark_is_safe() -> None:
+    """A failing fee failure mark must not crash optimistic finalization."""
+    from auth import AuthedUser
+    from routes import trade as trade_mod
+
+    user = AuthedUser(did="did:privy:u", wallet_id="wallet-1", address="0xabc")
+    session_id = "sess-finalize-fail"
+    trade_mod._open_sessions[session_id] = {
+        "session_id": session_id,
+        "status": "opening",
+        "tx_hash": "0xopen",
+        "wallet_address": user.address.lower(),
+        "user": user,
+        "leverage": 100,
+        "wager_usdc": 10.0,
+        "house_fee_usdc": 0.25,
+        "collateral_usdc": 9.75,
+        "avantis_pair_index": 0,
+        "treasury_address": "0x" + "22" * 20,
+        "house_fee_idempotency_key": "fee-fail-safe",
+    }
+
+    try:
+        with (
+            patch.object(trade_mod, "_require_trader", return_value=object()),
+            patch.object(trade_mod, "_poll_for_trade", AsyncMock(side_effect=RuntimeError("poll failed"))),
+            patch.object(trade_mod.persistence, "mark_house_fee_failed", side_effect=RuntimeError("mark failed")),
+        ):
+            await trade_mod._finalize_optimistic_open(session_id)
+    except Exception as exc:  # noqa: BLE001
+        _fail("optimistic_finalize.safe_mark", f"unexpected exception {exc!r}")
+    finally:
+        session = trade_mod._open_sessions.pop(session_id, None)
+
+    if session is None:
+        _fail("optimistic_finalize.safe.session", "session disappeared")
+    if session.get("status") != "failed_open":
+        _fail("optimistic_finalize.safe.status", f"expected failed_open, got {session.get('status')}")
+    if "poll failed" not in session.get("error", ""):
+        _fail("optimistic_finalize.safe.error", f"unexpected error {session.get('error')!r}")
+    _ok("optimistic finalize fee failure mark is safe")
+
+
 def test_persistence_disabled_is_noop() -> None:
     """Persistence layer must NEVER raise when Supabase env is unset —
     trade routes call it on every open/close and a raise would break
@@ -342,6 +446,8 @@ async def main() -> None:
     print()
     print("[trade/open min position]")
     test_min_position_validation_detail()
+    await test_optimistic_finalize_queues_fee_once()
+    await test_optimistic_finalize_fee_failure_mark_is_safe()
     print()
     print("[persistence]")
     test_persistence_disabled_is_noop()
