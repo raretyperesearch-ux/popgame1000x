@@ -100,6 +100,11 @@ const LAND_FRAME_MS = 140;
 const PARACHUTE_FRAMES = [23, 24, 25, 26];
 const PARACHUTE_FRAME_MS = 130;
 const LIVE_MIN_AIR_GAP_PX = 70;
+// Avantis opens with a tight spread, so the runner starts close to ENTRY
+// and then separates from that neutral line as real mark-price/PnL moves.
+const ENTRY_LINE_SPAWN_OFFSET_PX = 8;
+const PNL_Y_SCALE = 0.72;
+const ENTRY_PRICE_ANCHOR_LERP = 0.045;
 const PARACHUTE_MIN_AIR_GAP_PX = 48;
 const HUD_NO_FLY_GAP_PX = 22;
 type SpriteState = "idle" | "run" | "crouch" | "charge" | "break" | "jump" | "air" | "boost" | "fall" | "land" | "parachute" | "fail";
@@ -121,7 +126,7 @@ const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
-const SETTLE_TIMEOUT_MS = 4500;
+const SETTLE_TIMEOUT_MS = 15000;
 const HOUSE_FEE_RATE = 0.025;
 const COLLATERAL_RATE = 1 - HOUSE_FEE_RATE;
 const LOCAL_MOCK_MODE = !process.env.NEXT_PUBLIC_API_URL;
@@ -151,6 +156,7 @@ type FlightFxKind = "streak" | "spark" | "coin" | "ring";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 export type TradeDirection = "long" | "short";
+export type PlayMode = "live" | "demo";
 
 /* ============ UTILITY ============ */
 function lerp(a: number, b: number, t: number): number {
@@ -327,6 +333,16 @@ export interface GameSceneHandle {
     direction: TradeDirection,
   ) => void;
   stopTrade: () => void;
+  confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
+  restoreLiveTrade: (
+    leverage: number,
+    wager: number,
+    entryPrice: number,
+    liquidationPrice: number,
+    direction: TradeDirection,
+    currentPrice?: number,
+  ) => void;
+  cancelLaunch: () => void;
 }
 
 interface GameSceneProps {
@@ -341,6 +357,10 @@ interface GameSceneProps {
   onPnlChange: (pnl: number | null) => void;
   pnlReadout?: React.ReactNode;
   paperMode?: boolean;
+  playMode?: PlayMode;
+  onDemoEnd?: () => void;
+  onError?: (message: string) => void;
+  onSettlingChange?: (settling: boolean) => void;
 }
 
 const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene(
@@ -353,6 +373,10 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     onPnlChange,
     pnlReadout,
     paperMode = false,
+    playMode = "live",
+    onDemoEnd,
+    onError,
+    onSettlingChange,
   },
   ref,
 ) {
@@ -406,6 +430,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
        at the LIVE-state transition. */
     pendingEntry: 0 as number,
     pendingLiqPrice: 0 as number,
+    settleInFlight: false,
     liquidationPrice: 0 as number,
     figPrice: 3500, // figure's virtual price-level during LIVE
     figPriceVel: 0,
@@ -1715,6 +1740,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     a.dustParticles.length = 0;
     a.flightFx.length = 0;
     a.flightBubble = { text: "", start: 0, until: 0 };
+    a.settleInFlight = false;
+    onSettlingChange?.(false);
     a.nextFlightCueAt = 0;
     a.lastFlightMilestone = 0;
     a.liveShake = 0;
@@ -1726,14 +1753,18 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     slowMoUntilRef.current = 0;
     setImpactFx("");
     setJumpCinematic(false);
-  }, [setGameState, setSpriteState, onPnlChange]);
+  }, [setGameState, setSpriteState, onPnlChange, onSettlingChange]);
 
   /* ============ SPLAT (liquidation) ============ */
   const splat = useCallback(() => {
     const a = anim.current;
     if (a.state === "DEAD") return;
+    console.info("[trade/close-ui] close triggered", { reason: "liquidation" });
     a.state = "DEAD";
     setGameState("DEAD");
+    a.settleInFlight = true;
+    onSettlingChange?.(true);
+    console.info("[trade/close-ui] closing state set", { state: "DEAD" });
     setSpriteState("fail");
     sounds.play("rekt-crash");
     const crashNow = performance.now();
@@ -1752,6 +1783,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
     const pnlDollarsOptimistic = -positionCollateral; // liq = full collateral loss; house fee was paid on open
+    const isDemo = playMode === "demo";
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1759,18 +1791,23 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number | null,
     ) => {
-      onHistoryPush({
-        amt: pnlDollars,
-        win: pnlDollars >= 0,
-        direction: positionDirection,
-        entry: entryPrice,
-        exit: exitPrice,
-        leverage: positionLev,
-        wager: positionWager,
-        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
-        closedAt: new Date().toISOString(),
-        liquidated: true,
-      });
+      if (!isDemo) {
+        onHistoryPush({
+          amt: pnlDollars,
+          win: pnlDollars >= 0,
+          direction: positionDirection,
+          entry: entryPrice,
+          exit: exitPrice,
+          leverage: positionLev,
+          wager: positionWager,
+          openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+          closedAt: new Date().toISOString(),
+          liquidated: true,
+        });
+      }
+      a.settleInFlight = false;
+      onSettlingChange?.(false);
+      console.info("[trade/close-ui] result modal shown", { kind: "rekt", demo: isDemo });
       setEndOfGame({
         kind: "rekt",
         direction: positionDirection,
@@ -1781,6 +1818,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: positionLev,
         wager: positionWager,
         durationSeconds,
+        demo: isDemo,
       });
     };
 
@@ -1788,12 +1826,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     // modal opens only after the splat reads visually AND we have real
     // PnL (or a clear fallback if the backend is unreachable).
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    const settleReq = paperMode
+    const settleReq = paperMode || isDemo
       ? Promise.resolve({ ok: false as const })
       : withTimeout(forceCloseTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "force close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] forceCloseTrade failed — using optimistic loss:", e);
+            console.warn("[trade] forceCloseTrade failed — close remains retryable:", e);
             return { ok: false as const };
           });
     Promise.all([settleReq, minDelay]).then(([result]) => {
@@ -1802,22 +1840,37 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
         const pnlPct = positionWager > 0 ? pnlDollars / positionWager : -1;
+        console.info("[trade/close-ui] close response received", { kind: "force-close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
-      } else {
+      } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, -1, entry, null);
+      } else {
+        a.settleInFlight = false;
+        onSettlingChange?.(false);
+        a.flightBubble = { text: "CLOSE PENDING · RETRY", start: performance.now(), until: performance.now() + 3200 };
+        onError?.("Close Pending — Retry Close. Final PnL will show after the real close succeeds.");
+        console.info("[trade/close-ui] close response received", { kind: "force-close", ok: false });
       }
     });
-  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
+  }, [setGameState, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
 
   /* ============ STOP TRADE ============ */
   const stopTrade = useCallback(() => {
     const a = anim.current;
-    if (a.state !== "LIVE") return;
-    a.state = "STOPPED";
-    setGameState("STOPPED");
-    sounds.play("deploy-chute");
-    if (parachuteRef.current) parachuteRef.current.classList.remove("deployed");
-    setSpriteState("parachute");
+    if (a.state !== "LIVE" && a.state !== "STOPPED") return;
+    if (a.settleInFlight) return;
+    console.info("[trade/close-ui] close triggered", { state: a.state });
+    if (a.state === "LIVE") {
+      a.state = "STOPPED";
+      setGameState("STOPPED");
+      sounds.play("deploy-chute");
+      if (parachuteRef.current) parachuteRef.current.classList.remove("deployed");
+      setSpriteState("parachute");
+    }
+    a.settleInFlight = true;
+    onSettlingChange?.(true);
+    a.flightBubble = { text: "SETTLING...", start: performance.now(), until: performance.now() + 2400 };
+    console.info("[trade/close-ui] closing state set", { state: "STOPPED" });
 
     // Snapshot — anim refs can mutate before the async settle resolves.
     const positionWager = a.positionWager;
@@ -1828,10 +1881,12 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
 
-    // Optimistic fallback PnL based on the live chart price.
+    // Estimated PnL based on the live chart price. Demo/paper can resolve
+    // locally; real-money final PnL still waits for backend close success.
     const moveOptimistic = tradeMove(exitOptimistic, entry, a.tradeDirection);
     const pnlPctOptimistic = moveOptimistic * positionLev;
     const pnlDollarsOptimistic = pnlPctOptimistic * positionCollateral;
+    const isDemo = playMode === "demo";
 
     const settleAndShow = (
       pnlDollars: number,
@@ -1839,19 +1894,21 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       entryPrice: number,
       exitPrice: number,
     ) => {
-      setBalance((prev: number) => prev + positionCollateral + pnlDollars);
-      onHistoryPush({
-        amt: pnlDollars,
-        win: pnlDollars >= 0,
-        direction: positionDirection,
-        entry: entryPrice,
-        exit: exitPrice,
-        leverage: positionLev,
-        wager: positionWager,
-        openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
-        closedAt: new Date().toISOString(),
-        liquidated: false,
-      });
+      if (!isDemo) {
+        setBalance((prev: number) => prev + positionCollateral + pnlDollars);
+        onHistoryPush({
+          amt: pnlDollars,
+          win: pnlDollars >= 0,
+          direction: positionDirection,
+          entry: entryPrice,
+          exit: exitPrice,
+          leverage: positionLev,
+          wager: positionWager,
+          openedAt: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+          closedAt: new Date().toISOString(),
+          liquidated: false,
+        });
+      }
       const kind: "win" | "loss" = pnlDollars >= 0 ? "win" : "loss";
       sounds.play(kind === "win" ? "win-fanfare" : "loss-thud");
       if (kind === "win") {
@@ -1861,6 +1918,9 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         setImpactFx("loss");
         setTimeout(() => setImpactFx(""), 300);
       }
+      a.settleInFlight = false;
+      onSettlingChange?.(false);
+      console.info("[trade/close-ui] result modal shown", { kind, demo: isDemo });
       setEndOfGame({
         kind,
         direction: positionDirection,
@@ -1871,19 +1931,20 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         boost: positionLev,
         wager: positionWager,
         durationSeconds,
+        demo: isDemo,
       });
     };
 
-    // Race the on-chain close against the parachute descent. Modal opens
-    // when both finish — real net_pnl_usdc when available, optimistic
-    // local calc when backend is unreachable.
+    // Race the on-chain close against the parachute descent. Real-money
+    // modal opens only after backend net_pnl_usdc; failures leave a retryable
+    // STOPPED state instead of faking final PnL.
     const minDelay = new Promise<void>((r) => setTimeout(r, 900));
-    const closeReq = paperMode
+    const closeReq = paperMode || isDemo
       ? Promise.resolve({ ok: false as const })
       : withTimeout(closeTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "close")
           .then((res) => ({ ok: true as const, res }))
           .catch((e) => {
-            console.warn("[trade] closeTrade failed — using optimistic PnL:", e);
+            console.warn("[trade] closeTrade failed — close remains retryable:", e);
             return { ok: false as const };
           });
     Promise.all([closeReq, minDelay]).then(([result]) => {
@@ -1892,16 +1953,25 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         const entryPrice = result.res.entry_price > 0 ? result.res.entry_price : entry;
         const pnlDollars = result.res.net_pnl_usdc;
         const pnlPct = positionWager > 0 ? pnlDollars / positionWager : 0;
+        console.info("[trade/close-ui] close response received", { kind: "close", ok: true });
         settleAndShow(pnlDollars, pnlPct, entryPrice, exitPrice);
-      } else {
+      } else if (paperMode || isDemo) {
         settleAndShow(pnlDollarsOptimistic, pnlPctOptimistic, entry, exitOptimistic);
+      } else {
+        a.settleInFlight = false;
+        onSettlingChange?.(false);
+        a.flightBubble = { text: "CLOSE PENDING · RETRY", start: performance.now(), until: performance.now() + 3200 };
+        onError?.("Close Pending — Retry Close. Final PnL will show after the real close succeeds.");
+        console.info("[trade/close-ui] close response received", { kind: "close", ok: false });
       }
     });
-  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode]);
+  }, [setGameState, setBalance, setSpriteState, onHistoryPush, getTradeDurationSeconds, getAccessToken, walletAddress, paperMode, playMode, onError, onSettlingChange]);
 
   const closeEndOfGame = useCallback(() => {
+    const wasDemo = playMode === "demo";
     reset();
-  }, [reset]);
+    if (wasDemo) onDemoEnd?.();
+  }, [onDemoEnd, playMode, reset]);
 
   /* ============ START JUMP ============ */
   const startJump = useCallback(
@@ -1915,6 +1985,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       a.tradeDirection = direction;
       a.pendingEntry = entryPrice;
       a.pendingLiqPrice = liqPrice;
+      a.settleInFlight = false;
       a.runFrame = 0;
       a.stepPhase = 0;
       a.prevStepHalf = 0;
@@ -1945,9 +2016,75 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     [setGameState],
   );
 
-  useImperativeHandle(ref, () => ({ startJump, stopTrade }), [
+
+  const confirmTrade = useCallback((entryPrice: number, liqPrice: number) => {
+    const a = anim.current;
+    a.pendingEntry = entryPrice;
+    a.pendingLiqPrice = liqPrice;
+    a.flightBubble = { text: "", start: 0, until: 0 };
+    if (a.state === "LIVE" || a.state === "STOPPED") {
+      a.entry = entryPrice;
+      a.liquidationPrice = liqPrice;
+      a.figPrice = a.price;
+      a.smoothDelta = 0;
+    }
+  }, []);
+
+
+  const restoreLiveTrade = useCallback((
+    lev: number,
+    wag: number,
+    entryPrice: number,
+    liqPrice: number,
+    direction: TradeDirection,
+    currentPrice?: number,
+  ) => {
+    const a = anim.current;
+    const livePrice = currentPrice && currentPrice > 0 ? currentPrice : entryPrice;
+    a.state = "LIVE";
+    setGameState("LIVE");
+    setEndOfGame(null);
+    a.positionLev = lev;
+    a.positionWager = wag;
+    a.tradeDirection = direction;
+    a.entry = entryPrice;
+    a.pendingEntry = entryPrice;
+    a.liquidationPrice = liqPrice;
+    a.pendingLiqPrice = liqPrice;
+    a.price = livePrice;
+    a.renderPrice = livePrice;
+    a.prevPrice = livePrice;
+    a.figPrice = entryPrice;
+    a.smoothFigPrice = entryPrice;
+    a.figPriceVel = 0;
+    a.smoothDelta = 0;
+    a.flightPose = "air";
+    a.curBobY = 0;
+    a.tradeStartTime = performance.now();
+    a.settleInFlight = false;
+    a.flightFx.length = 0;
+    a.flightBubble = { text: "", start: 0, until: 0 };
+    a.nextFlightCueAt = 0;
+    a.lastFlightMilestone = 0;
+    a.liveShake = 0;
+    a.liveZoomPunch = 0;
+    setSpriteState("air");
+    setLevTagText(`${lev}x`);
+    setLevTagShow(true);
+    onSettlingChange?.(false);
+    onPnlChange(0);
+  }, [setGameState, setSpriteState, onSettlingChange, onPnlChange]);
+
+  const cancelLaunch = useCallback(() => {
+    reset();
+  }, [reset]);
+
+  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, restoreLiveTrade, cancelLaunch }), [
     startJump,
     stopTrade,
+    confirmTrade,
+    restoreLiveTrade,
+    cancelLaunch,
   ]);
 
   /* ============ MAIN ANIMATION LOOP ============ */
@@ -2290,6 +2427,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           a.figPriceVel = 0.06 + n.y * 0.02;
         }
 
+        const chartY = getTerrainY(figWorldX);
+        const baseAlt = a.stageH - chartY;
         if (elapsed > activeJumpDuration) {
           /* enter LIVE — use the on-chain entry/liq from /trade/open if
              present (positive value); otherwise fall back to the current
@@ -2306,8 +2445,15 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
                 ? a.entry + a.entry / a.positionLev
                 : a.entry - a.entry / a.positionLev;
           a.tradeStartTime = time;
-          a.figPrice = a.price;
-          a.figPriceVel = 0.08;
+          a.figPrice = a.entry;
+          a.smoothFigPrice = a.entry;
+          a.figPriceVel = 0;
+          if (priceToY) {
+            const entryLineY = priceToY(a.entry);
+            const openingY = entryLineY
+              + (a.tradeDirection === "short" ? ENTRY_LINE_SPAWN_OFFSET_PX : -ENTRY_LINE_SPAWN_OFFSET_PX);
+            a.smoothAlt = a.stageH - clamp(openingY, 0, a.stageH);
+          }
           a.smoothDelta = 0;
           a.flightPose = "air";
           a.frame = 0;
@@ -2317,8 +2463,6 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
           if (fig) fig.style.transition = "none";
         } else {
           const jumpT = clamp(elapsed / activeJumpDuration, 0, 1);
-          const chartY = getTerrainY(figWorldX);
-          const baseAlt = a.stageH - chartY;
           if (a.tradeDirection === "short") {
             const hopT = clamp(jumpT / 0.34, 0, 1);
             const diveT = clamp((jumpT - 0.22) / 0.78, 0, 1);
@@ -2369,6 +2513,8 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         a.figPriceVel *= Math.pow(DRAG, dtNorm);
         a.figPriceVel = Math.max(-VY_CLAMP_P, Math.min(VY_CLAMP_P, a.figPriceVel));
         a.figPrice += a.figPriceVel * dtNorm;
+        const pnlAnchoredPrice = a.entry + (a.price - a.entry) * PNL_Y_SCALE;
+        a.figPrice = lerp(a.figPrice, pnlAnchoredPrice, ENTRY_PRICE_ANCHOR_LERP * dtNorm);
 
         /* figPrice is the visual flight path. Crashing the figure into the
            ground is reserved for real liquidations (a.price crossing the
@@ -2392,10 +2538,13 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
         if (a.frame % 3 === 0) onPnlChange(pnlDollars);
 
         const liveLift = a.skyAlt * a.stageH * 0.25;
-        const liveSpriteScale = lerp(1, 0.4, a.skyAlt) * (a.cinematicZoom || 1);
+        // Flight FX are painted on the canvas, which already receives the cinematic
+        // zoom transform. Anchor particles in unzoomed canvas space so mobile
+        // practice trails stay attached to the sprite instead of drifting high.
+        const fxSpriteScale = lerp(1, 0.4, a.skyAlt);
         const flightFootY = a.stageH - a.smoothAlt - liveLift;
-        const jetpackX = figScreenX - SPRITE_DISPLAY_W * liveSpriteScale * 0.28;
-        const jetpackY = flightFootY - SPRITE_DISPLAY_H * liveSpriteScale * 0.48;
+        const jetpackX = figScreenX - SPRITE_DISPLAY_W * fxSpriteScale * 0.28;
+        const jetpackY = flightFootY - SPRITE_DISPLAY_H * fxSpriteScale * 0.48;
 
         const liveElapsed = time - (a.tradeStartTime || time);
         const cueEvery = 7800 + (featureNoise(Math.floor(liveElapsed / 7800) * 9.17) * 5200);
@@ -2776,6 +2925,11 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       <div className={`lev-tag${levTagShow ? " show" : ""}`}>
         {levTagText}
       </div>
+      {playMode === "demo" && gameState !== "IDLE" && (
+        <div className="demo-mode-pill" role="status">
+          demo mode · no real trade
+        </div>
+      )}
       {pnlReadout}
       <div className="crash-warning" ref={crashWarningRef} aria-hidden="true" />
       <div className="race-flag" aria-hidden="true" ref={raceFlagRef} />

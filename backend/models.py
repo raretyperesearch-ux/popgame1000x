@@ -18,17 +18,30 @@ class OpenTradeRequest(BaseModel):
 
 
 class OpenTradeResponse(BaseModel):
-    trade_index: int
+    status: str = "live"
+    session_id: Optional[str] = None
+    trade_index: Optional[int] = None
     avantis_pair_index: int
     leverage: int
     wager_usdc: float
     house_fee_usdc: float
     collateral_usdc: float
-    entry_price: float
-    liquidation_price: float
+    entry_price: Optional[float] = None
+    liquidation_price: Optional[float] = None
     opened_at: datetime
     tx_hash: str
     is_long: bool = True
+
+
+class TradeStatusResponse(BaseModel):
+    status: str
+    session_id: str
+    tx_hash: str
+    trade_index: Optional[int] = None
+    entry_price: Optional[float] = None
+    liq_price: Optional[float] = None
+    liquidation_price: Optional[float] = None
+    error: Optional[str] = None
 
 
 class CloseTradeResponse(BaseModel):
@@ -56,6 +69,30 @@ class ActiveTrade(BaseModel):
     liquidation_price: float
     opened_at: datetime
     is_long: bool = True
+
+
+class ActiveTradeResponse(BaseModel):
+    exists: bool
+    status: Optional[str] = None
+    wallet: Optional[str] = None
+    session_id: Optional[str] = None
+    open_tx_hash: Optional[str] = None
+    trade_index: Optional[int] = None
+    avantis_pair_index: Optional[int] = None
+    leverage: Optional[int] = None
+    wager_usdc: Optional[float] = None
+    collateral_usdc: Optional[float] = None
+    house_fee_usdc: Optional[float] = None
+    entry_price: Optional[float] = None
+    liq_price: Optional[float] = None
+    liquidation_price: Optional[float] = None
+    current_price: Optional[float] = None
+    pnl_usdc: Optional[float] = None
+    pnl_pct: Optional[float] = None
+    opened_at: Optional[datetime] = None
+    tx_hash: Optional[str] = None
+    is_long: Optional[bool] = None
+    error: Optional[str] = None
 
 
 class PriceStreamMessage(BaseModel):

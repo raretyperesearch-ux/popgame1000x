@@ -23,7 +23,7 @@ Exposed surface:
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 # We import supabase lazily inside init() so the module can be imported
@@ -35,6 +35,7 @@ _enabled: bool = False
 _TABLE = "pg_trades"
 _LEADERBOARD_VIEW = "pg_trade_leaderboard"
 _BM_PLAYERS = "bm_players"
+_HOUSE_FEE_EVENTS = "pg_house_fee_events"
 
 
 def init() -> None:
@@ -102,7 +103,7 @@ def record_open(
     liquidation_price: float,
     opened_at: datetime,
     open_tx_hash: str,
-) -> None:
+) -> bool:
     """Insert a row when a trade opens. Best-effort — never raises.
 
     Conflict key is open_tx_hash, which is globally unique on-chain. An
@@ -112,7 +113,7 @@ def record_open(
     on the tx hash gives every real trade its own row; idempotent retries
     of the same record_open just re-update the same row."""
     if not is_enabled():
-        return
+        return False
     # Defensive: if the receipt unwrap upstream ever returns "" (web3.py
     # receipt without a transactionHash attribute), every empty-hash
     # record_open would collide on the unique index and silently
@@ -123,7 +124,7 @@ def record_open(
             f"[persistence] record_open skipped: empty open_tx_hash for "
             f"{wallet_address} #{trade_index}"
         )
-        return
+        return False
     row = {
         "did": did,
         "wallet_address": wallet_address.lower(),
@@ -143,8 +144,206 @@ def record_open(
             row,
             on_conflict="open_tx_hash",
         ).execute()
+        return True
     except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "pg_trades_one_open_per_index" in msg:
+            try:
+                stale_close = _iso(opened_at)
+                _client.table(_TABLE).update(
+                    {
+                        "closed_at": stale_close,
+                        "close_tx_hash": f"stale-before:{open_tx_hash}",
+                    }
+                ).eq("wallet_address", wallet_address.lower()).eq(
+                    "trade_index", trade_index
+                ).is_("closed_at", "null").neq(
+                    "open_tx_hash", open_tx_hash
+                ).execute()
+                _client.table(_TABLE).upsert(
+                    row,
+                    on_conflict="open_tx_hash",
+                ).execute()
+                print(
+                    f"[persistence] record_open recovered stale open row "
+                    f"for {wallet_address} #{trade_index}"
+                )
+                return True
+            except Exception as retry_err:  # noqa: BLE001
+                print(
+                    f"[persistence] record_open stale-row recovery failed "
+                    f"for {wallet_address} #{trade_index}: {retry_err}"
+                )
         print(f"[persistence] record_open failed for {wallet_address} #{trade_index}: {e}")
+        return False
+
+
+def active_open_for_wallet(wallet_address: str) -> Optional[dict]:
+    """Return the newest locally-open trade row for a wallet, if any."""
+    if not is_enabled():
+        return None
+    try:
+        res = (
+            _client.table(_TABLE)
+            .select("*")
+            .eq("wallet_address", wallet_address.lower())
+            .is_("closed_at", "null")
+            .order("opened_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            return dict(res.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] active_open_for_wallet failed for {wallet_address}: {e}")
+    return None
+
+
+def mark_stale_open_reconciled(*, wallet_address: str, trade_index: int, reason: str) -> bool:
+    """Close a stale local open row when Avantis no longer has it open."""
+    if not is_enabled():
+        return False
+    try:
+        now = _iso(datetime.now(timezone.utc))
+        _client.table(_TABLE).update(
+            {
+                "closed_at": now,
+                "close_tx_hash": f"reconciled-stale:{reason}",
+            }
+        ).eq("wallet_address", wallet_address.lower()).eq(
+            "trade_index", trade_index
+        ).is_("closed_at", "null").execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"[persistence] mark_stale_open_reconciled failed "
+            f"for {wallet_address} #{trade_index}: {e}"
+        )
+        return False
+
+
+def record_house_fee_pending(
+    *,
+    idempotency_key: str,
+    did: str,
+    wallet_address: str,
+    wallet_id: str,
+    trade_index: int,
+    session_id: str,
+    collateral_usdc: float,
+    fee_usdc: float,
+    treasury_address: str,
+) -> Optional[dict]:
+    """Durably queue a house-fee collection event.
+
+    The idempotency key is unique. If an event already exists, return it
+    without resetting status/tx_hash so retries cannot turn a collected
+    fee back into a pending fee.
+    """
+    if not is_enabled():
+        print(
+            f"[persistence] house fee queue skipped: Supabase disabled "
+            f"({idempotency_key})"
+        )
+        return None
+    try:
+        existing = (
+            _client.table(_HOUSE_FEE_EVENTS)
+            .select("*")
+            .eq("idempotency_key", idempotency_key)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            return dict(existing.data[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] house fee lookup failed ({idempotency_key}): {e}")
+
+    now = _iso(datetime.now(timezone.utc))
+    row = {
+        "idempotency_key": idempotency_key,
+        "did": did,
+        "wallet_address": wallet_address.lower(),
+        "wallet_id": wallet_id,
+        "trade_index": trade_index,
+        "session_id": session_id,
+        "collateral_usdc": collateral_usdc,
+        "fee_usdc": fee_usdc,
+        "treasury_address": treasury_address.lower(),
+        "status": "pending",
+        "tx_hash": None,
+        "attempt_count": 0,
+        "last_error": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        res = _client.table(_HOUSE_FEE_EVENTS).insert(row).execute()
+        return dict((res.data or [row])[0])
+    except Exception as e:  # noqa: BLE001
+        # A concurrent retry may have inserted the row first. Read it back
+        # so the caller still has the durable event identity.
+        try:
+            existing = (
+                _client.table(_HOUSE_FEE_EVENTS)
+                .select("*")
+                .eq("idempotency_key", idempotency_key)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                return dict(existing.data[0])
+        except Exception:  # noqa: BLE001
+            pass
+        print(f"[persistence] house fee insert failed ({idempotency_key}): {e}")
+        return None
+
+
+def claim_house_fee_event(idempotency_key: str) -> Optional[dict]:
+    """Atomically claim a pending/failed house-fee event for collection."""
+    if not is_enabled():
+        return None
+    try:
+        res = _client.rpc(
+            "pg_claim_house_fee_event",
+            {"p_idempotency_key": idempotency_key},
+        ).execute()
+        if res.data:
+            return dict(res.data[0])
+        return None
+    except Exception as e:  # noqa: BLE001
+        print(f"[persistence] house fee claim failed ({idempotency_key}): {e}")
+        return None
+
+
+def mark_house_fee_collected(idempotency_key: str, tx_hash: str) -> None:
+    if not is_enabled():
+        return
+    try:
+        _client.rpc(
+            "pg_mark_house_fee_collected",
+            {"p_idempotency_key": idempotency_key, "p_tx_hash": tx_hash},
+        ).execute()
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"[persistence] house fee collected update failed "
+            f"({idempotency_key}): {e}"
+        )
+
+
+def mark_house_fee_failed(idempotency_key: str, error: str) -> None:
+    if not is_enabled():
+        return
+    try:
+        _client.rpc(
+            "pg_mark_house_fee_failed",
+            {"p_idempotency_key": idempotency_key, "p_error": error[:2000]},
+        ).execute()
+    except Exception as e:  # noqa: BLE001
+        print(
+            f"[persistence] house fee failed update failed "
+            f"({idempotency_key}): {e}"
+        )
 
 
 def record_close(
@@ -309,7 +508,7 @@ def register_player(*, privy_id: str, evm_wallet_address: str) -> Optional[dict]
         print(f"[bm_players] register_player: missing privy_id={privy_id!r} or wallet={evm_wallet_address!r}")
         return None
     wallet = evm_wallet_address.lower()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Step 1: try UPDATE by privy_id.
     try:
@@ -438,7 +637,7 @@ def set_username(*, privy_id: str, username: str) -> tuple[Optional[dict], Optio
                 {
                     "username": name,
                     "display_name": name,
-                    "last_active_at": datetime.utcnow().isoformat(),
+                    "last_active_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
             .eq("privy_id", privy_id)

@@ -132,7 +132,7 @@ async def test_active_no_feed_yet_falls_back_to_entry() -> None:
 
 
 async def test_active_no_open_trade_returns_none() -> None:
-    """Empty get_trades → None response."""
+    """Empty get_trades → structured exists=false response."""
     from routes import trade as trade_mod
     fake_client = AsyncMock()
     fake_client.trade = AsyncMock()
@@ -142,9 +142,9 @@ async def test_active_no_open_trade_returns_none() -> None:
         out = await trade_mod.get_active_trade(
             AuthedUser(did="u", wallet_id="w", address="0xabc")
         )
-    if out is not None:
-        _fail("active.empty", f"expected None, got {out}")
-    _ok("active.empty trades → None")
+    if out.exists:
+        _fail("active.empty", f"expected exists=false, got {out}")
+    _ok("active.empty trades → exists=false")
 
 
 def test_exit_price_back_compute_winning_trade() -> None:
@@ -223,6 +223,36 @@ def test_compute_pnl_long_losing() -> None:
         _fail("compute_pnl.loss.usdc", f"expected -5.0, got {pnl_usdc}")
     _ok("compute_pnl.long losing → -$5.00")
 
+
+
+def test_min_position_validation_detail() -> None:
+    from fastapi import HTTPException
+    import json
+    from routes.trade import _below_min_position_response, _min_position_detail, _reject_below_min_position
+
+    detail = _min_position_detail(collateral=0.975, leverage=100)
+    if detail["error"] != "below_min_position":
+        _fail("min_position.error", f"expected below_min_position, got {detail['error']}")
+    if not _close(detail["current_notional_usd"], 97.5):
+        _fail("min_position.current", f"expected 97.5, got {detail['current_notional_usd']}")
+    if detail["min_notional_usd"] < 110:
+        _fail("min_position.default", f"expected safe default >= 110, got {detail['min_notional_usd']}")
+
+    response = _below_min_position_response(collateral=0.975, leverage=100)
+    payload = json.loads(response.body)
+    if response.status_code != 400 or payload.get("error") != "below_min_position":
+        _fail("min_position.response", f"unexpected response {response.status_code} {payload!r}")
+
+    try:
+        _reject_below_min_position(collateral=0.975, leverage=100)
+    except HTTPException as e:
+        if e.status_code != 400:
+            _fail("min_position.status", f"expected 400, got {e.status_code}")
+        if not isinstance(e.detail, dict) or e.detail.get("error") != "below_min_position":
+            _fail("min_position.detail", f"unexpected detail {e.detail!r}")
+    else:
+        _fail("min_position.raise", "expected HTTPException")
+    _ok("min-position guard returns structured 400")
 
 def test_persistence_disabled_is_noop() -> None:
     """Persistence layer must NEVER raise when Supabase env is unset —
@@ -309,6 +339,9 @@ async def main() -> None:
     test_exit_price_back_compute_losing_trade()
     test_exit_price_back_compute_full_liquidation()
     test_exit_price_degenerate_inputs_return_none()
+    print()
+    print("[trade/open min position]")
+    test_min_position_validation_detail()
     print()
     print("[persistence]")
     test_persistence_disabled_is_noop()

@@ -9,11 +9,15 @@ import GameScene, { type GameSceneHandle, type TradeDirection } from "./componen
 import PnLReadout from "./components/PnLReadout";
 import Controls from "./components/Controls";
 import HelpOverlay from "./components/HelpOverlay";
-import { getBalance, openTrade, forceCloseTrade, getHistory, type HistoryTrade } from "@/lib/api";
+import { getBalance, openTrade, forceCloseTrade, getHistory, getTradeStatus, getActiveTrade, type ActiveTradeResponse, type HistoryTrade } from "@/lib/api";
 import { readOnchainBalances } from "@/lib/onchain-balance";
 import { sounds } from "@/lib/sounds";
+import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotionalFor } from "@/lib/trade-sizing";
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
+type PlayMode = "live" | "demo";
+
+const DEMO_WAGER_USDC = 100;
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -47,6 +51,7 @@ export default function Home() {
   const [wager, setWager] = useState(100);
   const [direction, setDirection] = useState<TradeDirection>("long");
   const [gameState, setGameState] = useState<GameState>("IDLE");
+  const [playMode, setPlayMode] = useState<PlayMode>("live");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
   /* Bumped after every trade close so the topbar Leaderboard picks up
@@ -55,6 +60,9 @@ export default function Home() {
   const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
+  const [activeRecovery, setActiveRecovery] = useState(false);
+  const [liveTradeReady, setLiveTradeReady] = useState(true);
+  const [settling, setSettling] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -114,6 +122,7 @@ export default function Home() {
     apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
+  const isConnected = authenticated && Boolean(walletAddress);
 
   useEffect(() => {
     if (!paperMode) {
@@ -261,83 +270,218 @@ export default function Home() {
     setLeaderboardRefreshKey((k) => k + 1);
   }, []);
 
+  const waitForLiveTrade = useCallback(async (sessionId: string) => {
+    for (let i = 0; i < 24; i += 1) {
+      const status = await getTradeStatus(sessionId, getAccessToken, walletAddress);
+      if (status.status === "live" && status.entry_price && (status.liquidation_price || status.liq_price)) {
+        console.info("[trade/open-ui] session live/confirmed", { sessionId, poll: i + 1 });
+        return status;
+      }
+      if (status.status === "failed_open") {
+        throw new Error(status.error || "Trade failed to open on Avantis.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error("Trade is still opening on Avantis. Try again in a moment.");
+  }, [getAccessToken, walletAddress]);
+
+
+
+  const restoreActiveTrade = useCallback((active: ActiveTradeResponse) => {
+    const entry = active.entry_price;
+    const liq = active.liquidation_price ?? active.liq_price;
+    if (!active.exists || !entry || !liq || !active.leverage || !active.wager_usdc) {
+      return false;
+    }
+    const restoredDirection: TradeDirection = active.is_long === false ? "short" : "long";
+    setPlayMode("live");
+    setDirection(restoredDirection);
+    setLeverage(active.leverage);
+    setWager(Math.max(1, Math.round(active.wager_usdc)));
+    setPnl(active.pnl_usdc ?? 0);
+    gameRef.current?.restoreLiveTrade(
+      active.leverage,
+      active.wager_usdc,
+      entry,
+      liq,
+      restoredDirection,
+      active.current_price ?? entry,
+    );
+    setLiveTradeReady(true);
+    setOpenInFlight(false);
+    setActiveRecovery(false);
+    setSettling(active.status === "closing");
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated || paperMode || !walletAddress || gameState !== "IDLE") return;
+    let cancelled = false;
+    const recover = async () => {
+      let detectedActive = false;
+      setActiveRecovery(true);
+      try {
+        const active = await getActiveTrade(getAccessToken, walletAddress);
+        if (cancelled) return;
+        if (!active.exists) {
+          console.info("[trade/active-ui] no active trade");
+          return;
+        }
+
+        detectedActive = true;
+        console.info("[trade/active-ui] active trade detected", { status: active.status, sessionId: active.session_id, tradeIndex: active.trade_index });
+        showTradeError("Active Trade Detected — Reconnecting");
+        if (active.status === "opening" || active.status === "pending_confirmation") {
+          setOpenInFlight(true);
+          setLiveTradeReady(false);
+          const sessionId = active.session_id || active.tx_hash || active.open_tx_hash;
+          if (!sessionId) throw new Error("Active opening trade is missing a session id.");
+          const live = await waitForLiveTrade(sessionId);
+          if (cancelled) return;
+          const restored: ActiveTradeResponse = {
+            ...active,
+            exists: true,
+            status: "live",
+            entry_price: live.entry_price,
+            liquidation_price: live.liquidation_price ?? live.liq_price,
+            liq_price: live.liquidation_price ?? live.liq_price,
+            trade_index: live.trade_index,
+          };
+          if (!restoreActiveTrade(restored)) throw new Error("Active trade became live but was missing prices.");
+          return;
+        }
+
+        if (active.status === "live" || active.status === "open" || active.status === "closing") {
+          if (!restoreActiveTrade(active)) throw new Error("Active trade was missing entry/liquidation data.");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const raw = e instanceof Error ? e.message : String(e);
+        console.warn("[trade/active-ui] recovery failed:", e);
+        showTradeError(`Active Trade Detected — Reconnecting. ${raw.slice(0, 160)}`);
+      } finally {
+        if (!cancelled && !detectedActive) setActiveRecovery(false);
+      }
+    };
+    recover();
+    const retry = window.setInterval(() => {
+      if (cancelled) return;
+      if (gameState === "IDLE") recover();
+    }, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(retry);
+    };
+  }, [authenticated, paperMode, walletAddress, getAccessToken, gameState, waitForLiveTrade, restoreActiveTrade, showTradeError]);
+
   const handleAction = useCallback(async (actionDirection?: TradeDirection) => {
     const activeDirection = actionDirection ?? direction;
+    const clickedAt = performance.now();
+    console.info("[trade/open-ui] click received", { state: gameState, direction: activeDirection });
+    if (activeRecovery) {
+      showTradeError("Active Trade Detected — Reconnecting");
+      return;
+    }
     if (gameState === "IDLE" && !openInFlight) {
       setDirection(activeDirection);
-      // No client-side balance gate on the wager — let the user pick any
-      // amount they want, then surface a clear "needs more USDC" hint
-      // when they're short rather than silently no-op'ing the JUMP.
+      if (!isConnected) {
+        setPlayMode("demo");
+        gameRef.current?.startJump(
+          leverage,
+          DEMO_WAGER_USDC,
+          0,
+          0,
+          activeDirection,
+        );
+        return;
+      }
+      setPlayMode("live");
+      // No client-side live open when the selected wager is underfunded:
+      // keep JUMP/DIVE visible, but route the connected user to funding
+      // instead of silently starting a demo or hitting /trade/open.
       if (wager > balance) {
         const need = (wager - balance).toFixed(2);
+        sounds.play("ui-click");
+        window.dispatchEvent(new Event("popgame:fund-usdc"));
         showTradeError(
-          `Not enough USDC for a $${wager} wager — need $${need} more to ${
-            activeDirection === "short" ? "dive" : "jump"
-          }.`,
+          `Deposit To Play Live — need $${need} for this wager. Lower wager or deposit.`,
+        );
+        return;
+      }
+      if (isBelowMinPosition(wager, leverage)) {
+        sounds.play("ui-click");
+        showTradeError(
+          `Position Too Small — Increase Boost Or Wager. ${minPositionHint(wager, leverage)}. Current ~$${liveNotionalFor(wager, leverage).toFixed(0)} / min ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)}.`,
         );
         return;
       }
       setOpenInFlight(true);
+      setLiveTradeReady(false);
+      gameRef.current?.startJump(leverage, wager, 0, 0, activeDirection);
+      console.info("[trade/open-ui] launch state set", { elapsedMs: Math.round(performance.now() - clickedAt) });
       try {
-        let entryPrice = 0;
-        let liquidationPrice = 0;
-        let tradeOk = true;
-        if (!paperMode) {
+        console.info("[trade/open-ui] /trade/open request sent", { elapsedMs: Math.round(performance.now() - clickedAt) });
+        const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
+        console.info("[trade/open-ui] /trade/open response received", { elapsedMs: Math.round(performance.now() - clickedAt), status: trade.status ?? "live" });
+        let entryPrice = trade.entry_price;
+        let liquidationPrice = trade.liquidation_price;
+        if ((trade.status ?? "live") === "opening") {
+          console.info("[trade/open-ui] opening accepted", { elapsedMs: Math.round(performance.now() - clickedAt) });
+          const live = await waitForLiveTrade(trade.session_id || trade.tx_hash);
+          entryPrice = live.entry_price;
+          liquidationPrice = live.liquidation_price ?? live.liq_price;
+        }
+        if (!entryPrice || !liquidationPrice) {
+          throw new Error("Trade opened but Avantis entry/liquidation prices were not available yet.");
+        }
+        setBalance((prev) => prev - wager);
+        gameRef.current?.confirmTrade(entryPrice, liquidationPrice);
+        setLiveTradeReady(true);
+      } catch (e) {
+        setLiveTradeReady(true);
+        gameRef.current?.cancelLaunch();
+        // apiFetch's "API <status>: <body>" format — pull the JSON
+        // detail out so we can show something readable.
+        const raw = e instanceof Error ? e.message : String(e);
+        const statusMatch = raw.match(/^API (\d+):/);
+        const status = statusMatch ? Number(statusMatch[1]) : 0;
+        let detail = raw;
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
           try {
-            const trade = await openTrade(leverage, wager, activeDirection, getAccessToken, walletAddress);
-            entryPrice = trade.entry_price;
-            liquidationPrice = trade.liquidation_price;
-          } catch (e) {
-            tradeOk = false;
-          // apiFetch's "API <status>: <body>" format — pull the JSON
-          // detail out so we can show something readable.
-          const raw = e instanceof Error ? e.message : String(e);
-          const statusMatch = raw.match(/^API (\d+):/);
-          const status = statusMatch ? Number(statusMatch[1]) : 0;
-          let detail = raw;
-          const jsonMatch = raw.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[0]) as { detail?: string };
-              if (parsed.detail) detail = parsed.detail;
-            } catch { /* fall through */ }
-          }
-          if (status === 409) {
-            // Existing open trade — common when a previous round's
-            // close didn't land cleanly (network blip, browser closed
-            // mid-settle). Pin the banner with a recovery button.
-            showStuckTradeError(detail.slice(0, 240));
-          } else if (status === 402 || status === 504 || status === 502) {
-            // 402: needs ETH for gas.
-            // 504: Privy signer timeout (delegation usually). 502: Privy
-            // returned an error (insufficient funds, bad signature, etc).
-            // All three backend messages are user-readable; surface
-            // verbatim. Truncate just to keep the banner from blowing up.
-            showTradeError(detail.slice(0, 240));
-          } else if (status === 0) {
-            // No HTTP status — fetch itself failed (CORS, server reset,
-            // browser closed connection). Tell the user to retry rather
-            // than the unhelpful raw "Failed to fetch".
-            showTradeError(
-              "Lost connection to the trade server. Try again in a moment.",
-            );
-          } else {
-            showTradeError(`Trade didn't land (${status}): ${detail.slice(0, 200)}`);
-          }
-            console.warn("[trade] openTrade failed:", e);
-          }
+            const parsed = JSON.parse(jsonMatch[0]) as { detail?: string | { message?: string } };
+            if (typeof parsed.detail === "string") {
+              detail = parsed.detail;
+            } else if (parsed.detail?.message) {
+              detail = parsed.detail.message;
+            }
+          } catch { /* fall through */ }
         }
-        if (tradeOk) {
-          setBalance((prev) => prev - wager);
-          gameRef.current?.startJump(leverage, wager, entryPrice, liquidationPrice, activeDirection);
+        if (status === 409) {
+          showStuckTradeError(detail.slice(0, 240));
+        } else if (status === 400 && raw.includes("below_min_position")) {
+          showTradeError("Position Too Small — Increase Boost Or Wager. Avantis minimum notional not met.");
+        } else if (status === 402 || status === 504 || status === 502) {
+          showTradeError(detail.slice(0, 240));
+        } else if (status === 0) {
+          showTradeError(`TRADE FAILED TO OPEN — ${detail.slice(0, 200)}`);
+        } else {
+          showTradeError(`TRADE FAILED TO OPEN (${status}): ${detail.slice(0, 200)}`);
         }
+        console.warn("[trade] openTrade failed:", e);
       } finally {
         setOpenInFlight(false);
       }
     } else if (gameState === "LIVE") {
+      if (!liveTradeReady) {
+        showTradeError("Still readying — live trade is not ready to close yet.");
+        return;
+      }
+      gameRef.current?.stopTrade();
+    } else if (gameState === "STOPPED" && !settling) {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, paperMode, getAccessToken, walletAddress, showTradeError, showStuckTradeError]);
+  }, [gameState, balance, wager, leverage, direction, openInFlight, activeRecovery, isConnected, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -380,6 +524,10 @@ export default function Home() {
         onHistoryPush={handleHistoryPush}
         onPnlChange={setPnl}
         paperMode={paperMode}
+        playMode={playMode}
+        onDemoEnd={() => setPlayMode("live")}
+        onError={showTradeError}
+        onSettlingChange={setSettling}
         pnlReadout={<PnLReadout pnlDollars={(gameState === "LIVE" || gameState === "STOPPED") ? pnl : null} />}
       />
       <HistoryStrip history={history} />
@@ -389,8 +537,11 @@ export default function Home() {
         balance={balance}
         pnl={pnl}
         direction={direction}
-        busy={openInFlight}
+        busy={openInFlight || activeRecovery}
         state={gameState}
+        isConnected={isConnected}
+        liveTradeReady={liveTradeReady}
+        settling={settling}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
         onAction={handleAction}
