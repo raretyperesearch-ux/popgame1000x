@@ -328,6 +328,8 @@ export interface GameSceneHandle {
     direction: TradeDirection,
   ) => void;
   stopTrade: () => void;
+  confirmTrade: (entryPrice: number, liquidationPrice: number) => void;
+  cancelLaunch: () => void;
 }
 
 interface GameSceneProps {
@@ -1960,9 +1962,28 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     [setGameState],
   );
 
-  useImperativeHandle(ref, () => ({ startJump, stopTrade }), [
+
+  const confirmTrade = useCallback((entryPrice: number, liqPrice: number) => {
+    const a = anim.current;
+    a.pendingEntry = entryPrice;
+    a.pendingLiqPrice = liqPrice;
+    if (a.state === "LIVE" || a.state === "STOPPED") {
+      a.entry = entryPrice;
+      a.liquidationPrice = liqPrice;
+      a.figPrice = a.price;
+      a.smoothDelta = 0;
+    }
+  }, []);
+
+  const cancelLaunch = useCallback(() => {
+    reset();
+  }, [reset]);
+
+  useImperativeHandle(ref, () => ({ startJump, stopTrade, confirmTrade, cancelLaunch }), [
     startJump,
     stopTrade,
+    confirmTrade,
+    cancelLaunch,
   ]);
 
   /* ============ MAIN ANIMATION LOOP ============ */
