@@ -40,7 +40,7 @@ export function isBelowMinPosition(wager: number, leverage: number): boolean {
 export function minPositionHint(wager: number, leverage: number): string {
   const neededLeverage = minLeverageForWager(wager);
   if (neededLeverage <= 500) {
-    return `min live ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)} · use ${neededLeverage}x+ or raise wager`;
+    return `min live ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)} · use ${neededLeverage}x+ or raise fuel`;
   }
-  return `min live ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)} · need $${minWagerForLeverage(leverage).toFixed(2)}+`;
+  return `min live ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)} · fuel $${minWagerForLeverage(leverage).toFixed(2)}+`;
 }

@@ -17,8 +17,10 @@ interface ControlsProps {
   isConnected?: boolean;
   liveTradeReady?: boolean;
   settling?: boolean;
+  addFuelPulseKey?: number;
   onLeverageChange: (v: number) => void;
   onWagerChange: (v: number) => void;
+  onAddFuel?: () => void;
   onAction: (direction?: TradeDirection) => void;
 }
 
@@ -35,17 +37,18 @@ export default function Controls({
   isConnected = false,
   liveTradeReady = true,
   settling = false,
+  addFuelPulseKey = 0,
   onLeverageChange,
   onWagerChange,
+  onAddFuel,
   onAction,
 }: ControlsProps) {
   const opening = busy && state === "IDLE";
   const disabled = state !== "IDLE" || opening;
   // Slider range scales to whichever is largest: the chip ceiling ($1000),
-  // the user's actual balance, or the currently-set wager. This way the
+  // the user's actual balance, or the currently-set fuel. This way the
   // slider thumb always reaches the active chip selection even on a
-  // small balance — it just signals "not enough USDC" via the JUMP
-  // button copy when the wager exceeds balance.
+  // small balance.
   const wagerMax = Math.max(1000, Math.floor(balance), wager);
   const boostHeat = Math.max(0, Math.min(1, (leverage - 75) / (500 - 75)));
   const wagerHeat = Math.max(0, Math.min(1, wager / Math.max(1, wagerMax)));
@@ -109,7 +112,7 @@ export default function Controls({
         style={{ "--wager-heat": wagerHeat } as CSSProperties}
       >
         <div className="slider-row cash-row">
-          <div className="slider-label">wager</div>
+          <div className="slider-label">fuel</div>
           <input
             type="range"
             className="hand-slider"
@@ -133,13 +136,26 @@ export default function Controls({
             </button>
           ))}
         </div>
+        <div className="fuel-helper-row">
+          <span>fuel = collateral</span>
+          {needsFunding && (
+            <button
+              key={addFuelPulseKey}
+              type="button"
+              className="add-fuel-inline pulse"
+              onClick={onAddFuel}
+            >
+              add fuel
+            </button>
+          )}
+        </div>
         {showSplitAction ? (
           <>
             <div className="controls-action-hint">
               {!isConnected
                 ? "try the game free · no login needed"
                 : needsFunding
-                  ? `need $${fundingShortfall.toFixed(0)} · lower wager or deposit`
+                  ? `Need $${fundingShortfall.toFixed(2)} more`
                   : belowMinPosition
                     ? minPositionHint(wager, leverage)
                     : "choose your move"}

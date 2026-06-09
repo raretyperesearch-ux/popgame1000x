@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { usePrivy } from "@privy-io/react-auth";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import Topbar from "./components/Topbar";
@@ -16,6 +17,7 @@ import { MIN_TRADE_NOTIONAL_USD, isBelowMinPosition, minPositionHint, liveNotion
 
 type GameState = "IDLE" | "RUNNING" | "PREPARE" | "JUMPING" | "LIVE" | "STOPPED" | "DEAD";
 type PlayMode = "live" | "demo";
+const FUEL_PRESETS = [1, 25, 100, 1000];
 
 /* Map a persisted backend trade to the strip's entry shape. Discards
    open trades (no exit / net_pnl yet) — caller is responsible for
@@ -65,6 +67,11 @@ export default function Home() {
   const [stuckTradeRecovery, setStuckTradeRecovery] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [showPaperModeNotice, setShowPaperModeNotice] = useState(false);
+  const [lowFuelPrompt, setLowFuelPrompt] = useState(false);
+  const [fuelTankOpen, setFuelTankOpen] = useState(false);
+  const [fuelTankAmount, setFuelTankAmount] = useState(5);
+  const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
+  const [lowFuelBumpKey, setLowFuelBumpKey] = useState(0);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTradeError = useCallback((msg: string) => {
     setTradeError(msg);
@@ -121,6 +128,50 @@ export default function Home() {
   const needsAuthForTrades = Boolean(apiUrl) && !isLocalApi;
   const paperMode = needsAuthForTrades && !authenticated;
   const isConnected = authenticated && Boolean(walletAddress);
+  const fuelShortfall = Math.max(0, wager - balance);
+  const needsFuel = isConnected && fuelShortfall > 0;
+
+  const flashAddFuelButton = useCallback(() => {
+    setAddFuelPulseKey((k) => k + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!needsFuel || gameState !== "IDLE" || openInFlight || activeRecovery) return;
+    flashAddFuelButton();
+  }, [needsFuel, wager, gameState, openInFlight, activeRecovery, flashAddFuelButton]);
+
+  useEffect(() => {
+    if (!needsFuel) setLowFuelPrompt(false);
+  }, [needsFuel]);
+
+  const openFuelTank = useCallback(() => {
+    setFuelTankAmount(Math.max(5, Math.ceil(fuelShortfall || 5)));
+    setFuelTankOpen(true);
+    setLowFuelPrompt(false);
+  }, [fuelShortfall]);
+
+  const fundFromFuelTank = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fuelTankAmount } }));
+    setFuelTankOpen(false);
+  }, [fuelTankAmount]);
+
+  const lowerFuel = useCallback(() => {
+    const affordable = FUEL_PRESETS.filter((amt) => amt <= balance);
+    if (affordable.length > 0) {
+      setWager(Math.max(...affordable));
+      setLowFuelPrompt(false);
+      return;
+    }
+    setWager(1);
+    flashAddFuelButton();
+  }, [balance, flashAddFuelButton]);
+
+  const showLowFuelPrompt = useCallback(() => {
+    sounds.play("ui-click");
+    setLowFuelPrompt(true);
+    setLowFuelBumpKey((k) => k + 1);
+    flashAddFuelButton();
+  }, [flashAddFuelButton]);
 
   useEffect(() => {
     if (!paperMode) {
@@ -397,22 +448,17 @@ export default function Home() {
         return;
       }
       setPlayMode("live");
-      // No client-side live open when the selected wager is underfunded:
-      // keep JUMP/DIVE visible, but route the connected user to funding
-      // instead of silently starting a demo or hitting /trade/open.
-      if (wager > balance) {
-        const need = (wager - balance).toFixed(2);
-        sounds.play("ui-click");
-        window.dispatchEvent(new Event("popgame:fund-usdc"));
-        showTradeError(
-          `Deposit To Play Live — need $${need} for this wager. Lower wager or deposit.`,
-        );
+      // No client-side live open when the selected fuel is underfunded:
+      // keep JUMP/DIVE visible, show the in-field prompt, and wait for
+      // the player to choose ADD FUEL before opening the funding flow.
+      if (needsFuel) {
+        showLowFuelPrompt();
         return;
       }
       if (isBelowMinPosition(wager, leverage)) {
         sounds.play("ui-click");
         showTradeError(
-          `Position Too Small — Increase Boost Or Wager. ${minPositionHint(wager, leverage)}. Current ~$${liveNotionalFor(wager, leverage).toFixed(0)} / min ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)}.`,
+          `Position Too Small — Increase Boost Or Fuel. ${minPositionHint(wager, leverage)}. Current ~$${liveNotionalFor(wager, leverage).toFixed(0)} / min ~$${MIN_TRADE_NOTIONAL_USD.toFixed(0)}.`,
         );
         return;
       }
@@ -461,7 +507,7 @@ export default function Home() {
         if (status === 409) {
           showStuckTradeError(detail.slice(0, 240));
         } else if (status === 400 && raw.includes("below_min_position")) {
-          showTradeError("Position Too Small — Increase Boost Or Wager. Avantis minimum notional not met.");
+          showTradeError("Position Too Small — Increase Boost Or Fuel. Avantis minimum notional not met.");
         } else if (status === 402 || status === 504 || status === 502) {
           showTradeError(detail.slice(0, 240));
         } else if (status === 0) {
@@ -482,7 +528,7 @@ export default function Home() {
     } else if (gameState === "STOPPED" && !settling) {
       gameRef.current?.stopTrade();
     }
-  }, [gameState, balance, wager, leverage, direction, openInFlight, activeRecovery, isConnected, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showStuckTradeError, waitForLiveTrade]);
+  }, [gameState, wager, leverage, direction, openInFlight, activeRecovery, isConnected, needsFuel, liveTradeReady, settling, getAccessToken, walletAddress, showTradeError, showLowFuelPrompt, showStuckTradeError, waitForLiveTrade]);
 
   const handleLeverageChange = useCallback(
     (v: number) => {
@@ -495,7 +541,7 @@ export default function Home() {
   const handleWagerChange = useCallback(
     (v: number) => {
       if (gameState !== "IDLE") return;
-      // No upper cap — the user can pick any wager. Insufficient balance
+      // No upper cap — the user can pick any fuel. Insufficient balance
       // is surfaced at JUMP time, not by silently clamping their input.
       setWager(Math.max(1, Math.floor(v)));
     },
@@ -543,10 +589,83 @@ export default function Home() {
         isConnected={isConnected}
         liveTradeReady={liveTradeReady}
         settling={settling}
+        addFuelPulseKey={addFuelPulseKey}
         onLeverageChange={handleLeverageChange}
         onWagerChange={handleWagerChange}
+        onAddFuel={openFuelTank}
         onAction={handleAction}
       />
+      {lowFuelPrompt && needsFuel && (
+        <div key={lowFuelBumpKey} className="low-fuel-popover" role="dialog" aria-label="Low fuel">
+          <button
+            type="button"
+            className="low-fuel-close"
+            onClick={() => setLowFuelPrompt(false)}
+            aria-label="Dismiss low fuel prompt"
+          >
+            ×
+          </button>
+          <Image
+            src="/assets/ui/low-fuel-sign.png"
+            alt=""
+            className="low-fuel-sign"
+            width={256}
+            height={256}
+          />
+          <div className="low-fuel-copy">
+            <strong>LOW FUEL</strong>
+            <span>Need ${fuelShortfall.toFixed(2)} more</span>
+          </div>
+          <div className="low-fuel-actions">
+            <button type="button" className="low-fuel-action primary" onClick={openFuelTank}>
+              ADD FUEL
+            </button>
+            <button type="button" className="low-fuel-action" onClick={lowerFuel}>
+              LOWER FUEL
+            </button>
+          </div>
+        </div>
+      )}
+      {fuelTankOpen && (
+        <div className="fuel-tank-modal" role="dialog" aria-modal="true" aria-labelledby="fuel-tank-title">
+          <button
+            type="button"
+            className="fuel-tank-close"
+            onClick={() => setFuelTankOpen(false)}
+            aria-label="Close Fuel Tank"
+          >
+            ×
+          </button>
+          <div className="fuel-tank-title" id="fuel-tank-title">FUEL TANK</div>
+          <div className="fuel-tank-subtitle">Add USDC to power live runs.</div>
+          <div className="fuel-tank-stats">
+            <span>Balance <b>${balance.toFixed(2)}</b></span>
+            <span>Selected Fuel <b>${wager.toFixed(2)}</b></span>
+            <span>Need <b>${fuelShortfall.toFixed(2)}</b></span>
+          </div>
+          <div className="fuel-tank-buttons" aria-label="Funding shortcuts">
+            {[
+              { label: "+$5", amount: 5 },
+              { label: "+$25", amount: 25 },
+              { label: "+$100", amount: 100 },
+              { label: "MAX", amount: Math.max(5, Math.ceil(fuelShortfall || wager)) },
+            ].map(({ label, amount }) => (
+              <button
+                key={label}
+                type="button"
+                className={`fuel-tank-chip${fuelTankAmount === amount ? " active" : ""}`}
+                onClick={() => setFuelTankAmount(amount)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="fuel-tank-primary" onClick={fundFromFuelTank}>
+            ADD ${fuelTankAmount} USDC
+          </button>
+          <div className="fuel-tank-note">Fuel = USDC collateral for live trades. Practice mode uses fake fuel.</div>
+        </div>
+      )}
       <HelpOverlay show={showHelp} onClose={handleCloseHelp} />
       {tradeError && (
         <div className="trade-error-banner" role="alert">

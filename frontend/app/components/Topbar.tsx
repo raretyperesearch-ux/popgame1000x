@@ -433,7 +433,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setProfileMenuOpen(false);
   };
 
-  const onFundUSDC = useCallback(() => {
+  const onFundUSDC = useCallback((amount = 5) => {
     if (!walletAddress) return;
     setWalletMenuOpen(false);
     fundWallet({
@@ -441,14 +441,19 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       options: {
         chain: base,
         asset: "USDC",
-        amount: "5",
+        amount: String(Math.max(1, Math.ceil(amount))),
         card: { preferredProvider: "coinbase" },
       },
     }).catch((e) => console.warn("[fund] USDC fund flow declined:", e));
   }, [fundWallet, walletAddress]);
 
   useEffect(() => {
-    const onFundRequest = () => onFundUSDC();
+    const onFundRequest = (event: Event) => {
+      const amount = event instanceof CustomEvent && typeof event.detail?.amount === "number"
+        ? event.detail.amount
+        : 5;
+      onFundUSDC(amount);
+    };
     window.addEventListener("popgame:fund-usdc", onFundRequest);
     return () => window.removeEventListener("popgame:fund-usdc", onFundRequest);
   }, [onFundUSDC]);
@@ -583,7 +588,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         )}
         {!authenticated ? (
           <button className="deposit-btn" onClick={() => { sounds.play("ui-click"); login(); }}>
-            <span>deposit to play</span>
+            <span>connect to fuel up</span>
             <span className="deposit-arrow" aria-hidden="true">›</span>
           </button>
         ) : (

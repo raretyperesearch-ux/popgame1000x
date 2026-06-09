@@ -38,7 +38,7 @@ export default function HelpOverlay({ show, onClose }: HelpOverlayProps) {
         <div className="help-title">how this works</div>
         <div className="help-subtitle">leveraged ETH/USD perps, dressed as a runner</div>
         <ol className="help-list" role="list">
-          <li>pick wager (USDC) &amp; leverage <b>75&ndash;500&times;</b></li>
+          <li>pick fuel (USDC collateral) &amp; boost <b>75&ndash;500&times;</b></li>
           <li>choose long to jump skyward, or short to dive underwater</li>
           <li>each 1% ETH move &times; leverage = % change on net collateral</li>
           <li>pull chute / surface &rarr; exits at market, net PnL settles to USDC</li>

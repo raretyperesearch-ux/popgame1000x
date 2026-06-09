@@ -1243,8 +1243,7 @@ button.h-tag:focus-visible {
   gap: 4px;
 }
 .cash-row .slider-label::before {
-  /* dollar sign accent — money cue, mirrors the boost row's play arrow */
-  content: "$";
+  content: "F";
   font-family: 'Press Start 2P', monospace;
   font-size: 11px;
   color: var(--green);
@@ -1813,6 +1812,55 @@ button.h-tag:focus-visible {
   gap: 6px;
   z-index: 1;
 }
+.fuel-helper-row {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  line-height: 1.35;
+  color: rgba(212,247,226,0.78);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.66);
+}
+.add-fuel-inline {
+  min-height: 23px;
+  border: 2px solid #d9ff39;
+  border-radius: 6px;
+  padding: 3px 7px 4px;
+  background:
+    linear-gradient(180deg, rgba(217,255,57,0.24), rgba(45,117,20,0.28)),
+    #10220a;
+  color: #f3ff94;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.2),
+    inset 0 -3px 0 rgba(0,0,0,0.42),
+    0 0 14px rgba(217,255,57,0.3);
+}
+.add-fuel-inline.pulse {
+  animation: add-fuel-pulse 0.2s ease-in-out 3;
+}
+@keyframes add-fuel-pulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% {
+    transform: scale(1.07);
+    filter: brightness(1.45);
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,0.28),
+      inset 0 -3px 0 rgba(0,0,0,0.42),
+      0 0 24px rgba(217,255,57,0.72);
+  }
+}
 .wager-panel .chip {
   min-height: 30px;
   border-radius: 6px;
@@ -2014,6 +2062,206 @@ button.h-tag:focus-visible {
   text-transform: uppercase;
   color: rgba(244,236,216,0.62);
   text-shadow: 0 2px 0 rgba(0,0,0,0.72);
+}
+
+.low-fuel-popover {
+  position: fixed;
+  left: 50%;
+  top: clamp(112px, 38vh, calc(100dvh - 250px));
+  width: min(360px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-areas:
+    "sign copy"
+    "actions actions";
+  align-items: center;
+  gap: 6px 10px;
+  padding: 9px 10px 10px;
+  border: 2px solid #d9ff39;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, rgba(8,35,15,0.96), rgba(4,12,8,0.98));
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,0.16),
+    inset 0 -5px 0 rgba(0,0,0,0.46),
+    0 8px 0 rgba(0,0,0,0.38),
+    0 0 26px rgba(217,255,57,0.32);
+  animation: low-fuel-bump 0.24s ease-out;
+}
+@keyframes low-fuel-bump {
+  0% { transform: translateX(-50%) scale(0.94) rotate(-1deg); }
+  35% { transform: translateX(calc(-50% - 8px)) scale(1.03) rotate(1deg); }
+  70% { transform: translateX(calc(-50% + 5px)) scale(1) rotate(-0.5deg); }
+  100% { transform: translateX(-50%) scale(1) rotate(0); }
+}
+.low-fuel-close,
+.fuel-tank-close {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(244,236,216,0.26);
+  border-radius: 4px;
+  background: rgba(0,0,0,0.28);
+  color: rgba(244,236,216,0.8);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.low-fuel-sign {
+  grid-area: sign;
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 10px rgba(217,255,57,0.48));
+}
+.low-fuel-copy {
+  grid-area: copy;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 18px;
+  font-family: 'Press Start 2P', monospace;
+  text-transform: uppercase;
+}
+.low-fuel-copy strong {
+  color: #d9ff39;
+  font-size: 13px;
+  line-height: 1.25;
+  text-shadow: 0 3px 0 rgba(0,0,0,0.74), 0 0 14px rgba(217,255,57,0.54);
+}
+.low-fuel-copy span {
+  color: #ffb04f;
+  font-size: 7px;
+  line-height: 1.4;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.72), 0 0 10px rgba(255,126,31,0.32);
+}
+.low-fuel-actions {
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.low-fuel-action {
+  min-height: 32px;
+  border: 2px solid rgba(217,255,57,0.7);
+  border-radius: 6px;
+  background: rgba(11,25,16,0.94);
+  color: #eaff96;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1.2;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.low-fuel-action.primary {
+  border-color: #d9ff39;
+  background:
+    linear-gradient(180deg, rgba(217,255,57,0.25), rgba(18,75,20,0.42)),
+    #10220a;
+  box-shadow: 0 0 14px rgba(217,255,57,0.34);
+}
+
+.fuel-tank-modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(390px, calc(100vw - 24px));
+  max-height: calc(100dvh - 28px);
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  padding: 18px 16px 16px;
+  border: 2px solid #42f0ff;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 80% 12%, rgba(217,255,57,0.18), transparent 26%),
+    linear-gradient(180deg, rgba(7,38,67,0.98), rgba(5,18,31,0.99)),
+    #061321;
+  box-shadow:
+    inset 0 2px 0 rgba(170,230,255,0.16),
+    inset 0 -5px 0 rgba(0,0,0,0.56),
+    0 18px 50px rgba(0,0,0,0.62),
+    0 0 30px rgba(66,240,255,0.22);
+  font-family: 'Press Start 2P', monospace;
+}
+.fuel-tank-title {
+  color: #d9ff39;
+  font-size: 17px;
+  line-height: 1.25;
+  text-shadow: 0 3px 0 rgba(0,0,0,0.76), 0 0 15px rgba(217,255,57,0.42);
+}
+.fuel-tank-subtitle,
+.fuel-tank-note {
+  margin-top: 7px;
+  color: rgba(212,247,226,0.82);
+  font-size: 7px;
+  line-height: 1.55;
+}
+.fuel-tank-stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px dashed rgba(66,240,255,0.32);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.18);
+  color: rgba(244,236,216,0.82);
+  font-size: 7px;
+  line-height: 1.4;
+}
+.fuel-tank-stats span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fuel-tank-stats b {
+  color: #fff174;
+  font-weight: normal;
+}
+.fuel-tank-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-top: 12px;
+}
+.fuel-tank-chip {
+  min-height: 30px;
+  border: 2px solid rgba(194,207,219,0.24);
+  border-radius: 6px;
+  background: #111823;
+  color: rgba(244,236,216,0.82);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  cursor: pointer;
+}
+.fuel-tank-chip.active {
+  color: #fff174;
+  border-color: #fff174;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255,221,40,0.36), transparent 48%),
+    #2b1c02;
+}
+.fuel-tank-primary {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 12px;
+  border: 2px solid #d9ff39;
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(217,255,57,0.28), rgba(45,117,20,0.42)),
+    #10220a;
+  color: #f3ff94;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  cursor: pointer;
+  box-shadow: 0 0 17px rgba(217,255,57,0.3);
 }
 .action-split.demo-hint {
   border-color: rgba(255, 241, 116, 0.86);
