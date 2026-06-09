@@ -72,6 +72,7 @@ export default function Home() {
   const [fuelTankAmount, setFuelTankAmount] = useState(5);
   const [addFuelPulseKey, setAddFuelPulseKey] = useState(0);
   const [lowFuelBumpKey, setLowFuelBumpKey] = useState(0);
+  const [fuelPreview, setFuelPreview] = useState(false);
   const tradeErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTradeError = useCallback((msg: string) => {
     setTradeError(msg);
@@ -130,6 +131,8 @@ export default function Home() {
   const isConnected = authenticated && Boolean(walletAddress);
   const fuelShortfall = Math.max(0, wager - balance);
   const needsFuel = isConnected && fuelShortfall > 0;
+  const displayedFuelShortfall = fuelPreview && !needsFuel ? 96.95 : fuelShortfall;
+  const showLowFuelPreview = fuelPreview && gameState === "IDLE";
 
   const flashAddFuelButton = useCallback(() => {
     setAddFuelPulseKey((k) => k + 1);
@@ -145,10 +148,10 @@ export default function Home() {
   }, [needsFuel]);
 
   const openFuelTank = useCallback(() => {
-    setFuelTankAmount(Math.max(5, Math.ceil(fuelShortfall || 5)));
+    setFuelTankAmount(Math.max(5, Math.ceil(displayedFuelShortfall || 5)));
     setFuelTankOpen(true);
     setLowFuelPrompt(false);
-  }, [fuelShortfall]);
+  }, [displayedFuelShortfall]);
 
   const fundFromFuelTank = useCallback(() => {
     window.dispatchEvent(new CustomEvent("popgame:fund-usdc", { detail: { amount: fuelTankAmount } }));
@@ -182,6 +185,11 @@ export default function Home() {
     const t = setTimeout(() => setShowPaperModeNotice(false), 4800);
     return () => clearTimeout(t);
   }, [paperMode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setFuelPreview(params.get("fuelPreview") === "1");
+  }, []);
 
   const gameRef = useRef<GameSceneHandle>(null);
 
@@ -595,7 +603,7 @@ export default function Home() {
         onAddFuel={openFuelTank}
         onAction={handleAction}
       />
-      {lowFuelPrompt && needsFuel && (
+      {((lowFuelPrompt && needsFuel) || showLowFuelPreview) && (
         <div key={lowFuelBumpKey} className="low-fuel-popover" role="dialog" aria-label="Low fuel">
           <button
             type="button"
@@ -614,7 +622,7 @@ export default function Home() {
           />
           <div className="low-fuel-copy">
             <strong>LOW FUEL</strong>
-            <span>Need ${fuelShortfall.toFixed(2)} more</span>
+            <span>Need ${displayedFuelShortfall.toFixed(2)} more</span>
           </div>
           <div className="low-fuel-actions">
             <button type="button" className="low-fuel-action primary" onClick={openFuelTank}>
@@ -641,14 +649,14 @@ export default function Home() {
           <div className="fuel-tank-stats">
             <span>Balance <b>${balance.toFixed(2)}</b></span>
             <span>Selected Fuel <b>${wager.toFixed(2)}</b></span>
-            <span>Need <b>${fuelShortfall.toFixed(2)}</b></span>
+            <span>Need <b>${displayedFuelShortfall.toFixed(2)}</b></span>
           </div>
           <div className="fuel-tank-buttons" aria-label="Funding shortcuts">
             {[
               { label: "+$5", amount: 5 },
               { label: "+$25", amount: 25 },
               { label: "+$100", amount: 100 },
-              { label: "MAX", amount: Math.max(5, Math.ceil(fuelShortfall || wager)) },
+              { label: "MAX", amount: Math.max(5, Math.ceil(displayedFuelShortfall || wager)) },
             ].map(({ label, amount }) => (
               <button
                 key={label}
