@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./boot-splash.css";
 import { Providers } from "./providers";
 import BootSplash from "./components/BootSplash";
 
@@ -24,6 +25,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preload" as="image" href="/assets/hiscore-loader-mark.png" />
+      </head>
       <body>
         <BootSplash />
         <Providers>{children}</Providers>

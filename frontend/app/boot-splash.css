@@ -1,0 +1,72 @@
+.sr-boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(84, 214, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #050910 0%, #020407 100%);
+  animation: srBootExit 2s cubic-bezier(.22, 1, .36, 1) forwards;
+  pointer-events: none;
+}
+
+.sr-boot-mark {
+  position: relative;
+  width: clamp(88px, 11vw, 132px);
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 0 10px rgba(255, 214, 102, .2));
+  animation: srBootPulse 2s cubic-bezier(.2, .78, .24, 1) forwards;
+}
+
+.sr-boot-mark img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.sr-boot-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 28%, rgba(255, 255, 255, .8) 48%, transparent 66%);
+  mask-image: url('/assets/hiscore-loader-mark.png');
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  mask-position: center;
+  -webkit-mask-image: url('/assets/hiscore-loader-mark.png');
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+  transform: translateX(-72%);
+  animation: srBootGlint 1.24s ease-out .28s forwards;
+  opacity: .78;
+  pointer-events: none;
+}
+
+@keyframes srBootPulse {
+  0% { opacity: 0; transform: translateY(4px) scale(.985); filter: brightness(.92); }
+  16% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1.08); }
+  72% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1.04); }
+  100% { opacity: 0; transform: translateY(-2px) scale(1.006); filter: brightness(.96); }
+}
+
+@keyframes srBootGlint {
+  from { transform: translateX(-72%); opacity: 0; }
+  28% { opacity: .72; }
+  to { transform: translateX(72%); opacity: 0; }
+}
+
+@keyframes srBootExit {
+  0%, 82% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-boot-splash,
+  .sr-boot-mark,
+  .sr-boot-mark::after {
+    animation-duration: .45s;
+  }
+}
