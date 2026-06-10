@@ -65,6 +65,10 @@ function fmtDuration(seconds: number): string {
   return safe + "s";
 }
 
+function xpFromWager(wager: number): number {
+  return Math.floor(Math.max(0, wager) * 10);
+}
+
 function BadgeIcon({ kind }: { kind: EndOfGameKind }) {
   if (kind === "win") {
     return (
@@ -492,6 +496,7 @@ export default function EndOfGameModal({ data, onClose }: Props) {
   if (!data) return null;
   const copy = KIND_COPY[data.kind];
   const isDemo = data.demo === true;
+  const xpEarned = xpFromWager(data.wager);
 
   const handleDownload = async () => {
     sounds.play("coin-clink");
@@ -564,6 +569,13 @@ export default function EndOfGameModal({ data, onClose }: Props) {
         {isDemo && (
           <div className="eog-demo-note">
             PRACTICE PNL ONLY
+          </div>
+        )}
+
+        {!isDemo && (
+          <div className="eog-xp-pill">
+            <span>HISCORE XP</span>
+            <strong>+{xpEarned}</strong>
           </div>
         )}
 
