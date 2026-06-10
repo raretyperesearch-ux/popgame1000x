@@ -503,10 +503,10 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       : "ETH withdraws are native Base transfers.";
   })();
   const hiscoreProfileUrl = profile?.username
-    ? `https://hiscore.me/?tab=profile&user=${encodeURIComponent(profile.username)}`
+    ? `https://hiscore.me/?tab=profile&user=${encodeURIComponent(profile.username)}&auth=1`
     : walletAddress
-      ? `https://hiscore.me/?tab=profile&wallet=${encodeURIComponent(walletAddress)}`
-      : "https://hiscore.me/?tab=profile";
+      ? `https://hiscore.me/?tab=profile&wallet=${encodeURIComponent(walletAddress)}&auth=1`
+      : "https://hiscore.me/?tab=profile&auth=1";
 
   return (
     <div className="topbar">
