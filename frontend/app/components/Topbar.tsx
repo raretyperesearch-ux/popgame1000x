@@ -13,7 +13,7 @@ import { encodeFunctionData, isAddress, parseEther, parseUnits } from "viem";
 import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
-import { getWalletStatus, registerUser, getMe, setUsername, type BmPlayer } from "@/lib/api";
+import { getWalletStatus, registerUser, getMe, type BmPlayer } from "@/lib/api";
 import Leaderboard from "./Leaderboard";
 
 type WithdrawAsset = "USDC" | "ETH";
@@ -93,10 +93,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   // populated after the register-on-login effect runs. Drives the "set
   // username" UI in the profile menu.
   const [profile, setProfile] = useState<BmPlayer | null>(null);
-  const [usernameDraft, setUsernameDraft] = useState("");
-  const [usernameSaving, setUsernameSaving] = useState(false);
-  const [usernameError, setUsernameError] = useState<string | null>(null);
-  const [usernameEditing, setUsernameEditing] = useState(false);
   const walletWrapRef = useRef<HTMLDivElement>(null);
   const profileWrapRef = useRef<HTMLDivElement>(null);
 
@@ -114,9 +110,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
      funding flow, and X-Wallet-Address header all key off this. The
      external login wallet (if any) is just for auth identity. */
   const walletAddress = getEmbeddedEthereumAddress(user);
-  const truncated = walletAddress
-    ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
-    : null;
   const walletInitials = walletAddress
     ? walletAddress.slice(2, 4).toUpperCase()
     : "•";
@@ -129,9 +122,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     setServerDelegated(null);
     setServerDelegationMismatch(null);
     setProfile(null);
-    setUsernameDraft("");
-    setUsernameError(null);
-    setUsernameEditing(false);
   }, [walletAddress]);
 
   /* Register the user into the shared Hiscore bm_players table on every
@@ -362,38 +352,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
     } finally {
       setDelegating(false);
     }
-  };
-
-  const submitUsername = async () => {
-    const candidate = usernameDraft.trim();
-    if (!candidate || usernameSaving) return;
-    setUsernameSaving(true);
-    setUsernameError(null);
-    try {
-      const res = await setUsername(candidate, getAccessToken, walletAddress);
-      if (!res.ok) {
-        setUsernameError(res.error || "couldn't set username");
-        return;
-      }
-      setProfile(res.player);
-      setUsernameEditing(false);
-      setUsernameDraft("");
-      onError?.(`Username set: ${res.player?.username ?? candidate}`);
-    } finally {
-      setUsernameSaving(false);
-    }
-  };
-
-  const startEditUsername = () => {
-    setUsernameDraft(profile?.username ?? "");
-    setUsernameError(null);
-    setUsernameEditing(true);
-  };
-
-  const copyAddress = async () => {
-    if (!walletAddress) return;
-    try { await navigator.clipboard.writeText(walletAddress); } catch { /* noop */ }
-    setProfileMenuOpen(false);
   };
 
   const onFundUSDC = useCallback((amount = 5) => {
@@ -715,10 +673,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 className="avatar-btn"
                 onClick={() => {
                   sounds.play("ui-click");
-                  window.location.assign(hiscoreProfileUrl);
+                  setProfileMenuOpen((v) => !v);
                   setWalletMenuOpen(false);
                 }}
-                aria-label="Open HiScore profile"
+                aria-label="Open profile menu"
+                aria-expanded={profileMenuOpen}
               >
                 {profile?.avatar_url ? (
                   <img src={profile.avatar_url} alt={profile.username || "HiScore profile"} />
@@ -727,113 +686,23 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 )}
               </button>
               {profileMenuOpen && (
-                <div className="user-menu" role="menu">
-                  <div className="user-menu-header">
-                    <div className="user-menu-label">wallet</div>
-                    <div className="user-menu-addr">{truncated}</div>
-                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
-                      {ethBalance === null
-                        ? "gas checking…"
-                        : hasGas
-                          ? `${ethBalance.toFixed(5)} ETH gas`
-                          : "needs ETH gas"}
-                    </div>
-                    <div className={`user-menu-tag ${
-                      serverDelegationMismatch
-                        ? "warn"
-                        : serverDelegated === true
-                          ? "ok"
-                          : isDelegated
-                            ? "ok"
-                            : "warn"
-                    }`}>
-                      {serverDelegationMismatch
-                        ? "delegation mismatch"
-                        : serverDelegated === true
-                          ? "trading delegated ✓"
-                          : isDelegated
-                            ? "trading delegated (verifying…)"
-                            : "delegation pending"}
-                    </div>
-                    {serverDelegationMismatch && (
-                      <div className="user-menu-error" role="alert">
-                        {serverDelegationMismatch}
-                      </div>
-                    )}
-                  </div>
-                  {(!isDelegated || serverDelegationMismatch) && (
-                    <button
-                      className="user-menu-item primary"
-                      role="menuitem"
-                      onClick={() => { sounds.play("ui-click"); onDelegate(); }}
-                      disabled={delegating}
-                    >
-                      {delegating ? "waiting for popup…" : serverDelegationMismatch ? "retry delegation" : "enable trading"}
-                    </button>
-                  )}
-                  <div className="user-menu-section">
-                    <div className="user-menu-section-title">
-                      <span className="section-arrow" aria-hidden="true">★</span>
-                      hiscore name
-                    </div>
-                    {!usernameEditing ? (
-                      <button
-                        className="user-menu-item"
-                        role="menuitem"
-                        onClick={() => { sounds.play("ui-click"); startEditUsername(); }}
-                      >
-                        {profile?.username
-                          ? `${profile.username} — change`
-                          : "pick a username"}
-                      </button>
-                    ) : (
-                      <div className="withdraw-panel">
-                        <label className="withdraw-field">
-                          <span>username</span>
-                          <input
-                            value={usernameDraft}
-                            onChange={(e) => setUsernameDraft(e.target.value)}
-                            placeholder="3-32 chars: a-z, 0-9, _ -"
-                            spellCheck={false}
-                            maxLength={32}
-                            autoFocus
-                          />
-                        </label>
-                        {usernameError && (
-                          <div className="withdraw-hint warn">{usernameError}</div>
-                        )}
-                        {!usernameError && (
-                          <div className="withdraw-hint">
-                            shown on hiscore.me leaderboard across all games.
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          className="user-menu-item primary withdraw-submit"
-                          disabled={usernameSaving || usernameDraft.trim().length < 3}
-                          onClick={() => { sounds.play("ui-click"); void submitUsername(); }}
-                        >
-                          {usernameSaving ? "saving…" : "save username"}
-                        </button>
-                        <button
-                          type="button"
-                          className="user-menu-item"
-                          onClick={() => { setUsernameEditing(false); setUsernameError(null); }}
-                        >
-                          cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <button className="user-menu-item" role="menuitem" onClick={() => { sounds.play("ui-click"); copyAddress(); }}>
-                    copy address
+                <div className="user-menu profile-menu" role="menu">
+                  <button
+                    className="user-menu-item primary"
+                    role="menuitem"
+                    onClick={() => {
+                      sounds.play("ui-click");
+                      window.location.assign(hiscoreProfileUrl);
+                    }}
+                  >
+                    Profile
                   </button>
                   <button
                     className="user-menu-item danger"
                     role="menuitem"
                     onClick={() => { sounds.play("ui-click"); setProfileMenuOpen(false); logout(); }}
                   >
-                    disconnect
+                    Sign out
                   </button>
                 </div>
               )}
