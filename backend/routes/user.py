@@ -68,10 +68,12 @@ async def set_username(
     # Make sure the row exists before the username update — covers the
     # case where the user opened the username modal before /register
     # ever fired (race after a fresh login). Cheap upsert.
-    persistence.register_player(
+    player = persistence.register_player(
         privy_id=user.did,
         evm_wallet_address=user.address,
     )
+    if player and player.get("username"):
+        raise HTTPException(400, "username already set")
     row, err = persistence.set_username(privy_id=user.did, username=body.username)
     if err:
         # 409 for conflicts (taken), 400 for validation. Frontend

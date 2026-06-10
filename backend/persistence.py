@@ -785,7 +785,7 @@ def get_player_by_privy_id(privy_id: str) -> Optional[dict]:
     try:
         res = (
             _client.table(_BM_PLAYERS)
-            .select("privy_id,evm_wallet_address,wallet_address,username,created_at,last_active_at")
+            .select("privy_id,evm_wallet_address,wallet_address,username,avatar_url,created_at,last_active_at")
             .eq("privy_id", privy_id)
             .limit(1)
             .execute()

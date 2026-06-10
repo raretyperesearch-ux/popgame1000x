@@ -117,9 +117,12 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   const truncated = walletAddress
     ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
     : null;
-  const initials = walletAddress
+  const walletInitials = walletAddress
     ? walletAddress.slice(2, 4).toUpperCase()
     : "•";
+  const displayInitials = profile?.username
+    ? profile.username.slice(0, 2).toUpperCase()
+    : walletInitials;
 
   useEffect(() => {
     setLocallyDelegated(false);
@@ -717,7 +720,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 }}
                 aria-label="Open HiScore profile"
               >
-                {initials}
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt={profile.username || "HiScore profile"} />
+                ) : (
+                  displayInitials
+                )}
               </button>
               {profileMenuOpen && (
                 <div className="user-menu" role="menu">

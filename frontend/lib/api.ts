@@ -503,6 +503,7 @@ export interface BmPlayer {
   evm_wallet_address: string | null;
   wallet_address: string | null;
   username: string | null;
+  avatar_url?: string | null;
   created_at?: string | null;
   last_active_at?: string | null;
 }
@@ -570,7 +571,7 @@ export async function setUsername(
   walletAddress?: string,
 ): Promise<SetUsernameResult> {
   if (isMock()) {
-    return { ok: true, player: { privy_id: null, evm_wallet_address: null, wallet_address: null, username } };
+    return { ok: true, player: { privy_id: null, evm_wallet_address: null, wallet_address: null, username, avatar_url: null } };
   }
   try {
     const res = await apiFetch<{ player: BmPlayer | null }>(
