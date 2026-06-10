@@ -502,6 +502,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
       ? "USDC withdraws need ETH gas in this same wallet."
       : "ETH withdraws are native Base transfers.";
   })();
+  const hiscoreProfileUrl = profile?.username
+    ? `https://hiscore.me/?tab=profile&user=${encodeURIComponent(profile.username)}`
+    : walletAddress
+      ? `https://hiscore.me/?tab=profile&wallet=${encodeURIComponent(walletAddress)}`
+      : "https://hiscore.me/?tab=profile";
 
   return (
     <div className="topbar">
@@ -707,11 +712,10 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 className="avatar-btn"
                 onClick={() => {
                   sounds.play("ui-click");
-                  setProfileMenuOpen((v) => !v);
+                  window.location.assign(hiscoreProfileUrl);
                   setWalletMenuOpen(false);
                 }}
-                aria-label="Account"
-                aria-expanded={profileMenuOpen}
+                aria-label="Open HiScore profile"
               >
                 {initials}
               </button>
