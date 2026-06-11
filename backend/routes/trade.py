@@ -31,7 +31,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from avantis_trader_sdk import TraderClient
-from avantis_trader_sdk.types import MarginUpdateType, TradeInput, TradeInputOrderType
+from avantis_trader_sdk.types import (
+    MarginUpdateType,
+    PriceSourcing,
+    TradeInput,
+    TradeInputOrderType,
+)
 
 import auth
 from auth import AuthedUser, require_user
@@ -605,6 +610,142 @@ def _sponsored_gas_enabled() -> bool:
     return _env_flag("PRIVY_SPONSOR_GAS_ON_BASE")
 
 
+_SPONSORED_OPEN_GAS_LIMIT = int(os.getenv("PRIVY_SPONSORED_OPEN_GAS_LIMIT", "1200000"))
+_SPONSORED_CLOSE_GAS_LIMIT = int(os.getenv("PRIVY_SPONSORED_CLOSE_GAS_LIMIT", "900000"))
+_SPONSORED_MARGIN_GAS_LIMIT = int(os.getenv("PRIVY_SPONSORED_MARGIN_GAS_LIMIT", "900000"))
+
+
+async def _build_user_trade_open_tx(
+    client: TraderClient,
+    trade_input: TradeInput,
+    trade_input_order_type: TradeInputOrderType,
+    *,
+    slippage_percentage: int,
+):
+    if not _sponsored_gas_enabled():
+        return await client.trade.build_trade_open_tx(
+            trade_input,
+            trade_input_order_type,
+            slippage_percentage=slippage_percentage,
+        )
+
+    Trading = client.contracts.get("Trading")
+    if (
+        trade_input_order_type in {TradeInputOrderType.MARKET, TradeInputOrderType.MARKET_ZERO_FEE}
+        and not trade_input.openPrice
+    ):
+        sourcing = await client.trade._resolve_price_sourcing(trade_input.pairIndex)
+        if sourcing == PriceSourcing.PRO:
+            lazer_feed_id = await client.pairs_cache.get_lazer_feed_id(trade_input.pairIndex)
+            price_data = await client.feed_client.get_latest_lazer_price([lazer_feed_id])
+            price_feed = next(
+                (
+                    f
+                    for f in price_data.price_feeds
+                    if f.price_feed_id == lazer_feed_id
+                ),
+                price_data.price_feeds[0],
+            )
+            trade_input.openPrice = int(price_feed.converted_price * 10**10)
+        else:
+            price_data = await client.feed_client.get_price_update_data(trade_input.pairIndex)
+            trade_input.openPrice = int(price_data.core.price * 10**10)
+
+    execution_fee_wei = 0
+    if trade_input_order_type != TradeInputOrderType.MARKET_ZERO_FEE:
+        execution_fee_wei = await client.trade.get_trade_execution_fee()
+
+    return await Trading.functions.openTrade(
+        trade_input.model_dump(),
+        trade_input_order_type.value,
+        slippage_percentage * 10**10,
+    ).build_transaction(
+        {
+            "from": trade_input.trader,
+            "value": execution_fee_wei,
+            "chainId": client.chain_id,
+            "nonce": await client.get_transaction_count(trade_input.trader),
+            "gas": _SPONSORED_OPEN_GAS_LIMIT,
+        }
+    )
+
+
+async def _build_user_trade_close_tx(
+    client: TraderClient,
+    *,
+    pair_index: int,
+    trade_index: int,
+    collateral_to_close: float,
+    trader: str,
+):
+    if not _sponsored_gas_enabled():
+        return await client.trade.build_trade_close_tx(
+            pair_index=pair_index,
+            trade_index=trade_index,
+            collateral_to_close=collateral_to_close,
+            trader=trader,
+        )
+
+    Trading = client.contracts.get("Trading")
+    return await Trading.functions.closeTradeMarket(
+        pair_index,
+        trade_index,
+        int(collateral_to_close * 10**6),
+    ).build_transaction(
+        {
+            "from": trader,
+            "chainId": client.chain_id,
+            "nonce": await client.get_transaction_count(trader),
+            "value": await client.trade.get_trade_execution_fee(),
+            "gas": _SPONSORED_CLOSE_GAS_LIMIT,
+        }
+    )
+
+
+async def _build_user_trade_margin_update_tx(
+    client: TraderClient,
+    *,
+    pair_index: int,
+    trade_index: int,
+    margin_update_type: MarginUpdateType,
+    collateral_change: float,
+    trader: str,
+):
+    if not _sponsored_gas_enabled():
+        return await client.trade.build_trade_margin_update_tx(
+            pair_index=pair_index,
+            trade_index=trade_index,
+            margin_update_type=margin_update_type,
+            collateral_change=collateral_change,
+            trader=trader,
+        )
+
+    Trading = client.contracts.get("Trading")
+    price_sourcing = await client.trade._resolve_price_sourcing(pair_index)
+    price_data = await client.feed_client.get_price_update_data(pair_index)
+    if price_sourcing == PriceSourcing.PRO:
+        price_update_data = price_data.pro.price_update_data
+    else:
+        price_update_data = price_data.core.price_update_data
+
+    return await Trading.functions.updateMargin(
+        pair_index,
+        trade_index,
+        margin_update_type.value,
+        int(collateral_change * 10**6),
+        [price_update_data],
+        price_sourcing.value,
+    ).build_transaction(
+        {
+            "from": trader,
+            "chainId": client.chain_id,
+            "value": 1,
+            "nonce": await client.get_transaction_count(trader),
+            "gas": _SPONSORED_MARGIN_GAS_LIMIT,
+        }
+    )
+
+
 async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
     """Route an Avantis-built tx through Privy for user-scoped signing.
 
@@ -896,7 +1037,8 @@ async def open_trade(
         timestamp=0,
     )
     try:
-        open_tx = await client.trade.build_trade_open_tx(
+        open_tx = await _build_user_trade_open_tx(
+            client,
             trade_input,
             TradeInputOrderType.MARKET_ZERO_FEE,
             slippage_percentage=1,
@@ -1180,7 +1322,8 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
 
     collateral_to_close = _collateral_to_close_for_trade(target, feed_price_at_close)
     try:
-        close_tx = await client.trade.build_trade_close_tx(
+        close_tx = await _build_user_trade_close_tx(
+            client,
             pair_index=target.trade.pair_index,
             trade_index=target.trade.trade_index,
             collateral_to_close=collateral_to_close,
@@ -1369,7 +1512,8 @@ async def add_trade_margin(
         or getattr(target.trade, "open_collateral", 0)
         or 0
     )
-    margin_tx = await client.trade.build_trade_margin_update_tx(
+    margin_tx = await _build_user_trade_margin_update_tx(
+        client,
         pair_index=target.trade.pair_index,
         trade_index=target.trade.trade_index,
         margin_update_type=MarginUpdateType.DEPOSIT,
