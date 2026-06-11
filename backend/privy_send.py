@@ -39,6 +39,10 @@ PRIVY_API_BASE = os.getenv("PRIVY_API_BASE_URL", "https://api.privy.io")
 BASE_CAIP2 = "eip155:8453"
 
 
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _normalize_auth_key(raw: str) -> str:
     """Privy's signing helper hardcodes the PKCS8 wrapper:
 
@@ -126,6 +130,8 @@ async def send_via_privy(
     privy_client: Any,
     wallet_id: str,
     raw_tx: Any,
+    *,
+    sponsor: Optional[bool] = None,
 ) -> str:
     """Send a built Avantis transaction via Privy. Returns the tx hash.
 
@@ -155,6 +161,9 @@ async def send_via_privy(
         "caip2": BASE_CAIP2,
         "params": {"transaction": transaction},
     }
+    sponsor_gas = _env_flag("PRIVY_SPONSOR_GAS_ON_BASE") if sponsor is None else sponsor
+    if sponsor_gas:
+        body["sponsor"] = True
     url = f"{PRIVY_API_BASE.rstrip('/')}/v1/wallets/{wallet_id}/rpc"
 
     signature = get_authorization_signature(

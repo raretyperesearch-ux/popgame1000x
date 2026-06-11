@@ -30,6 +30,9 @@ interface TopbarProps {
    frontend's addSigners() call with the matching backend's
    PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
+const SPONSOR_GAS_ON_BASE =
+  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE === "1" ||
+  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE === "true";
 const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_TRANSFER_ABI = [
   {
@@ -201,7 +204,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   // skipping re-delegation forever. Require the server to also confirm.
   const isDelegated =
     (linkedSaysDelegated || locallyDelegated) && serverDelegated !== false;
-  const hasGas = ethBalance === null || ethBalance >= 0.0005;
+  const hasGas = SPONSOR_GAS_ON_BASE || ethBalance === null || ethBalance >= 0.0005;
   const withdrawAmountNumber = Number(withdrawAmount);
   const withdrawAddressValid = withdrawAddress === "" || isAddress(withdrawAddress.trim());
   const withdrawAvailable = withdrawAsset === "USDC" ? balance : ethBalance;
@@ -427,15 +430,17 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
               chainId: base.id,
               value: parseEther(amount),
             };
-      const hash = await sendTransaction(tx, {
+      const sendOptions = {
         address: walletAddress,
+        ...(SPONSOR_GAS_ON_BASE ? { sponsor: true } : {}),
         uiOptions: {
           description: `Withdraw ${amount} ${withdrawAsset} to ${recipient.slice(0, 6)}...${recipient.slice(-4)}.`,
           buttonText: `Withdraw ${withdrawAsset}`,
           successHeader: "Withdrawal sent",
           successDescription: `Your ${withdrawAsset} transfer was submitted on Base.`,
         },
-      });
+      } as Parameters<typeof sendTransaction>[1] & { sponsor?: boolean };
+      const hash = await sendTransaction(tx, sendOptions);
       onError?.(`${withdrawAsset} withdrawal sent: ${hash.hash.slice(0, 10)}...`);
       setWithdrawOpen(false);
       setWithdrawAmount("");
@@ -450,6 +455,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   };
 
   const withdrawHint = (() => {
+    if (SPONSOR_GAS_ON_BASE && withdrawAsset === "USDC") return "Gas is sponsored on Base, so USDC withdraws do not need ETH.";
     if (withdrawNeedsGas) return "Add a little ETH first so the USDC transfer can pay Base gas.";
     if (withdrawAddress && !withdrawAddressValid) return "Enter a valid Base / EVM wallet address.";
     if (withdrawAmount && !withdrawAmountValid) return `Amount must be between 0 and ${withdrawAvailable ?? 0} ${withdrawAsset}.`;
@@ -538,7 +544,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                       <span>{ethBalance === null ? "gas checking..." : `${ethBalance.toFixed(5)} ETH`}</span>
                     </div>
                     <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
-                      {hasGas ? "gas ready" : "needs ETH gas"}
+                      {SPONSOR_GAS_ON_BASE ? "gas sponsored" : hasGas ? "gas ready" : "needs ETH gas"}
                     </div>
                   </div>
                   <div className="user-menu-section">
@@ -635,10 +641,10 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
             </div>
             <div
               className={`gas-pill ${hasGas ? "ok" : "warn"}`}
-              title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
+              title={SPONSOR_GAS_ON_BASE ? "Base gas is sponsored by HiScore" : ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
             >
               <span className="gas-dot" aria-hidden="true" />
-              <span>{ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
+              <span>{SPONSOR_GAS_ON_BASE ? "gas sponsored" : ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
             </div>
             <div className="user-wrap" ref={profileWrapRef}>
               <button

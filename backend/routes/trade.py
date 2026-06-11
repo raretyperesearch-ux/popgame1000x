@@ -597,6 +597,14 @@ async def _poll_for_trade(client: TraderClient, address: str, *, expect_present:
 _PRIVY_SEND_TIMEOUT_S = 20.0
 
 
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sponsored_gas_enabled() -> bool:
+    return _env_flag("PRIVY_SPONSOR_GAS_ON_BASE")
+
+
 async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
     """Route an Avantis-built tx through Privy for user-scoped signing.
 
@@ -773,7 +781,7 @@ async def open_trade(
         raise HTTPException(503, "pair index not initialized")
 
     gas_task = None
-    if not _is_legacy_user(user):
+    if not _is_legacy_user(user) and not _sponsored_gas_enabled():
         gas_task = asyncio.create_task(get_eth_balance_wei(user.address))
     existing_task = asyncio.create_task(client.trade.get_trades(user.address))
     usdc_task = asyncio.create_task(client.get_usdc_balance(user.address))
@@ -1304,7 +1312,7 @@ async def add_trade_margin(
         raise HTTPException(400, "amount_usdc must be positive")
 
     gas_task = None
-    if not _is_legacy_user(user):
+    if not _is_legacy_user(user) and not _sponsored_gas_enabled():
         gas_task = asyncio.create_task(get_eth_balance_wei(user.address))
     trades_task = asyncio.create_task(client.trade.get_trades(user.address))
     balance_task = asyncio.create_task(client.get_usdc_balance(user.address))
