@@ -455,10 +455,10 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
   };
 
   const withdrawHint = (() => {
-    if (SPONSOR_GAS_ON_BASE && withdrawAsset === "USDC") return "Gas is sponsored on Base, so USDC withdraws do not need ETH.";
-    if (withdrawNeedsGas) return "Add a little ETH first so the USDC transfer can pay Base gas.";
     if (withdrawAddress && !withdrawAddressValid) return "Enter a valid Base / EVM wallet address.";
     if (withdrawAmount && !withdrawAmountValid) return `Amount must be between 0 and ${withdrawAvailable ?? 0} ${withdrawAsset}.`;
+    if (SPONSOR_GAS_ON_BASE) return "Withdraw Base USDC to your wallet.";
+    if (withdrawNeedsGas) return "Add a little ETH first so the USDC transfer can pay Base gas.";
     if (!withdrawLeavesGas) return "Leave at least 0.0002 ETH for future gas.";
     return withdrawAsset === "USDC"
       ? "USDC withdraws need ETH gas in this same wallet."
@@ -545,9 +545,11 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                         <span>{ethBalance === null ? "gas checking..." : `${ethBalance.toFixed(5)} ETH`}</span>
                       )}
                     </div>
-                    <div className={`user-menu-tag ${SPONSOR_GAS_ON_BASE || hasGas ? "ok" : "warn"}`}>
-                      {SPONSOR_GAS_ON_BASE ? "base usdc only · gas sponsored" : hasGas ? "gas ready" : "needs ETH gas"}
-                    </div>
+                    {!SPONSOR_GAS_ON_BASE && (
+                      <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
+                        {hasGas ? "gas ready" : "needs ETH gas"}
+                      </div>
+                    )}
                   </div>
                   <div className="user-menu-section">
                     <div className="user-menu-section-title">
@@ -643,13 +645,15 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 </div>
               )}
             </div>
-            <div
-              className={`gas-pill ${SPONSOR_GAS_ON_BASE || hasGas ? "ok" : "warn"}`}
-              title={SPONSOR_GAS_ON_BASE ? "Base gas is sponsored by HiScore" : ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
-            >
-              <span className="gas-dot" aria-hidden="true" />
-              <span>{SPONSOR_GAS_ON_BASE ? "gas sponsored" : ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
-            </div>
+            {!SPONSOR_GAS_ON_BASE && (
+              <div
+                className={`gas-pill ${hasGas ? "ok" : "warn"}`}
+                title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
+              >
+                <span className="gas-dot" aria-hidden="true" />
+                <span>{ethBalance === null ? "gas…" : hasGas ? "gas ok" : "needs gas"}</span>
+              </div>
+            )}
             <div className="user-wrap" ref={profileWrapRef}>
               <button
                 className="avatar-btn"
