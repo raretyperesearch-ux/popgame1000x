@@ -14,7 +14,6 @@ import { base } from "viem/chains";
 import { sounds } from "@/lib/sounds";
 import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import { getWalletStatus, registerUser, getMe, type BmPlayer } from "@/lib/api";
-import Leaderboard from "./Leaderboard";
 
 type WithdrawAsset = "USDC" | "ETH";
 
@@ -24,10 +23,6 @@ interface TopbarProps {
   balanceLoading?: boolean;
   onHelpClick: () => void;
   onError?: (msg: string) => void;
-  /* Bumped by the host page after each trade close so the leaderboard
-     dropdown picks up fresh standings without polling. */
-  leaderboardRefreshKey: number;
-  paperMode: boolean;
 }
 
 /* The Privy signerId is generated when the authorization key's public PEM
@@ -49,7 +44,7 @@ const USDC_TRANSFER_ABI = [
   },
 ] as const;
 
-export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError, leaderboardRefreshKey, paperMode }: TopbarProps) {
+export default function Topbar({ balance, ethBalance, balanceLoading = false, onHelpClick, onError }: TopbarProps) {
   const { logout, authenticated, user, ready, getAccessToken } = usePrivy();
   const { login } = useLogin({
     onComplete: () => {
@@ -500,18 +495,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
         </a>
       </div>
       <div className="topbar-right">
-        {/* Leaderboard renders in both auth states — public conversion
-            surface. When unauthed, walletAddress is undefined so the
-            "you" highlight + rank just blank out gracefully. */}
-        {!authenticated && (
-          <Leaderboard
-            authenticated={authenticated}
-            walletAddress={walletAddress}
-            getAccessToken={getAccessToken}
-            paperMode={paperMode}
-            refreshKey={leaderboardRefreshKey}
-          />
-        )}
         {!authenticated ? (
           <button
             className="deposit-btn"
@@ -650,17 +633,6 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                 </div>
               )}
             </div>
-            <Leaderboard
-              authenticated={authenticated}
-              walletAddress={walletAddress}
-              getAccessToken={getAccessToken}
-              paperMode={paperMode}
-              refreshKey={leaderboardRefreshKey}
-              onOpen={() => {
-                setWalletMenuOpen(false);
-                setProfileMenuOpen(false);
-              }}
-            />
             <div
               className={`gas-pill ${hasGas ? "ok" : "warn"}`}
               title={ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}

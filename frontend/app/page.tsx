@@ -61,10 +61,6 @@ export default function Home() {
   const [playMode, setPlayMode] = useState<PlayMode>("live");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pnl, setPnl] = useState<number | null>(null);
-  /* Bumped after every trade close so the topbar Leaderboard picks up
-     fresh standings without polling. The component watches the value
-     in its useEffect deps. */
-  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [openInFlight, setOpenInFlight] = useState(false);
   const [activeRecovery, setActiveRecovery] = useState(false);
@@ -353,10 +349,6 @@ export default function Home() {
       const next = [...prev, entry];
       return next.length > 5 ? next.slice(-5) : next;
     });
-    /* A close just landed — nudge the Leaderboard component to refetch
-       so its standings reflect the new realized PnL. Cheap: just one
-       extra HTTP per closed trade, no polling. */
-    setLeaderboardRefreshKey((k) => k + 1);
   }, []);
 
   const waitForLiveTrade = useCallback(async (sessionId: string) => {
@@ -597,8 +589,6 @@ export default function Home() {
         balanceLoading={balanceLoading}
         onHelpClick={() => setShowHelp(true)}
         onError={showTradeError}
-        leaderboardRefreshKey={leaderboardRefreshKey}
-        paperMode={paperMode}
       />
       <GameScene
         ref={gameRef}
