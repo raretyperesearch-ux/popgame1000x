@@ -906,6 +906,23 @@ async def _poll_close_settlement_received(tx_hash: str, address: str) -> Optiona
     return 0.0
 
 
+async def _poll_balance_after_close(
+    client: TraderClient,
+    address: str,
+    balance_before: float,
+    *,
+    tries: int = 18,
+    interval: float = 0.75,
+) -> Optional[float]:
+    for attempt in range(tries):
+        balance_after = float(await client.get_usdc_balance(address))
+        if balance_after != balance_before:
+            return balance_after
+        if attempt < tries - 1:
+            await asyncio.sleep(interval)
+    return None
+
+
 @router.post("/open", response_model=OpenTradeResponse)
 async def open_trade(
     body: OpenTradeRequest,
@@ -1362,18 +1379,14 @@ async def _close_active_trade(user: AuthedUser, was_liquidated: bool) -> CloseTr
         raise
     timer.mark("close tx sent", tx_hash=tx_hash)
 
-    settlement_received = await _poll_close_settlement_received(tx_hash, user.address)
-    balance_after = balance_before
-    if settlement_received is not None:
-        balance_after = balance_before + settlement_received
-    else:
-        balance_poll_tries = 8
-        for attempt in range(balance_poll_tries):
-            balance_after = float(await client.get_usdc_balance(user.address))
-            if balance_after != balance_before:
-                break
-            if attempt < balance_poll_tries - 1:
-                await asyncio.sleep(1.0)
+    settlement_received = None
+    balance_after = await _poll_balance_after_close(client, user.address, balance_before)
+    if balance_after is None:
+        settlement_received = await _poll_close_settlement_received(tx_hash, user.address)
+        if settlement_received is not None:
+            balance_after = balance_before + settlement_received
+        else:
+            balance_after = balance_before
 
     timer.mark(
         "close confirmed/settled",
