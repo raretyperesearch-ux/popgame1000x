@@ -193,7 +193,14 @@ async def send_via_privy(
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, dict):
         raise RuntimeError(f"Privy returned no data: {payload}")
-    tx_hash = data.get("hash")
-    if not isinstance(tx_hash, str):
-        raise RuntimeError(f"Privy returned no tx hash: {payload}")
-    return tx_hash
+    tx_id = (
+        data.get("hash")
+        or data.get("user_operation_hash")
+        or data.get("userOperationHash")
+        or data.get("transaction_id")
+        or data.get("transactionId")
+        or data.get("id")
+    )
+    if not isinstance(tx_id, str) or not tx_id:
+        raise RuntimeError(f"Privy returned no transaction id: {payload}")
+    return tx_id

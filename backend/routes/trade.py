@@ -700,7 +700,7 @@ async def _build_user_trade_close_tx(
             "from": trader,
             "chainId": client.chain_id,
             "nonce": await client.get_transaction_count(trader),
-            "value": await client.trade.get_trade_execution_fee(),
+            "value": 0,
             "gas": _SPONSORED_CLOSE_GAS_LIMIT,
         }
     )
@@ -743,7 +743,7 @@ async def _build_user_trade_margin_update_tx(
         {
             "from": trader,
             "chainId": client.chain_id,
-            "value": 1,
+            "value": 0,
             "nonce": await client.get_transaction_count(trader),
             "gas": _SPONSORED_MARGIN_GAS_LIMIT,
         }
@@ -810,6 +810,7 @@ async def _send_user_tx(user: AuthedUser, raw_tx) -> str:
         # Privy errors carry useful messages (e.g. "insufficient funds for
         # gas") that the user can act on. Surface them verbatim under a
         # 502 so the frontend toast shows something specific.
+        print(f"[privy/send] rejected wallet={user.address}: {msg}")
         raise HTTPException(502, f"Privy signer rejected the tx: {msg}")
 
 
