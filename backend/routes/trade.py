@@ -205,6 +205,10 @@ def _house_fee_idempotency_key(
     return f"house-fee:{user.address.lower()}:{trade_index}:{open_tx_hash.lower()}"
 
 
+def _fallback_session_id(user: AuthedUser, opened_at: datetime) -> str:
+    return f"privy:{user.address.lower()}:{int(opened_at.timestamp() * 1000)}"
+
+
 def _mark_house_fee_failed_safe(idempotency_key: Optional[str], error: str) -> None:
     if not idempotency_key:
         return
@@ -1060,15 +1064,16 @@ async def open_trade(
         if _is_below_min_position_error(e):
             return _below_min_position_response(collateral, body.leverage)
         raise
-    timer.mark("Avantis tx sent", tx_hash=tx_hash)
+    tx_hash = (tx_hash or "").strip()
+    timer.mark("Avantis tx sent", tx_hash=tx_hash or "(empty)")
 
     opened_at = datetime.now(timezone.utc)
-    session_id = tx_hash
+    session_id = tx_hash or _fallback_session_id(user, opened_at)
     if _TRADE_OPEN_MODE == "optimistic":
         _open_sessions[session_id] = {
             "status": "opening",
             "session_id": session_id,
-            "tx_hash": tx_hash,
+            "tx_hash": tx_hash or session_id,
             "wallet_address": user.address.lower(),
             "user": user,
             "avantis_pair_index": pair_index,
@@ -1085,7 +1090,7 @@ async def open_trade(
             did=user.did,
             wallet_address=user.address,
             wallet_id=user.wallet_id,
-            tx_hash=tx_hash,
+            tx_hash=tx_hash or session_id,
             pair_index=pair_index,
             leverage=body.leverage,
             wager_usdc=body.wager_usdc,
@@ -1096,7 +1101,7 @@ async def open_trade(
             opened_at=opened_at,
         )
         background_tasks.add_task(_finalize_optimistic_open, session_id)
-        timer.mark("response returned", status="opening", tx_hash=tx_hash)
+        timer.mark("response returned", status="opening", session_id=session_id, tx_hash=tx_hash or "(fallback)")
         return OpenTradeResponse(
             status="opening",
             session_id=session_id,
@@ -1109,7 +1114,7 @@ async def open_trade(
             entry_price=None,
             liquidation_price=None,
             opened_at=opened_at,
-            tx_hash=tx_hash,
+            tx_hash=tx_hash or session_id,
             is_long=body.is_long,
         )
 
@@ -1750,34 +1755,6 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
     client = _require_trader()
     local_open = persistence.active_open_for_wallet(user.address)
     opening = _find_opening_session_for_wallet(user.address)
-    if opening:
-        print(f"[trade/active] active local session found wallet={user.address} session_id={opening['session_id']}")
-        return ActiveTradeResponse(
-            exists=True,
-            status=opening.get("status", "opening"),
-            wallet=user.address,
-            session_id=opening.get("session_id"),
-            open_tx_hash=opening.get("tx_hash"),
-            tx_hash=opening.get("tx_hash"),
-            trade_index=opening.get("trade_index"),
-            avantis_pair_index=opening.get("avantis_pair_index"),
-            leverage=opening.get("leverage"),
-            wager_usdc=opening.get("wager_usdc"),
-            collateral_usdc=opening.get("collateral_usdc"),
-            open_collateral_usdc=opening.get("collateral_usdc"),
-            notional_usd=round(
-                float(opening.get("collateral_usdc") or 0) * float(opening.get("leverage") or 0),
-                6,
-            ),
-            house_fee_usdc=opening.get("house_fee_usdc"),
-            entry_price=opening.get("entry_price"),
-            current_price=_float_or_none(price_module.get_latest_price()),
-            liq_price=opening.get("liquidation_price"),
-            liquidation_price=opening.get("liquidation_price"),
-            opened_at=opening.get("opened_at"),
-            is_long=opening.get("is_long"),
-            error=opening.get("error"),
-        )
 
     trades, _ = await client.trade.get_trades(user.address)
     if trades:
@@ -1806,7 +1783,58 @@ async def get_active_trade(user: AuthedUser = Depends(require_user)):
                 f"trade_index={t.trade.trade_index} local_missing=true"
             )
             local_open = _recover_missing_local_open(user, t)
+        if opening and opening.get("status") == "opening":
+            session_id = opening.get("session_id")
+            if session_id:
+                opening.update(
+                    {
+                        "status": "live",
+                        "trade_index": t.trade.trade_index,
+                        "entry_price": float(t.trade.open_price),
+                        "liquidation_price": float(t.liquidation_price),
+                    }
+                )
+                persistence.update_open_session(
+                    session_id=session_id,
+                    status="live",
+                    trade_index=int(t.trade.trade_index),
+                    entry_price=float(t.trade.open_price),
+                    liquidation_price=float(t.liquidation_price),
+                )
+                print(
+                    f"[trade/active] opening session promoted to live wallet={user.address} "
+                    f"session_id={session_id} trade_index={t.trade.trade_index}"
+                )
         return _active_response_from_trade(user, t, local_open)
+
+    if opening:
+        print(f"[trade/active] active local session found wallet={user.address} session_id={opening['session_id']}")
+        return ActiveTradeResponse(
+            exists=True,
+            status=opening.get("status", "opening"),
+            wallet=user.address,
+            session_id=opening.get("session_id"),
+            open_tx_hash=opening.get("tx_hash"),
+            tx_hash=opening.get("tx_hash"),
+            trade_index=opening.get("trade_index"),
+            avantis_pair_index=opening.get("avantis_pair_index"),
+            leverage=opening.get("leverage"),
+            wager_usdc=opening.get("wager_usdc"),
+            collateral_usdc=opening.get("collateral_usdc"),
+            open_collateral_usdc=opening.get("collateral_usdc"),
+            notional_usd=round(
+                float(opening.get("collateral_usdc") or 0) * float(opening.get("leverage") or 0),
+                6,
+            ),
+            house_fee_usdc=opening.get("house_fee_usdc"),
+            entry_price=opening.get("entry_price"),
+            current_price=_float_or_none(price_module.get_latest_price()),
+            liq_price=opening.get("liquidation_price"),
+            liquidation_price=opening.get("liquidation_price"),
+            opened_at=opening.get("opened_at"),
+            is_long=opening.get("is_long"),
+            error=opening.get("error"),
+        )
 
     if local_open:
         trade_index = _int_or_none(local_open.get("trade_index"))

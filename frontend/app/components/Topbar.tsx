@@ -31,8 +31,8 @@ interface TopbarProps {
    PRIVY_AUTH_PRIVATE_KEY so server-side trade execution is authorized. */
 const PRIVY_SIGNER_ID = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID || "";
 const SPONSOR_GAS_ON_BASE =
-  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE === "1" ||
-  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE === "true";
+  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE !== "0" &&
+  process.env.NEXT_PUBLIC_PRIVY_SPONSOR_GAS_ON_BASE !== "false";
 const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_TRANSFER_ABI = [
   {
@@ -541,10 +541,12 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                     <div className="user-menu-label">wallet balance</div>
                     <div className="wallet-menu-balances">
                       <span>{balanceLoading ? "syncing USDC" : `${balance.toFixed(2)} USDC`}</span>
-                      <span>{ethBalance === null ? "gas checking..." : `${ethBalance.toFixed(5)} ETH`}</span>
+                      {!SPONSOR_GAS_ON_BASE && (
+                        <span>{ethBalance === null ? "gas checking..." : `${ethBalance.toFixed(5)} ETH`}</span>
+                      )}
                     </div>
-                    <div className={`user-menu-tag ${hasGas ? "ok" : "warn"}`}>
-                      {SPONSOR_GAS_ON_BASE ? "gas sponsored" : hasGas ? "gas ready" : "needs ETH gas"}
+                    <div className={`user-menu-tag ${SPONSOR_GAS_ON_BASE || hasGas ? "ok" : "warn"}`}>
+                      {SPONSOR_GAS_ON_BASE ? "base usdc only · gas sponsored" : hasGas ? "gas ready" : "needs ETH gas"}
                     </div>
                   </div>
                   <div className="user-menu-section">
@@ -559,21 +561,23 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                     >
                       <span className="wallet-action-arrow" aria-hidden="true">↓</span>
                       <span className="wallet-action-text">
-                        <span className="wallet-action-title">fund USDC</span>
-                        <span className="wallet-action-sub">collateral</span>
+                        <span className="wallet-action-title">{SPONSOR_GAS_ON_BASE ? "fund wallet" : "fund USDC"}</span>
+                        <span className="wallet-action-sub">{SPONSOR_GAS_ON_BASE ? "base usdc to play" : "collateral"}</span>
                       </span>
                     </button>
-                    <button
-                      className="wallet-action"
-                      role="menuitem"
-                      onClick={() => { sounds.play("ui-click"); onFundETH(); }}
-                    >
-                      <span className="wallet-action-arrow" aria-hidden="true">↓</span>
-                      <span className="wallet-action-text">
-                        <span className="wallet-action-title">fund ETH</span>
-                        <span className="wallet-action-sub">gas</span>
-                      </span>
-                    </button>
+                    {!SPONSOR_GAS_ON_BASE && (
+                      <button
+                        className="wallet-action"
+                        role="menuitem"
+                        onClick={() => { sounds.play("ui-click"); onFundETH(); }}
+                      >
+                        <span className="wallet-action-arrow" aria-hidden="true">↓</span>
+                        <span className="wallet-action-text">
+                          <span className="wallet-action-title">fund ETH</span>
+                          <span className="wallet-action-sub">gas</span>
+                        </span>
+                      </button>
+                    )}
                   </div>
                   <div className="user-menu-section">
                     <div className="user-menu-section-title">
@@ -581,7 +585,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
                       withdraw
                     </div>
                     <div className="withdraw-tabs" role="group" aria-label="Withdraw asset">
-                      {(["USDC", "ETH"] as const).map((asset) => (
+                      {(SPONSOR_GAS_ON_BASE ? (["USDC"] as const) : (["USDC", "ETH"] as const)).map((asset) => (
                         <button
                           key={asset}
                           type="button"
@@ -640,7 +644,7 @@ export default function Topbar({ balance, ethBalance, balanceLoading = false, on
               )}
             </div>
             <div
-              className={`gas-pill ${hasGas ? "ok" : "warn"}`}
+              className={`gas-pill ${SPONSOR_GAS_ON_BASE || hasGas ? "ok" : "warn"}`}
               title={SPONSOR_GAS_ON_BASE ? "Base gas is sponsored by HiScore" : ethBalance === null ? "ETH gas balance loading" : `${ethBalance.toFixed(6)} ETH on Base for gas`}
             >
               <span className="gas-dot" aria-hidden="true" />
