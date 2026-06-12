@@ -13,7 +13,14 @@ import { getEmbeddedEthereumAddress } from "@/lib/embedded-wallet";
 import type { HistoryEntry } from "./HistoryStrip";
 import EndOfGameModal, { type EndOfGameData } from "./EndOfGameModal";
 import { connectPriceStream } from "@/lib/ws";
-import { closeTrade, forceCloseTrade } from "@/lib/api";
+import {
+  closeTrade,
+  forceCloseTrade,
+  getActiveTrade,
+  getHistory,
+  type CloseTradeResponse,
+  type HistoryTrade,
+} from "@/lib/api";
 import { sounds } from "@/lib/sounds";
 
 /* ============ CONSTANTS ============ */
@@ -128,7 +135,7 @@ const ROTATION_LERP = 0.08;
 const VELOCITY_LERP = 0.06;
 const DEBUG_FEET = false;
 const DEBUG_TERRAIN = false;
-const SETTLE_TIMEOUT_MS = 15000;
+const SETTLE_TIMEOUT_MS = 45000;
 const HOUSE_FEE_RATE = 0.025;
 const COLLATERAL_RATE = 1 - HOUSE_FEE_RATE;
 const LOCAL_MOCK_MODE = !process.env.NEXT_PUBLIC_API_URL;
@@ -194,6 +201,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise, timeout]).finally(() => {
     if (timeoutId) clearTimeout(timeoutId);
   });
+}
+
+function closeResponseFromHistory(trade: HistoryTrade): CloseTradeResponse | null {
+  if (
+    trade.exit_price === null ||
+    trade.gross_pnl_usdc === null ||
+    trade.avantis_win_fee_usdc === null ||
+    trade.net_pnl_usdc === null ||
+    trade.closed_at === null ||
+    trade.close_tx_hash === null
+  ) {
+    return null;
+  }
+  return {
+    trade_index: trade.trade_index,
+    entry_price: trade.entry_price,
+    exit_price: trade.exit_price,
+    gross_pnl_usdc: trade.gross_pnl_usdc,
+    avantis_win_fee_usdc: trade.avantis_win_fee_usdc,
+    net_pnl_usdc: trade.net_pnl_usdc,
+    was_liquidated: trade.was_liquidated === true,
+    closed_at: trade.closed_at,
+    tx_hash: trade.close_tx_hash,
+  };
 }
 
 function buildTerrainPoints(count: number, startWorldX: number, stageH: number, seed: number): number[] {
@@ -1933,6 +1964,7 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
     const entry = a.entry;
     const exitOptimistic = a.price;
     const durationSeconds = getTradeDurationSeconds();
+    const closeStartedAt = Date.now();
 
     // Estimated PnL based on the live chart price. Demo/paper can resolve
     // locally; real-money final PnL still waits for backend close success.
@@ -1989,6 +2021,28 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       });
     };
 
+    const recoverCompletedClose = async (): Promise<CloseTradeResponse | null> => {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 750));
+        const active = await getActiveTrade(getAccessToken, walletAddress);
+        if (active.exists) return null;
+        const history = await getHistory(1, getAccessToken, walletAddress);
+        const latest = history.trades[0];
+        if (!latest) continue;
+        const recovered = closeResponseFromHistory(latest);
+        if (!recovered) continue;
+        const closedAtMs = Date.parse(recovered.closed_at);
+        if (Number.isFinite(closedAtMs) && closedAtMs >= closeStartedAt - 24 * 60 * 60 * 1000) {
+          console.info("[trade/close-ui] close recovered from history", {
+            tradeIndex: recovered.trade_index,
+            txHash: recovered.tx_hash,
+          });
+          return recovered;
+        }
+      }
+      return null;
+    };
+
     // Race the on-chain close against the parachute descent. Real-money
     // modal opens only after backend net_pnl_usdc; failures leave a retryable
     // STOPPED state instead of faking final PnL.
@@ -1997,8 +2051,14 @@ const GameScene = forwardRef<GameSceneHandle, GameSceneProps>(function GameScene
       ? Promise.resolve({ ok: false as const })
       : withTimeout(closeTrade(getAccessToken, walletAddress, exitOptimistic), SETTLE_TIMEOUT_MS, "close")
           .then((res) => ({ ok: true as const, res }))
-          .catch((e) => {
+          .catch(async (e) => {
             console.warn("[trade] closeTrade failed — close remains retryable:", e);
+            try {
+              const recovered = await recoverCompletedClose();
+              if (recovered) return { ok: true as const, res: recovered };
+            } catch (recoveryError) {
+              console.warn("[trade] close recovery check failed:", recoveryError);
+            }
             return { ok: false as const };
           });
     Promise.all([closeReq, minDelay]).then(([result]) => {
